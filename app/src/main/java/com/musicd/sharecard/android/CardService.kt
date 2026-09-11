@@ -33,6 +33,11 @@ class CardService : Service() {
     var app: ShareCardApp? = null
         private set
 
+    /** Why the server did not come up, for the window to show. */
+    @Volatile
+    var startupError: String? = null
+        private set
+
     /**
      * SSDP is multicast, and Android drops multicast before it reaches
      * userspace unless this is held. Without it discovery returns nothing at
@@ -51,40 +56,79 @@ class CardService : Service() {
         // answer, a SOAP call that threw and a cover that 404'd were all
         // completely silent, in logcat and everywhere else. The first real
         // failure was debugged without a single line of evidence because of it.
-        //
-        // This app makes a handful of requests when somebody opens a page. It is
-        // not a hot loop, and the cost of the logging is nothing next to the
-        // cost of not having it.
         Log.debug = true
         instance = this
 
-        takeMulticastLock()
+        // STARTFOREGROUND FIRST. NOTHING BEFORE IT.
+        //
+        // A start delivered as startForegroundService MUST be answered with
+        // startForeground within about five seconds, or the system kills the
+        // process — with no dialog, no trace, and nothing in the app to say what
+        // happened. "Crashing and closing without any message" is what that
+        // looks like from the outside, and it is what this app was doing.
+        //
+        // Everything that used to run before this line — the multicast lock, a
+        // file read off external storage, binding the socket — is work of
+        // unbounded duration on the main thread, sitting inside that window.
+        // None of it needs to happen before the notification exists.
+        startForeground(NOTIFICATION_ID, notification("Starting…"))
 
-        val assets = Assets { path ->
-            try {
-                getAssets().open("web/$path").use { it.readBytes() }
-            } catch (e: Exception) {
-                // A missing asset is a 404, not a crash: the path came off the
-                // network, and naming a file that is not there is ordinary.
-                Log.d(TAG, "no bundled asset web/$path")
-                null
+        // And the work itself goes on a thread, because onCreate is the main
+        // thread and binding a socket there is both slow and, on a strict
+        // Android build, an exception in its own right.
+        Thread({ startUp() }, "sharecard-startup").apply { isDaemon = true }.start()
+    }
+
+    /**
+     * Everything the card server needs, off the main thread.
+     *
+     * The window polls for [app] rather than being told, so arriving late here
+     * is ordinary rather than a race to be defended against.
+     */
+    private fun startUp() {
+        try {
+            takeMulticastLock()
+
+            val assets = Assets { path ->
+                try {
+                    getAssets().open("web/$path").use { it.readBytes() }
+                } catch (e: Exception) {
+                    // A missing asset is a 404, not a crash: the path came off
+                    // the network, and naming a file that is not there is
+                    // ordinary.
+                    Log.d(TAG, "no bundled asset web/$path")
+                    null
+                }
             }
-        }
 
-        val started = runCatching {
-            ShareCardApp(
+            val started = ShareCardApp(
                 assets = assets,
                 seedHosts = HostsFile.read(this),
-                version = BuildConfig.VERSION_NAME
+                version = BuildConfig.VERSION_NAME,
+                // So a crash is visible from the phone in the next room, not
+                // only on the device that crashed.
+                hostNotes = {
+                    CrashLog.read(this)?.let { listOf("Last crash:\n$it") }.orEmpty()
+                }
             ).also { it.start() }
-        }.onFailure {
-            // Loud, because the app is useless without it and the window's
-            // "could not start" message is the only other clue.
-            Log.e(TAG, "the card server could not start", it)
-        }.getOrNull()
 
-        app = started
-        startForeground(NOTIFICATION_ID, notification(started))
+            app = started
+            // Now the notification can name the address somebody would type in.
+            update(started.lanUrls().firstOrNull() ?: "ready")
+        } catch (e: Throwable) {
+            // Loud, and never fatal: a service that dies here takes the whole
+            // app with it, and the window's message is then the only clue left.
+            Log.e(TAG, "the card server could not start", e)
+            startupError = "${e.javaClass.simpleName}: ${e.message}"
+            update("could not start — open the app")
+        }
+    }
+
+    private fun update(text: String) {
+        runCatching {
+            getSystemService(NotificationManager::class.java)
+                ?.notify(NOTIFICATION_ID, notification(text))
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -117,7 +161,7 @@ class CardService : Service() {
         }
     }
 
-    private fun notification(app: ShareCardApp?): Notification {
+    private fun notification(text: String): Notification {
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
@@ -126,19 +170,17 @@ class CardService : Service() {
             )
         }
 
-        // The LAN URL is the useful thing to put here: it is what somebody
-        // types into a phone, and the notification shade is where they will
-        // look for it without unlocking anything.
-        val where = app?.lanUrls()?.firstOrNull() ?: "starting…"
-
+        // The LAN URL is the useful thing to put here: it is what somebody types
+        // into a phone, and the shade is where they will look for it without
+        // unlocking anything.
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         return Notification.Builder(this, CHANNEL)
-            .setContentTitle("Share card ready")
-            .setContentText(where)
+            .setContentTitle("Share card")
+            .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)
             .setContentIntent(open)
             .setOngoing(true)

@@ -16,7 +16,10 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 
 /**
@@ -93,7 +96,71 @@ class MainActivity : Activity() {
 
         askForNotificationPermission()
         startForegroundService(Intent(this, CardService::class.java))
+
+        // A crash from LAST time is the most valuable thing this window can
+        // show, and it must be shown before anything else can overwrite it.
+        val crash = CrashLog.read(this)
+        if (crash != null) {
+            showCrash(crash)
+            return
+        }
         waitForServer(System.currentTimeMillis())
+    }
+
+    /**
+     * What happened last time, in full, with no way to miss it.
+     *
+     * The app was reported as closing with no message at all, from a device in
+     * another room with no adb attached — so the trace is put on screen where
+     * somebody can photograph it. Dismissing is deliberate rather than a timer:
+     * a crash report that clears itself before it is read is no report.
+     */
+    private fun showCrash(crash: String) {
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 64, 48, 48)
+        }
+        column.addView(
+            TextView(this).apply {
+                text = "The app closed unexpectedly last time.\n\n" +
+                    "This is what it recorded. Send it on, then carry on below."
+                setTextColor(0xFFE8EDF2.toInt())
+                textSize = 15f
+                setPadding(0, 0, 0, 24)
+            }
+        )
+        column.addView(
+            ScrollView(this).apply {
+                addView(
+                    TextView(this@MainActivity).apply {
+                        text = crash
+                        setTextColor(0xFF9AA2AB.toInt())
+                        textSize = 11f
+                        setTextIsSelectable(true)
+                        typeface = android.graphics.Typeface.MONOSPACE
+                    }
+                )
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+            )
+        )
+        column.addView(
+            Button(this).apply {
+                text = "Dismiss and open the card"
+                setOnClickListener {
+                    CrashLog.clear(this@MainActivity)
+                    root.removeAllViews()
+                    root.addView(message)
+                    root.addView(web)
+                    message.visibility = View.VISIBLE
+                    message.text = "Starting…"
+                    waitForServer(System.currentTimeMillis())
+                }
+            }
+        )
+        root.removeAllViews()
+        root.addView(column)
     }
 
     /**
@@ -110,9 +177,16 @@ class MainActivity : Activity() {
             return
         }
         if (System.currentTimeMillis() - startedAt > SERVER_WAIT_MS) {
-            message.text = "The card server could not start.\n\n" +
-                "Close the app completely and open it again. If it keeps happening, " +
-                "restart the device — something else may be holding the port."
+            // Say WHY when the service knows why. "Could not start" with no
+            // reason is the message this app has already been caught giving.
+            val why = CardService.instance?.startupError
+            message.text = if (why != null) {
+                "The card server could not start.\n\n$why"
+            } else {
+                "The card server did not come up.\n\n" +
+                    "Close the app completely and open it again. If it keeps happening, " +
+                    "restart the device — something else may be holding the port."
+            }
             return
         }
         main.postDelayed({ waitForServer(startedAt) }, 100)

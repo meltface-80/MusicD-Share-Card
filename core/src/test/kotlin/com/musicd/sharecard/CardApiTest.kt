@@ -212,6 +212,51 @@ class CardApiTest {
     }
 
     @Test
+    fun `the diagnostics page carries what the shell knows, crash included`() {
+        // A crash from the last launch explains more than anything else on that
+        // page, and the device that crashed is usually in another room — so it
+        // has to reach the browser, not just the device's own screen.
+        val api = CardApi(
+            Household(
+                playerAt = { ip -> players.getValue(ip) },
+                seedHosts = listOf("10.0.0.1"),
+                discover = { emptyList() },
+                scan = { com.musicd.sharecard.sonos.SonosScan.Result(emptyList(), emptyList()) }
+            ),
+            Metadata(metadataHttpClient(), "test"),
+            Pitchfork(metadataHttpClient(), "test"),
+            ArtProxy(metadataHttpClient()),
+            assets,
+            "1.0.0",
+            hostNotes = { listOf("Last crash:\njava.lang.IllegalStateException: boom") }
+        )
+        val body = JSONObject(String(api.handle(get("/api/debug")).body, Charsets.UTF_8))
+        val app = body.getJSONArray("app").getString(0)
+        assertTrue("the trace must survive to the page: $app", app.contains("boom"))
+    }
+
+    @Test
+    fun `a shell that throws while reporting does not take the page down`() {
+        // The diagnostics page is what somebody reaches for when the app is
+        // already misbehaving. It must not be the next thing to fail.
+        val api = CardApi(
+            Household(
+                playerAt = { ip -> players.getValue(ip) },
+                seedHosts = listOf("10.0.0.1"),
+                discover = { emptyList() },
+                scan = { com.musicd.sharecard.sonos.SonosScan.Result(emptyList(), emptyList()) }
+            ),
+            Metadata(metadataHttpClient(), "test"),
+            Pitchfork(metadataHttpClient(), "test"),
+            ArtProxy(metadataHttpClient()),
+            assets,
+            "1.0.0",
+            hostNotes = { throw RuntimeException("reading the crash log failed") }
+        )
+        assertEquals(200, api.handle(get("/api/debug")).status)
+    }
+
+    @Test
     fun `extras with no album named is a bad request`() {
         assertEquals(400, api().handle(get("/api/extras")).status)
     }

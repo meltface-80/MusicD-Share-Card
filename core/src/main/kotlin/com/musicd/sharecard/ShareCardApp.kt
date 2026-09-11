@@ -32,7 +32,13 @@ class ShareCardApp(
     seedHosts: List<String> = emptyList(),
     port: Int = DEFAULT_PORT,
     bindAddress: String = HttpServer.ANY,
-    val version: String = "dev"
+    val version: String = "dev",
+    /**
+     * Anything the Android shell knows that the diagnostics page should show —
+     * chiefly the last recorded crash. Supplied as a function because it is read
+     * when somebody asks, not when the app starts.
+     */
+    private val hostNotes: () -> List<String> = { emptyList() }
 ) {
 
     private val soap = SoapClient(soapHttpClient())
@@ -47,7 +53,7 @@ class ShareCardApp(
     private val pitchfork = Pitchfork(metaHttp, userAgent(version))
     private val art = ArtProxy(soapHttpClient())
 
-    private val api = CardApi(household, metadata, pitchfork, art, assets, version)
+    private val api = CardApi(household, metadata, pitchfork, art, assets, version, hostNotes)
 
     private val server = HttpServer(api, port, bindAddress)
 

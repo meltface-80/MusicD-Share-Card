@@ -25,10 +25,19 @@ import org.json.JSONObject
  * and what answered on them, which is no more than the card itself reveals to
  * anyone already on the network.
  */
-class Diagnostics(private val household: Household) {
+class Diagnostics(
+    private val household: Household,
+    /** What the Android shell knows — chiefly the last recorded crash. */
+    private val hostNotes: () -> List<String> = { emptyList() }
+) {
 
     fun run(): JSONObject {
         val report = JSONObject()
+
+        // First, because a crash from last launch explains more than anything
+        // below it and would otherwise be scrolled past.
+        val notes = runCatching { hostNotes() }.getOrDefault(emptyList())
+        if (notes.isNotEmpty()) report.put("app", Json.strings(notes))
 
         // 1. What this device thinks it is attached to. An empty list here is
         //    the whole answer: no network, no speakers.

@@ -460,6 +460,7 @@
       rows.push("<h3>" + escapeHtml(title) + "</h3><ul>" +
         items.map((i) => "<li>" + escapeHtml(String(i)) + "</li>").join("") + "</ul>");
     }
+    section("The app", d.app);
     section("This device's networks", d.interfaces);
     section("Multicast (SSDP)", (d.ssdp && d.ssdp.notes) || []);
     section("Direct scan of this subnet", (d.scan && d.scan.notes) || []);
