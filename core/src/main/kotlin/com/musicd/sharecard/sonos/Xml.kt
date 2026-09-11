@@ -34,7 +34,28 @@ internal object Xml {
             )
             isXIncludeAware = false
             isExpandEntityReferences = false
-            isNamespaceAware = true
+
+            // NAMESPACE-AWARE PARSING IS OFF, AND THAT IS THE POINT.
+            //
+            // A namespace-aware parser REJECTS THE WHOLE DOCUMENT if any
+            // element uses a prefix that is not declared — "The prefix 'u' for
+            // element 'u:GetZoneGroupStateResponse' is not bound". Not the
+            // element: the document. One stray prefix anywhere in a reply and
+            // there is no topology, no DIDL, and nothing to say why beyond
+            // "that was not XML".
+            //
+            // Sonos replies are full of prefixes (s:, u:, dc:, upnp:, r:) and
+            // they are assembled by several different services and music
+            // providers, any of which can emit one without a declaration. A
+            // strict parser turns somebody else's sloppy XML into this app
+            // reporting that it cannot see their speakers.
+            //
+            // Nothing here reads a namespace URI: every lookup goes through
+            // [localName], which strips the prefix from the tag name itself. So
+            // awareness buys this app exactly nothing and costs it every reply
+            // that is not perfectly formed. The XXE protections above are what
+            // actually matter for safety, and they are unaffected.
+            isNamespaceAware = false
         }
 
     private fun DocumentBuilderFactory.setFeatureQuietly(name: String, value: Boolean) {

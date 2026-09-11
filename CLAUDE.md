@@ -79,11 +79,23 @@ as "no Sonos players found", which is indistinguishable from a network problem.
   remembered uid directly.
 - **Grouped rooms have no transport of their own.** Ask the coordinator. Asking a
   member answers with the coordinator's stream second-hand or not at all.
+- **The UPnP-to-Sonos bridge is the reference for anything on the wire.**
+  `meltface-80/UPnP-to-Sonos-UPnP-bridge` is working Python against real Sonos
+  hardware. Where this app's SOAP differed from it, this app was wrong: faults
+  must be parsed even on an HTTP 500, the response wrapper must be matched
+  leniently (its own comment: "some devices answer with an unexpected wrapper
+  name"), and its ten-second timeout is not generous. Check it before guessing.
 - **`optString` is unsafe.** Android's `org.json` returns the literal text
   `"null"` where the desktop one returns `""`. Use `str()` / `strOrNull()`. The
   JVM tests cannot catch this, so `JsonSafeTest` scans the source instead.
-- **The XML parser is locked down on purpose.** Every document it sees arrived
-  over the network from a device on the LAN. Do not relax `Xml`'s features.
+- **The XML parser is locked down but NOT namespace-aware, and both halves are
+  deliberate.** The XXE features guard documents that arrive over the network
+  from a device on the LAN — do not relax those. But `isNamespaceAware` must
+  stay **false**: a namespace-aware parser rejects the WHOLE document over one
+  unbound prefix, and that made a real household unreachable — three players
+  answering on port 1400, every one of them "would not describe the household".
+  Nothing here reads a namespace URI; every lookup goes through `Xml.localName`,
+  which strips the prefix off the tag name.
 - **`sharecard.js` is a port, not this project's code.** It is MusicD Remote
   Lite's file, and it is the card's visual definition. A change here that is not
   also made there means the two apps stop producing the same picture — which is

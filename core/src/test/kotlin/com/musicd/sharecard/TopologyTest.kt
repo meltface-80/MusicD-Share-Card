@@ -112,6 +112,34 @@ class TopologyTest {
     }
 
     /**
+     * An undeclared prefix must not take the whole document with it.
+     *
+     * THIS IS THE BUG THAT MADE A REAL HOUSEHOLD UNREACHABLE. Three players
+     * answered on port 1400 and every one of them "would not describe the
+     * household", because the parser was namespace-aware and a namespace-aware
+     * parser rejects the ENTIRE document over one unbound prefix. Sonos replies
+     * are assembled by several services and music providers and are full of
+     * prefixes; nothing here reads a namespace URI, so strictness bought
+     * nothing and cost everything.
+     */
+    @Test
+    fun `an undeclared namespace prefix does not throw the whole reply away`() {
+        val sloppy = """
+            <ZoneGroupState><ZoneGroups>
+              <ZoneGroup Coordinator="RINCON_A" ID="g">
+                <ZoneGroupMember UUID="RINCON_A" ZoneName="Kitchen"
+                  Location="http://192.168.0.93:1400/xml/device_description.xml"/>
+                <u:Vanished xmlns:ignored="urn:x"/>
+              </ZoneGroup>
+            </ZoneGroups></ZoneGroupState>
+        """.trimIndent()
+        val zones = parseZoneGroupState(sloppy)
+        assertEquals(1, zones.size)
+        assertEquals("Kitchen", zones[0].name)
+        assertEquals("192.168.0.93", zones[0].ip)
+    }
+
+    /**
      * A DOCTYPE naming an external entity must not be resolved. The parser is
      * handed XML by any device on the LAN, and on the Android host that would
      * be a file read out of the app's own sandbox.

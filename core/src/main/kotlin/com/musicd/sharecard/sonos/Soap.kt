@@ -7,16 +7,39 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-/** A player answered, but not with what was asked for. */
-class SoapError(val status: Int, message: String) : Exception(message)
+/**
+ * A player answered, but not with what was asked for.
+ *
+ * [detail] is the whole point of this class: it is what gets shown on the
+ * diagnostics page. "Would not describe the household" is a symptom, and the
+ * difference between a UPnP 401, a read timeout and a reply this code could not
+ * parse is the difference between three completely different fixes.
+ */
+class SoapError(
+    val status: Int,
+    val detail: String,
+    /** The UPnP error code from a SOAP Fault, when the reply carried one. */
+    val upnpCode: Int? = null
+) : Exception(detail)
 
 /**
  * UPnP SOAP over HTTP, which is all a Sonos player speaks.
  *
- * Sonos does not use the control URLs a stock MediaRenderer would, and it is
- * fussy about the envelope: the action must be namespaced to the service type
- * and the SOAPACTION header must repeat both. Getting either wrong is answered
- * with a 500 and an error code rather than anything that names the mistake.
+ * The envelope and headers here are the same ones
+ * [the UPnP-to-Sonos bridge](https://github.com/meltface-80/UPnP-to-Sonos-UPnP-bridge)
+ * uses, and that is not a coincidence — it is working code against real
+ * players, so where this differed from it, this was wrong. Three things came
+ * from reading it after every player in a household refused to answer:
+ *
+ *  - **Faults are parsed even on a non-200.** UPnP reports action failures as
+ *    HTTP 500 with a Fault in the body, so treating any 500 as "unreachable"
+ *    throws away the error code that says what actually went wrong.
+ *  - **The response wrapper is matched leniently.** The bridge carries the
+ *    comment "some devices answer with an unexpected wrapper name" and falls
+ *    back to the first child of Body. Insisting on an exact
+ *    `<action>Response` turns a usable reply into a hard failure.
+ *  - **Ten seconds, not six.** GetZoneGroupState on a real household is a large
+ *    document and a player can take its time producing it.
  */
 class SoapClient(private val http: OkHttpClient = soapHttpClient()) {
 
@@ -24,8 +47,8 @@ class SoapClient(private val http: OkHttpClient = soapHttpClient()) {
      * Call [action] on [serviceType] at [controlUrl].
      *
      * Arguments are written in the order given, because UPnP is positional
-     * despite looking like it is not — a player will reject an envelope whose
-     * arguments are shuffled, and a Map's iteration order is what supplies it.
+     * despite looking like it is not — a player rejects an envelope whose
+     * arguments are shuffled, and a List preserves what a Map would not.
      */
     fun call(
         controlUrl: String,
@@ -63,26 +86,81 @@ class SoapClient(private val http: OkHttpClient = soapHttpClient()) {
                 text = response.body?.string().orEmpty()
             }
         } catch (e: Exception) {
-            throw SoapError(0, "$action to $controlUrl failed: ${e.message}")
+            // An unreachable player is an ordinary condition on a home network.
+            // The exception type is kept because "timeout" and "connection
+            // refused" point at different problems.
+            throw SoapError(
+                0,
+                "$action: no reply (${e.javaClass.simpleName}: ${e.message})"
+            )
         }
+
+        val root = Xml.parse(text)
+            ?: throw SoapError(code, "$action: HTTP $code, reply was not XML — ${snippet(text)}")
+
+        // A Fault can arrive with any status, and on UPnP it usually comes with
+        // a 500. Parse it before judging the status code, or the error code the
+        // player went to the trouble of sending is discarded.
+        faultOf(root)?.let { throw it.withAction(action) }
 
         if (code != 200) {
-            // A UPnP fault carries its real reason in an errorCode inside the
-            // body; the HTTP status is 500 for all of them.
-            val detail = Xml.parse(text)?.let { Xml.find(it, "errorCode") }?.let(Xml::text)
-            throw SoapError(code, "$action -> HTTP $code" + (detail?.let { " (UPnP $it)" } ?: ""))
+            throw SoapError(code, "$action: HTTP $code — ${snippet(text)}")
         }
 
-        val root = Xml.parse(text) ?: throw SoapError(code, "$action -> unparseable reply")
-        val response = Xml.find(root, "${action}Response")
-            ?: throw SoapError(code, "$action -> no ${action}Response in reply")
+        val body_ = Xml.find(root, "Body")
+            ?: throw SoapError(code, "$action: no SOAP Body in the reply — ${snippet(text)}")
+
+        val wrapper = Xml.children(body_).firstOrNull {
+            val name = Xml.localName(it)
+            name == "${action}Response" || name == action
+        // Some devices answer with an unexpected wrapper name — the bridge hit
+        // this against real hardware, so the first child of Body is taken
+        // rather than failing on a reply that is perfectly usable.
+        } ?: Xml.children(body_).firstOrNull()
+        ?: throw SoapError(code, "$action: empty SOAP Body — ${snippet(text)}")
 
         val out = LinkedHashMap<String, String>()
-        for (child in Xml.children(response)) {
+        for (child in Xml.children(wrapper)) {
             out[Xml.localName(child)] = child.textContent.orEmpty()
         }
         Log.d(TAG, "$action -> ${out.keys}")
         return out
+    }
+
+    /** A SOAP Fault anywhere in the reply, as a [SoapError]. */
+    private fun faultOf(root: org.w3c.dom.Element): SoapError? {
+        val fault = Xml.find(root, "Fault") ?: return null
+        var code: Int? = null
+        var description = ""
+        for (node in Xml.descendants(fault)) {
+            val value = Xml.text(node)
+            when (Xml.localName(node)) {
+                "errorCode" -> code = value.trim().toIntOrNull()
+                "errorDescription" -> if (value.isNotEmpty()) description = value
+                // "UPnPError" is the literal the spec mandates here and it says
+                // nothing, so the error code is left to speak instead.
+                "faultstring" ->
+                    if (description.isEmpty() && value.isNotEmpty() && value != "UPnPError") {
+                        description = value
+                    }
+            }
+        }
+        val named = code?.let { UPNP_ERRORS[it] }
+        val text = listOfNotNull(
+            code?.let { "UPnP $it" },
+            named,
+            description.takeIf { it.isNotEmpty() && it != named }
+        ).joinToString(" — ").ifEmpty { "SOAP Fault with no error code" }
+        return SoapError(500, text, code)
+    }
+
+    private fun SoapError.withAction(action: String) =
+        SoapError(status, "$action: $detail", upnpCode)
+
+    /** Enough of a reply to recognise it, without pasting a whole document. */
+    private fun snippet(text: String): String {
+        val flat = text.replace(Regex("\\s+"), " ").trim()
+        return if (flat.length <= 160) flat else flat.take(160) + "…"
     }
 
     private fun escape(s: String): String = buildString(s.length) {
@@ -99,20 +177,34 @@ class SoapClient(private val http: OkHttpClient = soapHttpClient()) {
     private companion object {
         const val TAG = "Soap"
         val XML_MEDIA_TYPE = "text/xml; charset=\"utf-8\"".toMediaType()
+
+        /** The UPnP codes worth naming, from the bridge's own table. */
+        val UPNP_ERRORS = mapOf(
+            401 to "Invalid Action",
+            402 to "Invalid Args",
+            412 to "Not authorised",
+            501 to "Action Failed",
+            600 to "Argument Value Invalid",
+            701 to "Transition not available",
+            702 to "No contents",
+            705 to "Transport is locked",
+            718 to "Invalid InstanceID"
+        )
     }
 }
 
 /**
- * okhttp for the players: short timeouts, nothing held open.
+ * okhttp for the players.
  *
- * The timeouts are deliberately tight. Every one of these calls happens with
- * somebody waiting on a card, and a speaker that has dropped off the network
- * must not hold the whole household scan for the default ten seconds — the
- * scan asks several players in turn and a slow one is simply skipped.
+ * TEN SECONDS, matching the bridge, and up from six. GetZoneGroupState on a
+ * real household is a large document and a player under load takes its time —
+ * a timeout here is indistinguishable, from the outside, from a device that is
+ * not a Sonos at all, which is exactly the wrong conclusion to be pushed
+ * towards.
  */
 fun soapHttpClient(): OkHttpClient = OkHttpClient.Builder()
-    .connectTimeout(2, TimeUnit.SECONDS)
-    .readTimeout(4, TimeUnit.SECONDS)
-    .callTimeout(6, TimeUnit.SECONDS)
+    .connectTimeout(4, TimeUnit.SECONDS)
+    .readTimeout(10, TimeUnit.SECONDS)
+    .callTimeout(12, TimeUnit.SECONDS)
     .retryOnConnectionFailure(false)
     .build()

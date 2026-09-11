@@ -464,6 +464,7 @@
     section("Multicast (SSDP)", (d.ssdp && d.ssdp.notes) || []);
     section("Direct scan of this subnet", (d.scan && d.scan.notes) || []);
     section("Addresses being tried", d.hosts);
+    section("What the players said", d.errors);
     if (d.zones && d.zones.length) {
       section("Rooms", d.zones.map((z) =>
         z.name + " (" + z.ip + ") — " + z.state +

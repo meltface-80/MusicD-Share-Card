@@ -191,16 +191,37 @@ class Household(
         return zones
     }
 
+    /**
+     * What each host said when asked to describe the household, most recent
+     * attempt only. Shown on the diagnostics page: "would not describe the
+     * household" is a symptom, and a UPnP 401, a read timeout and an unparseable
+     * reply need three different fixes.
+     */
+    @Volatile
+    var lastTopologyErrors: List<String> = emptyList()
+        private set
+
     private fun fetchTopology(): String? {
+        val errors = ArrayList<String>()
         for (host in knownHosts) {
-            val answer = runCatching { playerAt(host).zoneGroupState() }
-                // Warn, not debug. This is the failure that produces "No Sonos
-                // players found", and a message nobody can see is the reason
-                // that was a guessing game the first time round.
-                .onFailure { Log.w(TAG, "$host would not describe the household: ${it.message}") }
-                .getOrNull()
-            if (!answer.isNullOrEmpty()) return answer
+            val answer = try {
+                playerAt(host).zoneGroupState()
+            } catch (e: Exception) {
+                // Warn, not debug. This is the failure that produces "no players
+                // found", and a message nobody can see is the reason that was a
+                // guessing game twice over.
+                val why = (e as? SoapError)?.detail ?: "${e.javaClass.simpleName}: ${e.message}"
+                Log.w(TAG, "$host would not describe the household: $why")
+                errors += "$host — $why"
+                null
+            }
+            if (!answer.isNullOrEmpty()) {
+                lastTopologyErrors = errors
+                return answer
+            }
+            if (answer != null) errors += "$host — answered, but with an empty topology"
         }
+        lastTopologyErrors = errors
         return null
     }
 
