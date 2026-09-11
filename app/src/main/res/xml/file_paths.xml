@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One directory is reachable through the provider: a scratch folder inside the
+  app's own cache holding exactly one file at a time — the card being shared
+  right now, emptied before each write. Nothing else in the app is reachable.
+-->
+<paths>
+    <cache-path name="shares" path="shared/" />
+</paths>

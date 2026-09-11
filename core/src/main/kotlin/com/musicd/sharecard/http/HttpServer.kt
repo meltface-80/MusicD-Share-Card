@@ -1,0 +1,417 @@
+package com.musicd.sharecard.http
+
+import com.musicd.sharecard.Log
+import java.io.BufferedOutputStream
+import java.io.IOException
+import java.io.InputStream
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.SocketTimeoutException
+import java.net.URLDecoder
+import java.util.concurrent.Executors
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * A small HTTP/1.1 server. Ported from MusicD Remote Lite.
+ *
+ * This is what serves the card — to the app's own WebView over loopback, and to
+ * a browser on any other device in the house over the LAN. One page, one
+ * socket, and a phone across the room gets byte-identical bytes to the FiiO the
+ * APK is installed on. That is the whole "open it in a browser" feature.
+ *
+ * THIS SERVER ANSWERS THE NETWORK BY DEFAULT, AND THAT IS A DECISION. In the
+ * app this came from, loopback was the safe state and LAN access was a switch
+ * behind a PIN — because there were eighty `/api/` routes back there that
+ * control somebody's music system, and a settings store holding their API keys.
+ *
+ * There is no such surface here. Every route in [com.musicd.sharecard.api] is a
+ * GET, nothing mutates a player, nothing is stored, and the most an uninvited
+ * guest on the LAN can learn is which record is on. The exposure is the whole
+ * point of the app rather than a compromise of it, so the gate that was
+ * necessary there would be a lock on a picture frame here.
+ *
+ * What that DOES mean: do not add a route to this app that writes anything —
+ * to a player, to disk, or to a setting — without putting an authentication
+ * gate in front of the socket in the same change.
+ */
+class HttpServer(
+    private val handler: Handler,
+    /** 0 asks the OS for a free port, which avoids clashing with anything. */
+    requestedPort: Int = 0,
+    /** "0.0.0.0" to answer the network; "127.0.0.1" for this device only. */
+    bindAddress: String = ANY
+) {
+
+    fun interface Handler {
+        fun handle(request: Request): Response
+    }
+
+    private val server = bind(requestedPort, bindAddress)
+
+    private val running = AtomicBoolean(false)
+    private val threadSeq = AtomicInteger(0)
+
+    private val workers = ThreadPoolExecutor(
+        2, 24, 60L, TimeUnit.SECONDS, SynchronousQueue(),
+        { r -> Thread(r, "http-${threadSeq.incrementAndGet()}").apply { isDaemon = true } },
+        ThreadPoolExecutor.CallerRunsPolicy()
+    )
+
+    private val acceptor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "http-accept").apply { isDaemon = true }
+    }
+
+    /** The port actually bound. Ask after [start]. */
+    val port: Int get() = server.localPort
+
+    /**
+     * Always loopback, whatever this is bound to: this is the URL the app's own
+     * WebView loads, and it must not depend on the phone having an address.
+     */
+    val rootUrl: String get() = "http://$LOOPBACK:$port"
+
+    fun start() {
+        if (!running.compareAndSet(false, true)) return
+        acceptor.execute {
+            Log.i(TAG, "listening on $rootUrl")
+            while (running.get()) {
+                val client = try {
+                    server.accept()
+                } catch (e: IOException) {
+                    if (running.get()) Log.w(TAG, "accept failed: ${e.message}")
+                    continue
+                }
+                workers.execute { serve(client) }
+            }
+        }
+    }
+
+    /**
+     * Closes the listening socket and lets the workers finish.
+     *
+     * shutdown(), NOT shutdownNow(). Switching LAN access calls this from a
+     * request handler — which runs ON one of these workers — so shutdownNow()
+     * interrupts the very thread doing the switching, and everything it does
+     * next that can be interrupted fails instantly. That is not hypothetical:
+     * it made rebinding take a random port on roughly half of all switches.
+     * The socket is closed first either way, which is what actually stops new
+     * work arriving; the requests already in flight, including the reply to
+     * the switch itself, get to finish.
+     */
+    fun stop() {
+        if (!running.compareAndSet(true, false)) return
+        runCatching { server.close() }
+        workers.shutdown()
+        // A different thread, and it is parked in accept() until the close
+        // above wakes it, so interrupting it costs nothing and hurries it up.
+        acceptor.shutdownNow()
+    }
+
+    // ----------------------------------------------------------- connection
+
+    private fun serve(client: Socket) {
+        try {
+            client.soTimeout = READ_TIMEOUT_MS
+            client.tcpNoDelay = true
+            val remote = client.inetAddress?.hostAddress ?: ""
+            val input = client.getInputStream().buffered()
+            val output = BufferedOutputStream(client.getOutputStream())
+
+            // Keep-alive: the front-end polls several endpoints every 1.5s, and
+            // a fresh connection per poll is pure overhead on a phone.
+            while (running.get()) {
+                val request = try {
+                    readRequest(input, remote)
+                } catch (e: SocketTimeoutException) {
+                    return
+                } catch (e: HttpError) {
+                    write(output, Response.text(e.status, e.message ?: "Bad request"), false)
+                    output.flush()
+                    return
+                } ?: return
+
+                val response = try {
+                    handler.handle(request)
+                } catch (e: Exception) {
+                    Log.w(TAG, "handler threw for ${request.path}: ${e.message}", e)
+                    Response.json(500, """{"error":${quote(e.message ?: "Internal error")}}""")
+                }
+
+                write(output, response, request.method == "HEAD")
+                output.flush()
+                if (!request.keepAlive) return
+            }
+        } catch (e: IOException) {
+            Log.d(TAG, "connection ended: ${e.message}")
+        } finally {
+            runCatching { client.close() }
+        }
+    }
+
+    private class HttpError(val status: Int, message: String) : IOException(message)
+
+    /** Returns null at a clean end of stream. */
+    private fun readRequest(input: InputStream, remote: String): Request? {
+        val line = readLine(input) ?: return null
+        if (line.isEmpty()) return null
+
+        val parts = line.split(' ')
+        if (parts.size < 3) throw HttpError(400, "Malformed request line")
+        val method = parts[0].uppercase()
+        val target = parts[1]
+
+        val headers = HashMap<String, String>()
+        var headerBytes = line.length
+        while (true) {
+            val h = readLine(input) ?: throw HttpError(400, "Truncated headers")
+            if (h.isEmpty()) break
+            headerBytes += h.length
+            if (headerBytes > MAX_HEADER_BYTES) throw HttpError(431, "Headers too large")
+            val colon = h.indexOf(':')
+            if (colon <= 0) continue
+            headers[h.substring(0, colon).lowercase()] = h.substring(colon + 1).trim()
+        }
+
+        val length = headers["content-length"]?.toIntOrNull() ?: 0
+        if (length > MAX_BODY_BYTES) throw HttpError(413, "Body too large")
+        val body = if (length > 0) ByteArray(length).also { readFully(input, it) } else ByteArray(0)
+
+        // HTTP/1.1 keeps the connection open unless the client says otherwise.
+        val connection = headers["connection"]?.lowercase()
+        val keepAlive = connection != "close"
+
+        val q = target.indexOf('?')
+        val path = if (q < 0) target else target.substring(0, q)
+        val query = if (q < 0) emptyMap() else parseQuery(target.substring(q + 1))
+
+        return Request(method, decodePath(path), query, headers, body, keepAlive, remote)
+    }
+
+    private fun readLine(input: InputStream): String? {
+        val sb = StringBuilder(128)
+        while (true) {
+            val c = input.read()
+            if (c == -1) return if (sb.isEmpty()) null else sb.toString()
+            if (c == '\n'.code) {
+                if (sb.isNotEmpty() && sb.last() == '\r') sb.setLength(sb.length - 1)
+                return sb.toString()
+            }
+            sb.append(c.toChar())
+            if (sb.length > MAX_HEADER_BYTES) throw HttpError(431, "Header line too long")
+        }
+    }
+
+    private fun readFully(input: InputStream, buf: ByteArray) {
+        var read = 0
+        while (read < buf.size) {
+            val n = input.read(buf, read, buf.size - read)
+            if (n < 0) throw HttpError(400, "Truncated body")
+            read += n
+        }
+    }
+
+    private fun write(out: BufferedOutputStream, response: Response, headOnly: Boolean) {
+        val sb = StringBuilder(256)
+        sb.append("HTTP/1.1 ").append(response.status).append(' ')
+            .append(statusText(response.status)).append("\r\n")
+        sb.append("Content-Type: ").append(response.contentType).append("\r\n")
+        sb.append("Content-Length: ").append(response.body.size).append("\r\n")
+        for ((k, v) in response.headers) sb.append(k).append(": ").append(v).append("\r\n")
+        sb.append("\r\n")
+        out.write(sb.toString().toByteArray(Charsets.ISO_8859_1))
+        if (!headOnly) out.write(response.body)
+    }
+
+    companion object Codec {
+        private const val TAG = "Http"
+
+        /** The only address this is guaranteed to be reachable on. */
+        const val LOOPBACK = "127.0.0.1"
+
+        /**
+         * Every interface — which means the network can reach it, which is how
+         * this app is normally run. See the class comment for why that is safe
+         * HERE and was not in the app this was ported from.
+         */
+        const val ANY = "0.0.0.0"
+
+        /** How long to keep trying for the port we asked for. */
+        private const val BIND_TRIES = 20
+        private const val BIND_WAIT_MS = 25L
+
+        /**
+         * Binds [port], briefly insisting, and falling back to whatever the OS
+         * will give rather than failing to start.
+         *
+         * THE RETRY IS NOT POLITENESS. Switching LAN access closes this socket
+         * and immediately opens another on the same port, and for a few
+         * milliseconds after the close the kernel can still refuse it — the
+         * old connections have not finished going away. Taking the first
+         * refusal at face value silently moves the port, and the app's own
+         * WebView is already showing a page loaded from the old one, so it
+         * would be left talking to nothing with no way to explain itself.
+         * Measured, not theorised: without this the port moved on roughly one
+         * switch in three.
+         *
+         * The fallback still exists for the case it was written for, which is
+         * something else on the phone genuinely holding 3450 at startup.
+         * Failing to start at all would take the whole UI with it, and that is
+         * far worse than an unmemorable port.
+         */
+        private fun bind(port: Int, address: String): ServerSocket {
+            val addr = InetAddress.getByName(address)
+            if (port == 0) return open(0, addr)
+            var last: IOException? = null
+            repeat(BIND_TRIES) {
+                try {
+                    return open(port, addr)
+                } catch (e: IOException) {
+                    last = e
+                    try {
+                        Thread.sleep(BIND_WAIT_MS)
+                    } catch (interrupted: InterruptedException) {
+                        // Keep the flag for whoever owns this thread, but do
+                        // NOT give up on the port: taking a random one is the
+                        // damaging outcome here, not waiting a moment longer.
+                        Thread.currentThread().interrupt()
+                    }
+                }
+            }
+            Log.w(TAG, "port $port would not bind (${last?.message}); asking the OS for another")
+            return open(0, addr)
+        }
+
+        /**
+         * SO_REUSEADDR has to be set BEFORE the bind, which the
+         * ServerSocket(port, backlog, address) constructor cannot do: its
+         * initial setting is explicitly undefined, so on a JDK where it
+         * defaults off, reclaiming a port straight after a close never works.
+         */
+        private fun open(port: Int, addr: InetAddress): ServerSocket =
+            ServerSocket().apply {
+                reuseAddress = true
+                bind(InetSocketAddress(addr, port), 64)
+            }
+        private const val READ_TIMEOUT_MS = 30_000
+        private const val MAX_HEADER_BYTES = 32 * 1024
+        private const val MAX_BODY_BYTES = 4 * 1024 * 1024
+
+        fun parseQuery(raw: String): Map<String, String> {
+            if (raw.isEmpty()) return emptyMap()
+            val out = HashMap<String, String>()
+            for (pair in raw.split('&')) {
+                if (pair.isEmpty()) continue
+                val eq = pair.indexOf('=')
+                val key = if (eq < 0) pair else pair.substring(0, eq)
+                val value = if (eq < 0) "" else pair.substring(eq + 1)
+                out[formDecode(key)] = formDecode(value)
+            }
+            return out
+        }
+
+        /** Query values are form-encoded, so "+" is a space. */
+        private fun formDecode(s: String): String =
+            try {
+                URLDecoder.decode(s, "UTF-8")
+            } catch (e: Exception) {
+                s
+            }
+
+        /**
+         * Path segments are percent-encoded but "+" is a literal plus, not a
+         * space — decoding it as one corrupts every image key that contains it.
+         */
+        fun decodePath(s: String): String =
+            try {
+                URLDecoder.decode(s.replace("+", "%2B"), "UTF-8")
+            } catch (e: Exception) {
+                s
+            }
+
+        fun quote(s: String): String {
+            val sb = StringBuilder(s.length + 2)
+            sb.append('"')
+            for (c in s) {
+                when (c) {
+                    '"' -> sb.append("\\\"")
+                    '\\' -> sb.append("\\\\")
+                    '\n' -> sb.append("\\n")
+                    '\r' -> sb.append("\\r")
+                    '\t' -> sb.append("\\t")
+                    else -> if (c < ' ') sb.append("\\u%04x".format(c.code)) else sb.append(c)
+                }
+            }
+            sb.append('"')
+            return sb.toString()
+        }
+
+        fun statusText(code: Int): String = when (code) {
+            200 -> "OK"
+            204 -> "No Content"
+            206 -> "Partial Content"
+            304 -> "Not Modified"
+            400 -> "Bad Request"
+            403 -> "Forbidden"
+            404 -> "Not Found"
+            405 -> "Method Not Allowed"
+            409 -> "Conflict"
+            413 -> "Payload Too Large"
+            431 -> "Request Header Fields Too Large"
+            500 -> "Internal Server Error"
+            502 -> "Bad Gateway"
+            503 -> "Service Unavailable"
+            504 -> "Gateway Timeout"
+            else -> "Status $code"
+        }
+    }
+}
+
+class Request(
+    val method: String,
+    val path: String,
+    val query: Map<String, String>,
+    val headers: Map<String, String>,
+    val body: ByteArray,
+    val keepAlive: Boolean,
+    /**
+     * Who is asking. The whole access decision turns on whether this is
+     * loopback, so it comes from the socket rather than from any header a
+     * client could set — X-Forwarded-For and friends are deliberately ignored.
+     */
+    val remoteAddress: String = HttpServer.LOOPBACK
+) {
+    val bodyText: String get() = body.toString(Charsets.UTF_8)
+
+    /** A parameter from the query string, falling back to a JSON body field. */
+    fun param(name: String): String? = query[name]?.takeIf { it.isNotEmpty() }
+}
+
+class Response(
+    val status: Int,
+    val contentType: String,
+    val body: ByteArray,
+    val headers: Map<String, String> = emptyMap()
+) {
+    companion object {
+        fun json(status: Int, json: String) =
+            Response(status, "application/json; charset=utf-8", json.toByteArray(Charsets.UTF_8))
+
+        fun text(status: Int, text: String) =
+            Response(status, "text/plain; charset=utf-8", text.toByteArray(Charsets.UTF_8))
+
+        fun bytes(
+            status: Int,
+            contentType: String,
+            body: ByteArray,
+            headers: Map<String, String> = emptyMap()
+        ) = Response(status, contentType, body, headers)
+
+        fun notFound() = json(404, """{"error":"Not found"}""")
+    }
+}

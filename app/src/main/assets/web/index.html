@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>MusicD Share Card</title>
+
+<!--
+  The same font MusicD Remote uses, and the same weight set — 300..700, with no
+  800 even though the card draws its score at 800.
+
+  That omission is deliberate rather than an oversight to tidy up: the browser
+  synthesises 800 from 700, and MusicD Remote's card is drawn against exactly
+  that synthesis. Requesting a real 800 here would render a visibly different
+  score to the app this card is supposed to match.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">
+    <span class="dot" aria-hidden="true"></span>
+    <span>Share Card</span>
+  </div>
+  <div class="bar-right">
+    <!-- Populated only when the household has more than one group: a picker
+         offering one choice is a control that cannot be used. -->
+    <label class="zone-wrap hidden" id="zone-wrap">
+      <span class="sr-only">Room</span>
+      <select id="zone" class="zone"></select>
+    </label>
+    <button id="refresh" class="icon-btn" aria-label="Check what is playing now">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="stage" id="stage">
+    <div class="placeholder">
+      <div class="spinner"></div>
+      <div>Looking for what’s playing…</div>
+    </div>
+  </div>
+
+  <p class="now" id="now"></p>
+  <div class="actions" id="actions"></div>
+  <p class="hint" id="hint"></p>
+  <p class="err" id="err" role="status"></p>
+</main>
+
+<script src="/sharecard.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
