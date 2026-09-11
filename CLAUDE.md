@@ -88,6 +88,20 @@ as "no Sonos players found", which is indistinguishable from a network problem.
 - **`optString` is unsafe.** Android's `org.json` returns the literal text
   `"null"` where the desktop one returns `""`. Use `str()` / `strOrNull()`. The
   JVM tests cannot catch this, so `JsonSafeTest` scans the source instead.
+- **Hardening the XML parser is BEST-EFFORT, and every setting must go through
+  `quietly {}`.** `setXIncludeAware` is not implemented by Android and the base
+  class throws `UnsupportedOperationException`. In a static initialiser that
+  does not fail one parse — the `Xml` CLASS never loads, every later use throws
+  `NoClassDefFoundError`, and the app dies. It shipped three times, each release
+  diagnosing a different symptom of the same line. No JVM test can reproduce it,
+  so `ParserHardeningTest` scans the source instead.
+- **Catch `Throwable`, not `Exception`, anywhere a failure must not end the
+  process** — the request path, the topology fetch, the per-zone read. A class
+  that fails to initialise throws an `Error`, which sails through an `Exception`
+  catch and kills the thread. The same Error caught by a `runCatching` one
+  release earlier was silently reported as "would not describe the household",
+  which is why it took three goes to find. Neither is right: a failed request is
+  a 500 and the app stays up.
 - **The XML parser is locked down but NOT namespace-aware, and both halves are
   deliberate.** The XXE features guard documents that arrive over the network
   from a device on the LAN — do not relax those. But `isNamespaceAware` must

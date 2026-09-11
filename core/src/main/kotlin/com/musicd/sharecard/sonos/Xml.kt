@@ -1,5 +1,6 @@
 package com.musicd.sharecard.sonos
 
+import com.musicd.sharecard.Log
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
@@ -22,49 +23,90 @@ import javax.xml.parsers.DocumentBuilderFactory
  */
 internal object Xml {
 
-    private val factory: DocumentBuilderFactory =
+    private const val TAG = "Xml"
+
+    /**
+     * Built once, and NEVER allowed to throw while doing it.
+     *
+     * This class died in a static initialiser on a real device and took the
+     * whole app with it. `setXIncludeAware` is not implemented by Android's
+     * DocumentBuilderFactory, and the base class answers with
+     * `UnsupportedOperationException: This parser does not support
+     * specification "Unknown" version "0.0"`. Thrown from `<clinit>`, that does
+     * not fail one parse — the CLASS never loads, so every later use throws
+     * NoClassDefFoundError, for the life of the process.
+     *
+     * It cost three releases. The `setFeature` calls were already guarded; the
+     * two property setters beside them were not, and they are the ones Android
+     * refuses. So now EVERY setting goes through [quietly], including the
+     * factory's own construction: hardening this parser is best-effort by
+     * nature, because it runs on whatever XML implementation the platform
+     * happens to ship.
+     */
+    private val factory: DocumentBuilderFactory? = buildFactory()
+
+    private fun buildFactory(): DocumentBuilderFactory? = try {
         DocumentBuilderFactory.newInstance().apply {
             // A Sonos reply has no legitimate DOCTYPE, so refusing one outright
-            // costs nothing and closes XXE and billion-laughs together.
-            setFeatureQuietly("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeatureQuietly("http://xml.org/sax/features/external-general-entities", false)
-            setFeatureQuietly("http://xml.org/sax/features/external-parameter-entities", false)
-            setFeatureQuietly(
-                "http://apache.org/xml/features/nonvalidating/load-external-dtd", false
-            )
-            isXIncludeAware = false
-            isExpandEntityReferences = false
+            // costs nothing and closes XXE and billion-laughs together. This is
+            // the one that actually matters, which is why its failure is a
+            // warning rather than a shrug.
+            quietly("disallow-doctype-decl", loud = true) {
+                setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            }
+            quietly("external-general-entities") {
+                setFeature("http://xml.org/sax/features/external-general-entities", false)
+            }
+            quietly("external-parameter-entities") {
+                setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            }
+            quietly("load-external-dtd") {
+                setFeature(
+                    "http://apache.org/xml/features/nonvalidating/load-external-dtd", false
+                )
+            }
+            // THE LINE THAT KILLED THE APP. Android does not implement it.
+            quietly("XInclude") { isXIncludeAware = false }
+            quietly("expand-entity-references") { isExpandEntityReferences = false }
 
             // NAMESPACE-AWARE PARSING IS OFF, AND THAT IS THE POINT.
             //
             // A namespace-aware parser REJECTS THE WHOLE DOCUMENT if any
             // element uses a prefix that is not declared — "The prefix 'u' for
             // element 'u:GetZoneGroupStateResponse' is not bound". Not the
-            // element: the document. One stray prefix anywhere in a reply and
-            // there is no topology, no DIDL, and nothing to say why beyond
-            // "that was not XML".
-            //
-            // Sonos replies are full of prefixes (s:, u:, dc:, upnp:, r:) and
-            // they are assembled by several different services and music
-            // providers, any of which can emit one without a declaration. A
-            // strict parser turns somebody else's sloppy XML into this app
-            // reporting that it cannot see their speakers.
+            // element: the document. Sonos replies are full of prefixes (s:, u:,
+            // dc:, upnp:, r:), assembled by several services and music
+            // providers, any of which can emit one without a declaration.
             //
             // Nothing here reads a namespace URI: every lookup goes through
             // [localName], which strips the prefix from the tag name itself. So
-            // awareness buys this app exactly nothing and costs it every reply
-            // that is not perfectly formed. The XXE protections above are what
-            // actually matter for safety, and they are unaffected.
-            isNamespaceAware = false
+            // awareness buys this app nothing and costs it every reply that is
+            // not perfectly formed.
+            quietly("namespace-aware") { isNamespaceAware = false }
         }
+    } catch (e: Throwable) {
+        // Throwable, not Exception: the failure this is standing in for was an
+        // Error, and a parser that cannot be built must leave the app able to
+        // say so rather than unable to start.
+        Log.e(TAG, "could not build an XML parser factory", e)
+        null
+    }
 
-    private fun DocumentBuilderFactory.setFeatureQuietly(name: String, value: Boolean) {
+    /**
+     * Apply one optional setting, surviving a platform that refuses it.
+     *
+     * [loud] marks the settings whose absence is worth knowing about — losing
+     * the DOCTYPE ban is a real weakening, where losing XInclude is not.
+     */
+    private inline fun quietly(what: String, loud: Boolean = false, body: () -> Unit) {
         try {
-            setFeature(name, value)
-        } catch (e: Exception) {
-            // An implementation that does not know the feature is not a reason
-            // to refuse to start; the ones that matter are supported by both
-            // the JDK's parser and Android's.
+            body()
+        } catch (e: Throwable) {
+            if (loud) {
+                Log.w(TAG, "this platform's XML parser would not accept $what: ${e.message}")
+            } else {
+                Log.d(TAG, "XML parser setting $what not supported: ${e.message}")
+            }
         }
     }
 
@@ -72,13 +114,16 @@ internal object Xml {
     fun parse(text: String): Element? {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return null
+        val factory = this.factory ?: return null
         return try {
             // The builder is not thread-safe; the factory is only safe to share
             // because it is never reconfigured after construction.
             val builder = synchronized(factory) { factory.newDocumentBuilder() }
             builder.parse(ByteArrayInputStream(trimmed.toByteArray(Charsets.UTF_8)))
                 .documentElement
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable: a parser on an unfamiliar platform can answer with an
+            // Error, and one bad reply must not end the process.
             null
         }
     }
