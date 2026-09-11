@@ -68,6 +68,22 @@ nobody is in the room to read.
 Sideload the APK on Android 8.0 (API 26) or newer. It is built by CI from the
 source here, so it is never a hand-built binary of unknown provenance.
 
+Every CI run produces two APKs, and **which one you want depends on whether the
+signing secret is set up**:
+
+| Artifact | Installs? | Use it when |
+| --- | --- | --- |
+| `…-debug.apk` | yes | There is no signing key yet. Signed with the runner's own debug key. |
+| `…-UNSIGNED.apk` | **no** | Never — it exists only so a keyless build still fails loudly rather than silently publishing. |
+| `…-<version>.apk` | yes | Once `SHARECARD_KEYSTORE_BASE64` is set. This is the real release. |
+
+The debug APK carries two costs worth knowing about. It is `debuggable`, so
+anything with adb access to the device can attach to it — fine on a home
+network, not something to leave on a machine you do not control. And the debug
+key is generated per runner, so the **next** debug build will not install as an
+update: uninstall first, which also clears `hosts.txt`. Setting the signing
+secret (see [Signing](#signing)) removes both problems permanently.
+
 It is meant to live on something that is always on and always on the network —
 a FiiO R7, a tablet in a dock, an old phone on a charger — so the card is
 reachable from a browser without anyone having to go and wake it up.

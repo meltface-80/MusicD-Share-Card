@@ -118,6 +118,40 @@ jobs:
         timeout-minutes: 20
         run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
 
+      # AN INSTALLABLE APK, ALWAYS — whether or not the signing secret exists.
+      #
+      # The release build is deliberately left UNSIGNED when the secret is
+      # missing, because an APK signed with a throwaway key looks fine and can
+      # never be updated over. That is the right call for a published release
+      # and the wrong one for somebody who just wants to try the thing, because
+      # unsigned installs nowhere at all.
+      #
+      # So a debug APK is built alongside it. Gradle signs it with the runner's
+      # own debug key, which means it installs — and it carries the two costs
+      # that come with that, both named in the README: it is `debuggable`, and
+      # the key is different on every runner, so the NEXT debug build has to be
+      # installed over an uninstall rather than as an update.
+      #
+      # Once SHARECARD_KEYSTORE_BASE64 exists, the release APK is the one to
+      # install and this becomes a convenience.
+      - name: Assemble the debug APK
+        timeout-minutes: 25
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Name the debug APK after the version
+        id: debugname
+        run: |
+          apk=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
+          version=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          out="musicd-share-card-${version}-debug.apk"
+          cp "$apk" "$out"
+          echo "apk=$out" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.debugname.outputs.apk }}
+          path: ${{ steps.debugname.outputs.apk }}
+
       - name: Assemble the release APK
         timeout-minutes: 25
         env:
