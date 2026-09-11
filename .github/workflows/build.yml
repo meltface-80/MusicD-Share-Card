@@ -211,14 +211,24 @@ jobs:
       #
       # This pushes with GITHUB_TOKEN, and GitHub deliberately does not fire
       # workflows for pushes made with it — so this cannot start a build loop.
+      #
+      # WHICH APK GETS PUBLISHED. Whichever one can actually be installed: the
+      # release APK once the signing secret exists, and the debug APK until
+      # then. The unsigned release is never published — it installs nowhere, and
+      # a dist/ link that downloads a dead file is worse than no link.
       - name: Publish the APK into dist/
-        if: >-
-          github.event_name == 'push' && github.ref_type == 'branch'
-          && steps.signing.outputs.have_key == 'true'
+        if: github.event_name == 'push' && github.ref_type == 'branch'
         env:
-          APK: ${{ steps.name.outputs.apk }}
+          RELEASE_APK: ${{ steps.name.outputs.apk }}
+          DEBUG_APK: ${{ steps.debugname.outputs.apk }}
+          HAVE_KEY: ${{ steps.signing.outputs.have_key }}
         run: |
           set -euo pipefail
+          if [ "$HAVE_KEY" = "true" ]; then
+            APK="$RELEASE_APK"
+          else
+            APK="$DEBUG_APK"
+          fi
           if [ -f "dist/$APK" ]; then
             echo "dist/$APK is already committed — nothing to publish."
             exit 0
@@ -238,8 +248,9 @@ jobs:
           cat > dist/latest.json <<JSON
           {
             "version": "$version",
-            "url": "https://github.com/${GITHUB_REPOSITORY}/raw/main/dist/$APK",
+            "url": "https://github.com/${GITHUB_REPOSITORY}/raw/${GITHUB_REF_NAME}/dist/$APK",
             "sha256": "$sha",
+            "signed": $( [ "$HAVE_KEY" = "true" ] && echo true || echo false ),
             "notes": "Built from ${GITHUB_SHA}."
           }
           JSON
