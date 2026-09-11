@@ -61,6 +61,19 @@ as "no Sonos players found", which is indistinguishable from a network problem.
 
 ## Things about this codebase that are easy to get wrong
 
+- **The art proxy allows two things and nothing else: a KNOWN player, or a
+  confidently public https host.** Not "anything that looks private" — that
+  refused the absolute CDN link Spotify Connect reports (a blank sleeve on a
+  card the Sonos app rendered fine) while permitting `127.0.0.1` and
+  `169.254.169.254`. And "public" must be proved, not assumed from "not
+  recognised as private": `0177.0.0.1` is octal for loopback, and refusing to
+  classify it made it pass. Every numeric host must be a clean unambiguous
+  public quad; only a name gets the benefit of the doubt.
+- **A source can report an opaque id where a title should be.** Roon streaming
+  to Sonos sends "Roon" + 32 hex characters as `dc:title`. A card headed with a
+  hash looks like the app working, which is worse than one that admits it knows
+  nothing — see `Didl.looksLikeStreamId`, kept deliberately narrow because the
+  cost of a false positive is discarding a real album.
 - **The cover MUST be proxied.** A canvas that has drawn a cross-origin image
   cannot be read back: `toBlob` throws and there is no card. Sonos sends no CORS
   header, so pointing the page at a player directly can never work, however much

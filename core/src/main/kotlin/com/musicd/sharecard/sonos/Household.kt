@@ -263,6 +263,13 @@ class Household(
             ?: all.firstOrNull { group -> group.members.any { it.uid == uid } }
     }
 
+    /** Exactly what a coordinator reports, unparsed. For the diagnostics page. */
+    fun rawFor(group: Group): Map<String, String> = try {
+        playerAt(group.coordinator.ip).rawNowPlaying()
+    } catch (e: Throwable) {
+        mapOf("error" to "${e.javaClass.simpleName}: ${e.message ?: "no message"}")
+    }
+
     /** What one group's transport is doing, asked directly. */
     fun stateOf(group: Group): ZoneState? {
         val player = playerAt(group.coordinator.ip)

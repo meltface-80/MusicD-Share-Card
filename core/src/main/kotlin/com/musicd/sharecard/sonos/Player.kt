@@ -74,6 +74,15 @@ interface Transport {
     fun transportState(): TransportState
     fun positionInfo(): NowPlaying
     fun mediaInfo(): Pair<NowPlaying, String>
+
+    /**
+     * The unparsed AVTransport reply, for the diagnostics page.
+     *
+     * Every source populates DIDL-Lite differently and two of them arrived in
+     * shapes that had to be guessed at from a photograph of a card. Showing
+     * exactly what a player said is how that stops being guesswork.
+     */
+    fun rawNowPlaying(): Map<String, String> = emptyMap()
 }
 
 /** A thin, typed wrapper around one player's UPnP services. */
@@ -113,6 +122,17 @@ class SonosPlayer(val ip: String, private val soap: SoapClient) : Transport {
         val result = avt("GetMediaInfo")
         return Didl.parse(result["CurrentURIMetaData"].orEmpty()) to
             result["CurrentURI"].orEmpty()
+    }
+
+    override fun rawNowPlaying(): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        runCatching { avt("GetPositionInfo") }
+            .onSuccess { for ((k, v) in it) if (v.isNotEmpty()) out["position.$k"] = v }
+            .onFailure { out["position.error"] = it.message.orEmpty() }
+        runCatching { avt("GetMediaInfo") }
+            .onSuccess { for ((k, v) in it) if (v.isNotEmpty()) out["media.$k"] = v }
+            .onFailure { out["media.error"] = it.message.orEmpty() }
+        return out
     }
 }
 

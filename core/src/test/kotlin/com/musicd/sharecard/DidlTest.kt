@@ -141,6 +141,58 @@ class DidlTest {
         assertEquals("Real Album", np.album)
     }
 
+    /**
+     * Roon streaming to Sonos reports its session id as the track title.
+     *
+     * A card headed "Roon698eb0332b8c432d98294f5a377f3a11" looks like the app
+     * working, which is worse than one that admits it knows nothing.
+     */
+    @Test
+    fun `an opaque session id is not used as an album title`() {
+        val np = Didl.parse(
+            didl(
+                """
+                <item>
+                  <dc:title>Roon698eb0332b8c432d98294f5a377f3a11</dc:title>
+                  <res protocolInfo="http-get:*:audio/flac:*">http://10.0.0.9:9200/stream</res>
+                </item>
+                """
+            )
+        )
+        assertEquals("Roon698eb0332b8c432d98294f5a377f3a11", np.track)
+        assertEquals("the card must not be headed with a hash", "", np.displayAlbum)
+    }
+
+    @Test
+    fun `a real album title is never mistaken for an identifier`() {
+        // The cost of getting this wrong is throwing away a real record, so the
+        // test is narrow on purpose.
+        assertFalse(Didl.looksLikeStreamId("Kind of Blue"))
+        assertFalse(Didl.looksLikeStreamId("Ænima"))
+        assertFalse(Didl.looksLikeStreamId("OK Computer"))
+        assertFalse(Didl.looksLikeStreamId("1989"))
+        assertFalse(Didl.looksLikeStreamId("Face"))          // short, all hex
+        assertFalse(Didl.looksLikeStreamId("Deadbeef"))      // hex but only 8
+        assertFalse(Didl.looksLikeStreamId("The Decca Sessions 1934"))
+        assertTrue(Didl.looksLikeStreamId("Roon698eb0332b8c432d98294f5a377f3a11"))
+        assertTrue(Didl.looksLikeStreamId("698eb0332b8c432d98294f5a377f3a11"))
+    }
+
+    @Test
+    fun `an album that IS present always wins over the identifier rule`() {
+        val np = Didl.parse(
+            didl(
+                """
+                <item>
+                  <dc:title>Roon698eb0332b8c432d98294f5a377f3a11</dc:title>
+                  <upnp:album>Spiderland</upnp:album>
+                </item>
+                """
+            )
+        )
+        assertEquals("Spiderland", np.displayAlbum)
+    }
+
     // ------------------------------------------------------------ art URIs
 
     @Test

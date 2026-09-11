@@ -470,6 +470,12 @@
       section("Rooms", d.zones.map((z) =>
         z.name + " (" + z.ip + ") — " + z.state +
         (z.album ? ": " + z.album + (z.artist ? " by " + z.artist : "") : "")));
+      // What each player actually reported, verbatim. This is the section to
+      // send on when a card comes out wrong for one source and right for
+      // another.
+      for (const z of d.zones) {
+        if (z.raw && z.raw.length) section("Raw reply — " + z.name, z.raw);
+      }
     }
     hintEl.innerHTML = "";
     nowEl.innerHTML = "";

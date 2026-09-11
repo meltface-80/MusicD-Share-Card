@@ -52,11 +52,17 @@ data class NowPlaying(
     /**
      * What the card calls the record.
      *
-     * Falling back to the track title is not a nicety. Radio and line-in carry
-     * no album at all, and a card with an empty headline is worse than one
-     * headed with the only name the source gave us.
+     * Falling back to the track title is not a nicety: radio and line-in carry
+     * no album at all, and a card headed with the only name the source gave us
+     * beats an empty one.
+     *
+     * But NOT when that name is an opaque identifier. Roon streaming to Sonos
+     * reports a title of "Roon" followed by 32 hex characters — its session id —
+     * and a card headed "Roon698eb0332b8c432d98294f5a377f3" is worse than a card
+     * that admits it knows nothing, because it looks like the app working.
      */
-    val displayAlbum: String get() = album.ifEmpty { track }
+    val displayAlbum: String
+        get() = album.ifEmpty { if (Didl.looksLikeStreamId(track)) "" else track }
 }
 
 /**
@@ -157,6 +163,23 @@ object Didl {
             // either way the card draws without a cover rather than throwing.
             ""
         }
+    }
+
+    /**
+     * An opaque machine identifier rather than something a person named.
+     *
+     * Roon hands Sonos a title of "Roon" + 32 hex characters, which is its
+     * session id and not a record. The test is deliberately narrow — one
+     * unbroken token whose tail is a long run of hex — because the cost of
+     * getting it wrong is discarding a real album title. No record is called
+     * "698eb0332b8c432d98294f5a377f3a11", and every real one either contains a
+     * space or is not sixteen-plus hex characters long.
+     */
+    fun looksLikeStreamId(text: String): Boolean {
+        val t = text.trim()
+        if (t.length < 16 || t.any { it.isWhitespace() }) return false
+        val hexTail = t.takeLastWhile { it.isDigit() || it.lowercaseChar() in 'a'..'f' }
+        return hexTail.length >= 16
     }
 
     /**

@@ -16,56 +16,108 @@ import org.junit.Test
  */
 class ArtProxyTest {
 
-    private val proxy = ArtProxy(metadataHttpClient())
-
-    @Test
-    fun `a Sonos player on the LAN is allowed`() {
-        assertTrue(proxy.isAllowed("http://192.168.1.40:1400/getaa?u=x&v=53"))
-        assertTrue(proxy.isAllowed("http://10.0.0.5:1400/getaa?u=x"))
-        assertTrue(proxy.isAllowed("http://172.16.4.1:1400/getaa"))
-        assertTrue(proxy.isAllowed("http://172.31.255.254:1400/getaa"))
+    /** A household with two discovered players, as topology would report. */
+    private val proxy = ArtProxy(metadataHttpClient()) {
+        listOf("192.168.0.93", "192.168.0.192")
     }
 
     @Test
-    fun `the public internet is refused`() {
-        assertFalse(proxy.isAllowed("https://example.com/cover.jpg"))
-        assertFalse(proxy.isAllowed("http://93.184.216.34/cover.jpg"))
-        // 172.32 is OUTSIDE the private /12, and an off-by-one here would open
-        // the proxy to a public range.
-        assertFalse(proxy.isAllowed("http://172.32.0.1/cover.jpg"))
-        assertFalse(proxy.isAllowed("http://172.15.0.1/cover.jpg"))
+    fun `a discovered player is allowed`() {
+        assertTrue(proxy.isAllowed("http://192.168.0.93:1400/getaa?u=x&v=53"))
+        assertTrue(proxy.isAllowed("http://192.168.0.192:1400/getaa?u=x"))
     }
 
     @Test
-    fun `a hostname is refused even if it would resolve privately`() {
-        // Resolving first would let the answer change between the check and
-        // the fetch. Sonos art URLs are always literal addresses.
-        assertFalse(proxy.isAllowed("http://sonos.local/getaa"))
-        assertFalse(proxy.isAllowed("http://evil.example/getaa"))
+    fun `a LAN address that is NOT one of our players is refused`() {
+        // The old rule allowed anything that looked private, which made this
+        // app a fetcher for every other box on the network.
+        assertFalse(proxy.isAllowed("http://192.168.0.50:1400/getaa"))
+        assertFalse(proxy.isAllowed("http://10.0.0.5:8080/secret"))
+        assertFalse(proxy.isAllowed("http://172.16.4.1/x"))
+    }
+
+    /**
+     * The bug that left a Spotify Connect card with a blank sleeve.
+     *
+     * Spotify reports its art as an absolute CDN link rather than a player
+     * path, and the proxy refused it because it was not a private address —
+     * while the Sonos app showed the cover perfectly.
+     */
+    @Test
+    fun `a music service CDN over https is allowed`() {
+        assertTrue(proxy.isAllowed("https://i.scdn.co/image/ab67616d0000b273abcdef"))
+        assertTrue(proxy.isAllowed("https://is1-ssl.mzstatic.com/image/thumb/x/100x100bb.jpg"))
+        assertTrue(proxy.isAllowed("https://resources.tidal.com/images/x/640x640.jpg"))
+    }
+
+    /**
+     * The half the old rule had backwards. These are the addresses an SSRF
+     * guard exists to protect, and it was letting every one of them through.
+     */
+    @Test
+    fun `loopback and the metadata endpoint are refused`() {
+        assertFalse(proxy.isAllowed("http://127.0.0.1:8747/api/debug"))
+        assertFalse(proxy.isAllowed("http://localhost/x"))
+        assertFalse(proxy.isAllowed("https://169.254.169.254/latest/meta-data/"))
+        assertFalse("our own card server must not be fetchable through itself",
+            proxy.isAllowed("http://127.0.0.1/"))
+    }
+
+    @Test
+    fun `plain http to the public internet is refused`() {
+        // A known player is reached over http because Sonos offers nothing
+        // else. Everything beyond the LAN has no such excuse.
+        assertFalse(proxy.isAllowed("http://i.scdn.co/image/x"))
     }
 
     @Test
     fun `a scheme that is not http is refused`() {
         assertFalse(proxy.isAllowed("file:///etc/passwd"))
-        assertFalse(proxy.isAllowed("ftp://192.168.1.1/x"))
-        assertFalse(proxy.isAllowed("gopher://192.168.1.1/x"))
+        assertFalse(proxy.isAllowed("ftp://192.168.0.93/x"))
         assertFalse(proxy.isAllowed(""))
         assertFalse(proxy.isAllowed("not a url"))
     }
 
     @Test
-    fun `an octal-looking address is refused rather than guessed at`() {
-        // Some resolvers read a leading zero as octal and some as decimal, so
-        // "0177.0.0.1" can mean two different hosts. Neither is worth serving.
-        assertFalse(proxy.isAllowed("http://0177.0.0.1/x"))
-        assertFalse(proxy.isAllowed("http://010.0.0.1/x"))
+    fun `other numeric forms of loopback are refused`() {
+        // 0177.0.0.1 is octal for 127.0.0.1 and 2130706433 is its decimal
+        // form. Neither may pass as "not recognised as private, so public".
+        assertFalse(proxy.isAllowed("https://2130706433/x"))
+        assertFalse(proxy.isAllowed("https://192.168.0.93.1/x"))
+        assertFalse(proxy.isAllowed("https://1.2.3/x"))
+        assertFalse(proxy.isPublicHost("0177.0.0.1"))
+        assertFalse(proxy.isPublicHost("2130706433"))
     }
 
     @Test
-    fun `an address with too few or too many parts is refused`() {
-        assertFalse(proxy.isPrivateHost("192.168.1"))
-        assertFalse(proxy.isPrivateHost("192.168.1.1.1"))
-        assertFalse(proxy.isPrivateHost("192.168.1.999"))
-        assertFalse(proxy.isPrivateHost("192.168.one.1"))
+    fun `carrier-grade NAT and multicast are not public either`() {
+        assertFalse(proxy.isPublicHost("100.64.0.1"))
+        assertFalse(proxy.isPublicHost("239.255.255.250"))
+        assertFalse(proxy.isPublicHost("0.0.0.0"))
+    }
+
+    @Test
+    fun `an IPv6 literal is refused rather than classified`() {
+        assertFalse(proxy.isAllowed("https://[::1]/x"))
+        assertFalse(proxy.isAllowed("https://[::ffff:127.0.0.1]/x"))
+    }
+
+    @Test
+    fun `an octal-looking address is not mistaken for a public host`() {
+        // Some resolvers read a leading zero as octal and some as decimal, so
+        // "0177.0.0.1" can mean two different hosts. It is not a known player,
+        // so it must not pass as "public" either.
+        assertFalse(proxy.isAllowed("https://0177.0.0.1/x"))
+        assertFalse(proxy.isAllowed("https://010.0.0.1/x"))
+    }
+
+    @Test
+    fun `private ranges are still recognised as private`() {
+        assertTrue(proxy.isPrivateHost("10.1.2.3"))
+        assertTrue(proxy.isPrivateHost("172.31.255.254"))
+        assertTrue(proxy.isPrivateHost("192.168.1.1"))
+        assertTrue(proxy.isPrivateHost("169.254.169.254"))
+        assertFalse(proxy.isPrivateHost("172.32.0.1"))
+        assertFalse(proxy.isPrivateHost("93.184.216.34"))
     }
 }
