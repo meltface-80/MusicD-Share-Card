@@ -110,6 +110,18 @@ as "no Sonos players found", which is indistinguishable from a network problem.
   an overlay on the image each kill it silently, and the loss is invisible until
   somebody actually holds a finger on the card.
 
+- **startForeground() is the FIRST thing CardService.onCreate does.** A start
+  delivered as `startForegroundService` must be answered within about five
+  seconds or the system kills the process — with no dialog, no trace and nothing
+  in the app to say why. Doing the multicast lock, a file read and a socket bind
+  before it put all of that inside the window, and the app closed silently.
+  Everything else runs on `sharecard-startup`, off the main thread.
+- **The app records its own crashes.** `CrashLog` is installed from
+  `ShareCardApplication.onCreate`, ahead of the Activity and the Service, and
+  the trace is shown on the next launch and served at `/api/debug`. This device
+  is normally in another room with no adb attached; without it, "it just closes"
+  is the whole bug report.
+
 ## Scope and process
 
 - Develop on the branch named in the task. Never push to another branch.

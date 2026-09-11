@@ -28,7 +28,8 @@ class CardApi(
     private val pitchfork: Pitchfork,
     private val art: ArtProxy,
     private val assets: Assets,
-    private val version: String
+    private val version: String,
+    private val hostNotes: () -> List<String> = { emptyList() }
 ) : HttpServer.Handler {
 
     override fun handle(request: Request): Response {
@@ -49,7 +50,7 @@ class CardApi(
         "/api/now-playing" -> nowPlaying(request)
         "/api/extras" -> extras(request)
         "/api/art" -> artwork(request)
-        "/api/debug" -> Json.obj(Diagnostics(household).run())
+        "/api/debug" -> Json.obj(Diagnostics(household, hostNotes).run())
         else -> static(request.path)
     }
 
