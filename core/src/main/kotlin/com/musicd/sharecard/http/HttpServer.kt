@@ -138,7 +138,13 @@ class HttpServer(
 
                 val response = try {
                     handler.handle(request)
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
+                    // Throwable, NOT Exception. A class that fails to
+                    // initialise throws NoClassDefFoundError, which is an Error
+                    // — it sailed straight through an Exception catch, killed
+                    // this worker thread, and took the process with it. The
+                    // request that caused it deserves a 500; the app deserves
+                    // to still be running.
                     Log.w(TAG, "handler threw for ${request.path}: ${e.message}", e)
                     Response.json(500, """{"error":${quote(e.message ?: "Internal error")}}""")
                 }

@@ -38,9 +38,12 @@ class CardApi(
         }
         return try {
             route(request)
-        } catch (e: Exception) {
-            Log.w(TAG, "${request.path} threw: ${e.message}", e)
-            Json.error(500, e.message ?: "Internal error")
+        } catch (e: Throwable) {
+            // Throwable, not Exception: a NoClassDefFoundError from a class that
+            // failed to initialise is an Error, and catching only Exception let
+            // one escape all the way out and end the process.
+            Log.w(TAG, "${request.path} threw: $e", e)
+            Json.error(500, "${e.javaClass.simpleName}: ${e.message ?: "no message"}")
         }
     }
 

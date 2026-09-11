@@ -206,11 +206,12 @@ class Household(
         for (host in knownHosts) {
             val answer = try {
                 playerAt(host).zoneGroupState()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // Warn, not debug. This is the failure that produces "no players
                 // found", and a message nobody can see is the reason that was a
                 // guessing game twice over.
-                val why = (e as? SoapError)?.detail ?: "${e.javaClass.simpleName}: ${e.message}"
+                val why = (e as? SoapError)?.detail
+                    ?: "${e.javaClass.simpleName}: ${e.message ?: "no message"}"
                 Log.w(TAG, "$host would not describe the household: $why")
                 errors += "$host — $why"
                 null
@@ -277,7 +278,7 @@ class Household(
                 NowPlaying() to ""
             }
             ZoneState(group, transport, merge(track, media), uri)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w(TAG, "${group.coordinator.name} would not answer: ${e.message}")
             null
         }
