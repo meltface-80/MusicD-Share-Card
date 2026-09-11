@@ -95,6 +95,18 @@ class Diagnostics(
                         .put("artist", state?.nowPlaying?.displayArtist.orEmpty())
                         .put("track", state?.nowPlaying?.track.orEmpty())
                         .put("hasArt", !state?.nowPlaying?.artUri.isNullOrEmpty())
+                        .put("art", state?.nowPlaying?.artUri.orEmpty())
+                        // The unparsed reply. Every source fills DIDL-Lite in
+                        // differently, and reading the real thing beats
+                        // inferring it from what a card came out looking like.
+                        .put(
+                            "raw",
+                            Json.strings(
+                                household.rawFor(group).map { (k, v) ->
+                                    k + " = " + (if (v.length > 400) v.take(400) + "…" else v)
+                                }
+                            )
+                        )
                 }
             )
         )

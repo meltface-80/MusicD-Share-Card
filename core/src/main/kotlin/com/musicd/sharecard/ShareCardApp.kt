@@ -51,7 +51,9 @@ class ShareCardApp(
 
     private val metadata = Metadata(metaHttp, userAgent(version))
     private val pitchfork = Pitchfork(metaHttp, userAgent(version))
-    private val art = ArtProxy(soapHttpClient())
+    // The art proxy is told which players exist so a LAN fetch is limited to
+    // them rather than to "anything that looks local".
+    private val art = ArtProxy(metaHttp) { household.knownHosts }
 
     private val api = CardApi(household, metadata, pitchfork, art, assets, version, hostNotes)
 
