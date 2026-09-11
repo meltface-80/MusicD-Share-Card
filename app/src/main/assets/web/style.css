@@ -252,3 +252,46 @@ body {
 @media (max-width: 420px) {
   .actions button, .actions a { flex: 1 1 100%; justify-content: center; }
 }
+
+/* -------------------------------------------------------------- diagnostics
+ *
+ * Shown only when discovery has failed. It is a wall of facts on purpose: the
+ * person reading it is stuck, and the thing that gets them unstuck is seeing
+ * which step of the chain came back empty.
+ */
+.diag {
+  padding: 22px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  width: 100%;
+  /* A long scan on a /22 can list a lot; the panel scrolls rather than
+     pushing the page to an unusable length. */
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.diag-advice {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(212,160,23,.10);
+  border: 1px solid rgba(212,160,23,.35);
+}
+
+.diag h3 {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin: 16px 0 6px;
+}
+
+.diag ul { margin: 0; padding-left: 18px; }
+/* Addresses and interface names, which must not be re-wrapped mid-token. */
+.diag li { margin: 2px 0; overflow-wrap: anywhere; }

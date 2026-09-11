@@ -78,7 +78,8 @@
     const paths = {
       share: '<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/>',
       copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
-      download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>'
+      download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
+      search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>'
     };
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]}</svg>`;
@@ -193,9 +194,14 @@
 
       if (!playing.album && !playing.artist) {
         message(playing.reason || "Nothing is playing.");
-        hintEl.textContent = playing.reason && playing.reason.includes("No Sonos")
-          ? "Check that this device is on the same network as your speakers, then press refresh."
+        var noPlayers = !playing.reason || playing.reason.indexOf("No Sonos") === 0 ||
+          playing.reason.indexOf("would answer") > 0;
+        hintEl.textContent = noPlayers
+          ? "The app cannot see your speakers. Run the check below to find out why."
           : "Start something on a Sonos zone, then press refresh.";
+        // A dead end with no next step is what made the first failure so hard
+        // to act on: the app knew far more than it was saying.
+        if (noPlayers) offerDiagnostics();
         return;
       }
 
@@ -416,6 +422,56 @@
     hintEl.textContent = isIOS
       ? "Press and hold the card to copy it, save it to Photos or share it."
       : "";
+  }
+
+  /*
+   * The "why can't it see my speakers" button.
+   *
+   * Only drawn when discovery has actually failed, because it runs a real scan
+   * and takes several seconds — it is a thing to reach for when stuck, not a
+   * control to have sitting on a working page.
+   */
+  function offerDiagnostics() {
+    actions.innerHTML = "";
+    var b = button("primary", "Find my speakers", "search");
+    b.onclick = async () => {
+      errEl.textContent = "";
+      b.disabled = true;
+      var span = b.querySelector("span");
+      if (span) span.textContent = "Looking…";
+      try {
+        report(await getJson("/api/debug"));
+      } catch (e) {
+        errEl.textContent = (e && e.message) ? e.message : String(e);
+      } finally {
+        b.disabled = false;
+        if (span) span.textContent = "Run it again";
+      }
+    };
+    actions.appendChild(b);
+  }
+
+  function report(d) {
+    var rows = [];
+    rows.push("<p class=\"diag-advice\">" + escapeHtml(d.advice || "") + "</p>");
+
+    function section(title, items) {
+      if (!items || !items.length) return;
+      rows.push("<h3>" + escapeHtml(title) + "</h3><ul>" +
+        items.map((i) => "<li>" + escapeHtml(String(i)) + "</li>").join("") + "</ul>");
+    }
+    section("This device's networks", d.interfaces);
+    section("Multicast (SSDP)", (d.ssdp && d.ssdp.notes) || []);
+    section("Direct scan of this subnet", (d.scan && d.scan.notes) || []);
+    section("Addresses being tried", d.hosts);
+    if (d.zones && d.zones.length) {
+      section("Rooms", d.zones.map((z) =>
+        z.name + " (" + z.ip + ") — " + z.state +
+        (z.album ? ": " + z.album + (z.artist ? " by " + z.artist : "") : "")));
+    }
+    hintEl.innerHTML = "";
+    nowEl.innerHTML = "";
+    show("<div class=\"diag\">" + rows.join("") + "</div>");
   }
 
   function flash(b, text) {

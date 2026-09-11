@@ -44,6 +44,18 @@ class CardService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.sink = LogcatSink()
+        // ON, not off.
+        //
+        // Log.debug defaults to false, and every diagnosis of a failed lookup in
+        // this app goes through Log.d — so with it off, a speaker that would not
+        // answer, a SOAP call that threw and a cover that 404'd were all
+        // completely silent, in logcat and everywhere else. The first real
+        // failure was debugged without a single line of evidence because of it.
+        //
+        // This app makes a handful of requests when somebody opens a page. It is
+        // not a hot loop, and the cost of the logging is nothing next to the
+        // cost of not having it.
+        Log.debug = true
         instance = this
 
         takeMulticastLock()
