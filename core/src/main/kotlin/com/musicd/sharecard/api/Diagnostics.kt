@@ -69,6 +69,9 @@ class Diagnostics(private val household: Household) {
         report.put("hosts", Json.strings(household.knownHosts))
         report.put("discovery", Json.strings(household.lastDiscovery))
         report.put("reachable", household.reachable)
+        // The line that turns "would not describe the household" into something
+        // actionable: what each player actually said back.
+        report.put("errors", Json.strings(household.lastTopologyErrors))
         report.put(
             "zones",
             Json.array(
@@ -109,11 +112,10 @@ class Diagnostics(private val household: Household) {
         subnets.isEmpty() ->
             "This device has no usable IPv4 network address. It is not on the " +
                 "network the speakers are on — check wifi or ethernet."
-        !scan?.hosts.isNullOrEmpty() ->
-            "Something is listening on port ${com.musicd.sharecard.sonos.Sonos.PORT} " +
-                "but would not describe the household. That is usually a device " +
-                "that is not a Sonos player. Put a known speaker's address in " +
-                "hosts.txt to be certain."
+        !scan?.hosts.isNullOrEmpty() || !sweep?.hosts.isNullOrEmpty() ->
+            "Players were found and reached, but none would describe the " +
+                "household. The exact reason each one gave is under “What the " +
+                "players said” below — that is the thing to act on."
         sweep?.hosts.isNullOrEmpty() != false ->
             "Neither multicast nor a direct scan of this device's own subnet " +
                 "found a player. The most likely cause is that this device is on " +
