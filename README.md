@@ -1,16 +1,31 @@
 # MusicD Share Card
 
-A native Android app that makes a share card for whatever is playing on your
-Sonos — and serves the same card to any browser in the house.
+A native Android app that makes a share card for whatever is playing — and
+serves the same card to any browser in the house.
 
 Open it and the card is there. It does not matter where the music came from:
 Roon, Spotify Connect, Apple Music through the Sonos app, a Sonos playlist, a
-radio station. The app asks the speakers what is on their transport, and every
-source ends up in the same place.
+radio station, or anything on a DLNA renderer.
 
-**The card is the same picture
-[MusicD Remote Lite](https://github.com/meltface-80/Android-Random-Remote)
-draws.** `sharecard.js` is that app's file, ported unmodified, so a record shared
+**It asks whoever actually knows.** That is the whole design. Roon streaming to
+a Sonos speaker hands the speaker a session id where the title should be — read
+through the speaker the record is not there at all — so Roon is asked directly,
+through its own extension API, and answers with the album, the artist and a real
+cover. The speakers are asked about what the speakers themselves stream. A DLNA
+renderer is asked in plain UPnP.
+
+| Source | Used for | Gives |
+| --- | --- | --- |
+| **Roon** | anything Roon is playing, anywhere | album, artist, cover, from the Core |
+| **Sonos** | Spotify Connect, Apple Music via the Sonos app, radio | DIDL-Lite off the coordinator |
+| **UPnP / DLNA** | any other renderer on the network | DIDL-Lite off its AVTransport |
+
+Adding another source means implementing one interface. The card, the page and
+the API do not change.
+
+**The card — and now the Roon client — come from
+[MusicD Remote Lite](https://github.com/meltface-80/Android-Random-Remote).**
+The card is the same picture it draws. `sharecard.js` is that app's file, ported unmodified, so a record shared
 from Sonos and the same record shared from Roon produce matching cards. The album
 blurb, the release year and the Pitchfork score come from the same lookups too.
 
@@ -147,6 +162,16 @@ adb push hosts.txt /sdcard/Android/data/com.musicd.sharecard/files/hosts.txt
 
 One address per line; `#` starts a comment. The file can also be written with a
 file manager on the device itself. Restart the app afterwards.
+
+## Roon needs letting in, once
+
+Roon does not answer an extension until you approve it. On first run the app
+says so; go to **Roon → Settings → Extensions** and enable **MusicD Share
+Card**. The token is kept afterwards, so it never asks again — even across
+restarts of a device that lives in a rack.
+
+The app asks Roon for `transport` only. It does not browse your library, and it
+has no transport controls of any kind.
 
 ## Verification
 

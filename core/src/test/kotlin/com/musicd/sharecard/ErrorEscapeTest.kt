@@ -9,6 +9,8 @@ import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
 import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.sonos.Household
+import com.musicd.sharecard.sonos.SonosSource
+import com.musicd.sharecard.source.Sources
 import com.musicd.sharecard.sonos.SonosScan
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -46,7 +48,7 @@ class ErrorEscapeTest {
     )
 
     private fun api(h: Household = household()) = CardApi(
-        h,
+        Sources(listOf(SonosSource(h))),
         Metadata(metadataHttpClient(), "test"),
         Pitchfork(metadataHttpClient(), "test"),
         ArtProxy(metadataHttpClient()),
@@ -84,7 +86,7 @@ class ErrorEscapeTest {
     @Test
     fun `an Error anywhere else in routing becomes a 500, not a dead app`() {
         val api = CardApi(
-            household(),
+            Sources(listOf(SonosSource(household()))),
             Metadata(metadataHttpClient(), "test"),
             Pitchfork(metadataHttpClient(), "test"),
             ArtProxy(metadataHttpClient()),

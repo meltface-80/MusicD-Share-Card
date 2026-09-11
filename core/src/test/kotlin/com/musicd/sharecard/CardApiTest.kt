@@ -8,6 +8,8 @@ import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
 import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.sonos.Household
+import com.musicd.sharecard.sonos.SonosSource
+import com.musicd.sharecard.source.Sources
 import com.musicd.sharecard.sonos.NowPlaying
 import com.musicd.sharecard.sonos.TransportState
 import org.json.JSONObject
@@ -61,7 +63,7 @@ class CardApiTest {
             discover = { emptyList() }
         )
         return CardApi(
-            household,
+            Sources(listOf(SonosSource(household))),
             Metadata(http, "test"),
             Pitchfork(http, "test"),
             ArtProxy(http),
@@ -217,11 +219,19 @@ class CardApiTest {
         // page, and the device that crashed is usually in another room — so it
         // has to reach the browser, not just the device's own screen.
         val api = CardApi(
-            Household(
-                playerAt = { ip -> players.getValue(ip) },
-                seedHosts = listOf("10.0.0.1"),
-                discover = { emptyList() },
-                scan = { com.musicd.sharecard.sonos.SonosScan.Result(emptyList(), emptyList()) }
+            Sources(
+                listOf(
+                    SonosSource(
+                        Household(
+                            playerAt = { ip -> players.getValue(ip) },
+                            seedHosts = listOf("10.0.0.1"),
+                            discover = { emptyList() },
+                            scan = {
+                                com.musicd.sharecard.sonos.SonosScan.Result(emptyList(), emptyList())
+                            }
+                        )
+                    )
+                )
             ),
             Metadata(metadataHttpClient(), "test"),
             Pitchfork(metadataHttpClient(), "test"),
@@ -240,11 +250,19 @@ class CardApiTest {
         // The diagnostics page is what somebody reaches for when the app is
         // already misbehaving. It must not be the next thing to fail.
         val api = CardApi(
-            Household(
-                playerAt = { ip -> players.getValue(ip) },
-                seedHosts = listOf("10.0.0.1"),
-                discover = { emptyList() },
-                scan = { com.musicd.sharecard.sonos.SonosScan.Result(emptyList(), emptyList()) }
+            Sources(
+                listOf(
+                    SonosSource(
+                        Household(
+                            playerAt = { ip -> players.getValue(ip) },
+                            seedHosts = listOf("10.0.0.1"),
+                            discover = { emptyList() },
+                            scan = {
+                                com.musicd.sharecard.sonos.SonosScan.Result(emptyList(), emptyList())
+                            }
+                        )
+                    )
+                )
             ),
             Metadata(metadataHttpClient(), "test"),
             Pitchfork(metadataHttpClient(), "test"),

@@ -3,7 +3,7 @@ package com.musicd.sharecard.api
 import com.musicd.sharecard.Log
 import com.musicd.sharecard.sonos.SonosScan
 import com.musicd.sharecard.sonos.Ssdp
-import com.musicd.sharecard.sonos.Household
+import com.musicd.sharecard.source.Sources
 import org.json.JSONObject
 
 /**
@@ -26,7 +26,7 @@ import org.json.JSONObject
  * anyone already on the network.
  */
 class Diagnostics(
-    private val household: Household,
+    private val sources: Sources,
     /** What the Android shell knows — chiefly the last recorded crash. */
     private val hostNotes: () -> List<String> = { emptyList() }
 ) {
@@ -71,47 +71,34 @@ class Diagnostics(
                 .put("notes", Json.strings(scan?.notes.orEmpty()))
         )
 
-        // 4. What the app is actually working from, and whether any of it
-        //    answered.
-        household.refresh(force = true)
-        val groups = household.groups()
-        report.put("hosts", Json.strings(household.knownHosts))
-        report.put("discovery", Json.strings(household.lastDiscovery))
-        report.put("reachable", household.reachable)
-        // The line that turns "would not describe the household" into something
-        // actionable: what each player actually said back.
-        report.put("errors", Json.strings(household.lastTopologyErrors))
+        // 4. What each source found, in its own words. Roon's line is where a
+        //    "not approved in Settings → Extensions yet" shows up, and that is
+        //    not a network problem however much it looks like one.
+        sources.refresh()
+        report.put("sources", Json.strings(sources.diagnostics()))
+
+        val zones = sources.zones()
         report.put(
             "zones",
             Json.array(
-                groups.map { group ->
-                    val state = runCatching { household.stateOf(group) }.getOrNull()
+                zones.map { zone ->
+                    val playing = runCatching {
+                        sources.nowPlaying(zone.id)
+                    }.getOrNull()
                     JSONObject()
-                        .put("name", group.displayName)
-                        .put("ip", group.coordinator.ip)
-                        .put("answered", state != null)
-                        .put("state", state?.state?.name ?: "no answer")
-                        .put("album", state?.nowPlaying?.displayAlbum.orEmpty())
-                        .put("artist", state?.nowPlaying?.displayArtist.orEmpty())
-                        .put("track", state?.nowPlaying?.track.orEmpty())
-                        .put("hasArt", !state?.nowPlaying?.artUri.isNullOrEmpty())
-                        .put("art", state?.nowPlaying?.artUri.orEmpty())
-                        // The unparsed reply. Every source fills DIDL-Lite in
-                        // differently, and reading the real thing beats
-                        // inferring it from what a card came out looking like.
-                        .put(
-                            "raw",
-                            Json.strings(
-                                household.rawFor(group).map { (k, v) ->
-                                    k + " = " + (if (v.length > 400) v.take(400) + "…" else v)
-                                }
-                            )
-                        )
+                        .put("name", zone.name)
+                        .put("source", zone.source)
+                        .put("answered", playing != null)
+                        .put("state", playing?.state?.name ?: "no answer")
+                        .put("album", playing?.album.orEmpty())
+                        .put("artist", playing?.artist.orEmpty())
+                        .put("track", playing?.track.orEmpty())
+                        .put("art", playing?.artUrl.orEmpty())
                 }
             )
         )
 
-        report.put("advice", advice(subnets, sweep, scan, groups.size))
+        report.put("advice", advice(subnets, sweep, scan, zones.size))
         return report
     }
 

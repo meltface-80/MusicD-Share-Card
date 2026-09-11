@@ -157,10 +157,16 @@
     auto.value = "";
     auto.textContent = "Whatever’s playing";
     zoneSel.appendChild(auto);
+    // Two sources can see the same room and answer differently — Roon playing
+    // to a Sonos speaker is exactly that — so the caption has to say which is
+    // which whenever more than one source is present.
+    const manySources = new Set(zones.map((z) => z.source)).size > 1;
     for (const zone of zones) {
       const option = document.createElement("option");
       option.value = zone.uid;
-      option.textContent = zone.name;
+      option.textContent = manySources && zone.source
+        ? zone.name + " (" + zone.source + ")"
+        : zone.name;
       zoneSel.appendChild(option);
     }
     // Only restore a room the user actually chose. Re-selecting whatever the
@@ -194,15 +200,22 @@
 
       if (!playing.album && !playing.artist) {
         message(playing.reason || "Nothing is playing.");
-        var noPlayers = !playing.reason || playing.reason.indexOf("No Sonos") === 0 ||
-          playing.reason.indexOf("would answer") > 0;
-        hintEl.textContent = noPlayers
-          ? "The app cannot see your speakers. Run the check below to find out why."
-          : "Start something on a Sonos zone, then press refresh.";
+        var notices = playing.notices || [];
+        var noPlayers = !playing.reason || playing.reason.indexOf("No players") === 0;
+        // A source asking to be let in is not a failure, and must not be
+        // buried under a network troubleshooter — a first Roon run needs one
+        // tap in Roon and nothing else.
+        hintEl.textContent = notices.length ? notices.join(" ")
+          : noPlayers
+            ? "The app cannot see any players. Run the check below to find out why."
+            : "Start something playing, then press refresh.";
         // A dead end with no next step is what made the first failure so hard
         // to act on: the app knew far more than it was saying.
-        if (noPlayers) offerDiagnostics();
+        if (noPlayers && !notices.length) offerDiagnostics();
         return;
+      }
+      if (playing.notices && playing.notices.length) {
+        hintEl.textContent = playing.notices.join(" ");
       }
 
       spinner("Building the card…");
@@ -337,6 +350,9 @@
     const verb = playing.playing ? "Playing in" : "Last played in";
     const bits = [];
     if (room) bits.push(verb + " <b>" + escapeHtml(room) + "</b>");
+    // Which source answered. Worth saying: it is the difference between a card
+    // Roon described and one the speaker guessed at.
+    if (playing.source) bits.push("via " + escapeHtml(playing.source));
     if (playing.stream) bits.push("live stream");
     nowEl.innerHTML = bits.join(" · ");
   }
@@ -461,6 +477,9 @@
         items.map((i) => "<li>" + escapeHtml(String(i)) + "</li>").join("") + "</ul>");
     }
     section("The app", d.app);
+    // Each source in its own words. Roon's line is where "not approved yet"
+    // appears, and that is not a network problem however much it looks like one.
+    section("Sources", d.sources);
     section("This device's networks", d.interfaces);
     section("Multicast (SSDP)", (d.ssdp && d.ssdp.notes) || []);
     section("Direct scan of this subnet", (d.scan && d.scan.notes) || []);

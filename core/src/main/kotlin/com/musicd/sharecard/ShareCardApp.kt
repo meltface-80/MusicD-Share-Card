@@ -7,10 +7,16 @@ import com.musicd.sharecard.http.HttpServer
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
 import com.musicd.sharecard.meta.metadataHttpClient
+import com.musicd.sharecard.roon.RoonClient
+import com.musicd.sharecard.roon.RoonSource
+import com.musicd.sharecard.roon.TokenStore
 import com.musicd.sharecard.sonos.Household
 import com.musicd.sharecard.sonos.SoapClient
 import com.musicd.sharecard.sonos.SonosPlayer
+import com.musicd.sharecard.sonos.SonosSource
 import com.musicd.sharecard.sonos.soapHttpClient
+import com.musicd.sharecard.source.Sources
+import com.musicd.sharecard.upnp.UpnpSource
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
@@ -38,7 +44,19 @@ class ShareCardApp(
      * chiefly the last recorded crash. Supplied as a function because it is read
      * when somebody asks, not when the app starts.
      */
-    private val hostNotes: () -> List<String> = { emptyList() }
+    private val hostNotes: () -> List<String> = { emptyList() },
+    /** Where the Roon pairing token is kept. Never reachable from a route. */
+    tokenStore: TokenStore = TokenStore.NONE,
+    /** Android needs a MulticastLock for Roon's SOOD replies to arrive. */
+    roonMulticastLock: RoonClient.MulticastLock = RoonClient.MulticastLock.NONE,
+    /**
+     * The sources to use instead of the real three.
+     *
+     * Only a test passes this. Without it, constructing this class starts
+     * Roon discovery and an SSDP sweep, so a test of the HTTP layer would be a
+     * test of whatever happens to be on the network running it.
+     */
+    sourcesOverride: Sources? = null
 ) {
 
     private val soap = SoapClient(soapHttpClient())
@@ -49,13 +67,41 @@ class ShareCardApp(
         seedHosts = seedHosts
     )
 
+    val roon = RoonClient(
+        store = tokenStore,
+        extension = RoonClient.ExtensionInfo(
+            id = "com.musicd.sharecard",
+            displayName = "MusicD Share Card",
+            version = version,
+            publisher = "Music Duck",
+            email = "noreply@example.com",
+            website = "https://github.com/meltface-80/New"
+        ),
+        multicastLock = roonMulticastLock
+    )
+
+    /**
+     * ROON FIRST, AND THE ORDER IS THE POINT.
+     *
+     * When Roon plays to a Sonos speaker, the speaker sees a stream with a
+     * session id where the title should be. Both sources can see that zone;
+     * only one of them knows what the record is.
+     */
+    val sources = sourcesOverride ?: Sources(
+        listOf(
+            RoonSource(roon),
+            SonosSource(household),
+            UpnpSource(soap, metaHttp)
+        )
+    )
+
     private val metadata = Metadata(metaHttp, userAgent(version))
     private val pitchfork = Pitchfork(metaHttp, userAgent(version))
     // The art proxy is told which players exist so a LAN fetch is limited to
     // them rather than to "anything that looks local".
-    private val art = ArtProxy(metaHttp) { household.knownHosts }
+    private val art = ArtProxy(metaHttp) { sources.artHosts() }
 
-    private val api = CardApi(household, metadata, pitchfork, art, assets, version, hostNotes)
+    private val api = CardApi(sources, metadata, pitchfork, art, assets, version, hostNotes)
 
     private val server = HttpServer(api, port, bindAddress)
 
@@ -65,11 +111,15 @@ class ShareCardApp(
     val port: Int get() = server.port
 
     fun start() {
+        sources.start()
         server.start()
         Log.i(TAG, "serving on $rootUrl (and ${lanUrls().joinToString()})")
     }
 
-    fun stop() = server.stop()
+    fun stop() {
+        server.stop()
+        sources.stop()
+    }
 
     /**
      * The addresses another device can reach this on.
