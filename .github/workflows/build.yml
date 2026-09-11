@@ -1,0 +1,232 @@
+name: Build
+
+# The APK is built here rather than by hand: GitHub's runners already carry the
+# Android SDK, so this is the shortest path from a commit to something
+# installable. Every push produces an artifact; a tag also produces a release.
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  core:
+    name: Core tests (JVM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The Sonos protocol layer, the zone selection and the whole API live in
+      # :core, which is a plain Kotlin/JVM module — so the part of the app most
+      # worth testing is tested without an emulator or an Android SDK.
+      - name: Run the core test suite
+        timeout-minutes: 15
+        run: ./gradlew :core:test --no-daemon --stacktrace
+
+      # The bundled front-end is JavaScript with no build step, so nothing else
+      # would notice a call to something that no longer exists — and the person
+      # who would find out is looking at a blank card with no console.
+      - name: Lint the bundled front-end for undefined references
+        run: |
+          npm install --no-save --silent eslint
+          npx eslint --config tools/eslint.config.mjs app/src/main/assets/web/*.js
+
+      # CSS has no errors to report: a rule the browser cannot parse is dropped
+      # in silence. Nothing else in this repo reads the stylesheet.
+      - name: Check the stylesheet parses as intended
+        run: node tools/check-css.js
+
+      # The card is a canvas drawing and there is no browser in CI, so what is
+      # checked is the pair of promises that would break quietly: the blurb
+      # stays readable on a white sleeve, and it is never truncated.
+      - name: Check the share card's blurb
+        run: node tools/check-sharecard.js
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-test-report
+          path: core/build/reports/tests/test
+
+  apk:
+    name: APK
+    runs-on: ubuntu-latest
+    needs: core
+    # A build that hangs must fail with logs rather than sit until the six-hour
+    # default expires: the logs are only retrievable once the job ends.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Install exactly what the build needs, here, where the download is
+      # visible in the log — rather than leaving Gradle to fetch it mid-task
+      # where a stall looks identical to a slow compile.
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The signing key, from a repository secret.
+      #
+      # It has to be the SAME key every build or Android will not install the
+      # result over the copy already on the device — a debug key is generated
+      # per machine, so every runner would produce a different certificate and
+      # every "update" would be refused.
+      #
+      # A missing secret is NOT a broken build and must not be reported as one.
+      # Without the key the APK still compiles and every check still runs; the
+      # only thing that cannot happen is PUBLISHING, because an unsigned APK
+      # installs nowhere. So this records whether the key is available, the
+      # publish step requires it, and the job starts publishing by itself once
+      # the secret exists.
+      - name: Restore the signing key
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SHARECARD_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "have_key=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SHARECARD_KEYSTORE_BASE64 is not set, so this build is" \
+                 "unsigned and will not be published to dist/. Everything else ran." \
+                 "See the Signing section of the README."
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/sharecard-release.jks"
+          echo "path=$RUNNER_TEMP/sharecard-release.jks" >> "$GITHUB_OUTPUT"
+          echo "have_key=true" >> "$GITHUB_OUTPUT"
+
+      - name: Run the Android unit tests
+        timeout-minutes: 20
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Assemble the release APK
+        timeout-minutes: 25
+        env:
+          SHARECARD_KEYSTORE: ${{ steps.signing.outputs.path }}
+          SHARECARD_KEYSTORE_PASSWORD: ${{ secrets.SHARECARD_KEYSTORE_PASSWORD }}
+          SHARECARD_KEY_ALIAS: sharecard
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      # An unsigned APK installs nowhere, and one signed with the wrong key
+      # installs but never updates. Neither may reach dist/, and the wrong-key
+      # case is invisible until somebody tries to update — so it is checked here
+      # rather than discovered on a device.
+      - name: Check the APK is signed with the release key
+        if: steps.signing.outputs.have_key == 'true'
+        run: |
+          apk=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          if [ -f tools/release-key.sha256 ]; then
+            python3 tools/apk-cert.py "$apk" --expect-file tools/release-key.sha256
+          else
+            # First signed build: record the certificate so every later build is
+            # checked against it. Printed, not committed, so a key change is a
+            # deliberate act rather than a file that quietly follows along.
+            python3 tools/apk-cert.py "$apk"
+            echo "::notice::No tools/release-key.sha256 yet. Commit the SHA-256 printed" \
+                 "above to pin this certificate for future builds."
+          fi
+
+      # An unsigned build is named as such. Somebody downloading a CI artifact
+      # should not get a file that looks like a release and cannot install.
+      - name: Name the artifact after the version
+        id: name
+        env:
+          HAVE_KEY: ${{ steps.signing.outputs.have_key }}
+        run: |
+          apk=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          version=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          if [ "$HAVE_KEY" = "true" ]; then
+            out="musicd-share-card-${version}.apk"
+          else
+            out="musicd-share-card-${version}-UNSIGNED.apk"
+          fi
+          cp "$apk" "$out"
+          echo "apk=$out" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.name.outputs.apk }}
+          path: ${{ steps.name.outputs.apk }}
+
+      # Keep a directly downloadable APK in the repo, so the README can link
+      # straight at it and sideloading is one tap rather than a trip through the
+      # Actions UI.
+      #
+      # Committed once per versionName, not once per push: the APK is a build
+      # output and git keeps every copy forever, so a commit on every push would
+      # bloat the history for nothing. Bumping versionName is what publishes.
+      #
+      # This pushes with GITHUB_TOKEN, and GitHub deliberately does not fire
+      # workflows for pushes made with it — so this cannot start a build loop.
+      - name: Publish the APK into dist/
+        if: >-
+          github.event_name == 'push' && github.ref_type == 'branch'
+          && steps.signing.outputs.have_key == 'true'
+        env:
+          APK: ${{ steps.name.outputs.apk }}
+        run: |
+          set -euo pipefail
+          if [ -f "dist/$APK" ]; then
+            echo "dist/$APK is already committed — nothing to publish."
+            exit 0
+          fi
+          # One APK in the tree at a time. The old one is superseded rather than
+          # kept: the README links to a single file, and git still has every
+          # previous version in its history.
+          #
+          # mkdir comes AFTER this, not before: `git rm` of the last file in a
+          # directory removes the directory too, so creating it first and
+          # copying afterwards fails with "No such file or directory".
+          git rm -q --ignore-unmatch 'dist/musicd-share-card-*.apk'
+          mkdir -p dist
+          cp "$APK" "dist/$APK"
+          version=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          sha=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > dist/latest.json <<JSON
+          {
+            "version": "$version",
+            "url": "https://github.com/${GITHUB_REPOSITORY}/raw/main/dist/$APK",
+            "sha256": "$sha",
+            "notes": "Built from ${GITHUB_SHA}."
+          }
+          JSON
+          sed -i 's/^          //' dist/latest.json
+          # The README's download link is rewritten here rather than by hand,
+          # because a link that has to be remembered is a link that eventually
+          # points at a version that no longer exists. Every mention, not just
+          # the path: the link TEXT names the version too.
+          sed -i -E "s#musicd-share-card-[0-9][0-9A-Za-z._-]*\.apk#$APK#g" README.md
+          git add "dist/$APK" dist/latest.json README.md
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Publish $APK" -m "Built from ${GITHUB_SHA}."
+          # The branch may have moved while this job ran.
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+      - name: Attach the APK to a tagged release
+        if: >-
+          startsWith(github.ref, 'refs/tags/v')
+          && steps.signing.outputs.have_key == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.name.outputs.apk }}

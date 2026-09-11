@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The page's own background, so the window does not flash a different
+         colour before the WebView paints. -->
+    <color name="background">#0E1012</color>
+    <color name="accent">#D4A017</color>
+    <color name="icon_background">#16191D</color>
+</resources>

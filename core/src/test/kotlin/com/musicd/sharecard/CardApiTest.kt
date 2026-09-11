@@ -1,0 +1,218 @@
+package com.musicd.sharecard
+
+import com.musicd.sharecard.api.ArtProxy
+import com.musicd.sharecard.api.Assets
+import com.musicd.sharecard.api.CardApi
+import com.musicd.sharecard.http.Request
+import com.musicd.sharecard.meta.Metadata
+import com.musicd.sharecard.meta.Pitchfork
+import com.musicd.sharecard.meta.metadataHttpClient
+import com.musicd.sharecard.sonos.Household
+import com.musicd.sharecard.sonos.NowPlaying
+import com.musicd.sharecard.sonos.TransportState
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * The API as the page sees it.
+ *
+ * Driven through [CardApi.handle] with scripted players, so the JSON the
+ * front-end actually parses is what is asserted — not an intermediate object
+ * that a later change to the serialisation could quietly stop matching.
+ */
+class CardApiTest {
+
+    private val topology = """
+        <ZoneGroupState><ZoneGroups>
+          <ZoneGroup Coordinator="RINCON_A" ID="g1">
+            <ZoneGroupMember UUID="RINCON_A" ZoneName="Living Room"
+              Location="http://10.0.0.1:1400/x"/>
+          </ZoneGroup>
+          <ZoneGroup Coordinator="RINCON_C" ID="g2">
+            <ZoneGroupMember UUID="RINCON_C" ZoneName="Study"
+              Location="http://10.0.0.3:1400/x"/>
+          </ZoneGroup>
+        </ZoneGroups></ZoneGroupState>
+    """.trimIndent()
+
+    private val players = mutableMapOf(
+        "10.0.0.1" to FakePlayer("10.0.0.1"),
+        "10.0.0.3" to FakePlayer("10.0.0.3")
+    )
+
+    private val assets = Assets { path ->
+        when (path) {
+            "index.html" -> "<!doctype html><title>Card</title>".toByteArray()
+            "app.js" -> "// app".toByteArray()
+            else -> null
+        }
+    }
+
+    private fun api(): CardApi {
+        players.values.forEach { it.topology = topology }
+        val http = metadataHttpClient()
+        val household = Household(
+            playerAt = { ip -> players.getValue(ip) },
+            seedHosts = listOf("10.0.0.1"),
+            discover = { emptyList() }
+        )
+        return CardApi(
+            household,
+            Metadata(http, "test"),
+            Pitchfork(http, "test"),
+            ArtProxy(http),
+            assets,
+            "1.0.0"
+        )
+    }
+
+    private fun get(path: String, query: Map<String, String> = emptyMap()) =
+        Request("GET", path, query, emptyMap(), ByteArray(0), false, "10.0.0.99")
+
+    private fun json(path: String, query: Map<String, String> = emptyMap()): JSONObject {
+        val response = api().handle(get(path, query))
+        return JSONObject(String(response.body, Charsets.UTF_8))
+    }
+
+    // ---------------------------------------------------------------- cards
+
+    @Test
+    fun `the card names the album, the artist and the room`() {
+        players["10.0.0.3"]!!.state = TransportState.PLAYING
+        players["10.0.0.3"]!!.track = NowPlaying(
+            track = "Good Morning, Captain",
+            album = "Spiderland",
+            artist = "Slint",
+            artUri = "/getaa?u=x&v=53"
+        )
+
+        val body = json("/api/now-playing")
+        assertTrue(body.getBoolean("playing"))
+        assertEquals("Spiderland", body.getString("album"))
+        assertEquals("Slint", body.getString("artist"))
+        assertEquals("Study", body.getJSONObject("zone").getString("room"))
+    }
+
+    @Test
+    fun `the cover is served from this app, never from the speaker`() {
+        // A canvas that has drawn an image from another origin cannot be read
+        // back, so a card that pointed the page at the player would fail at
+        // toBlob with nothing to share.
+        players["10.0.0.1"]!!.state = TransportState.PLAYING
+        players["10.0.0.1"]!!.track =
+            NowPlaying(album = "Mezzanine", artist = "Massive Attack", artUri = "/getaa?u=x&v=53")
+
+        val art = json("/api/now-playing").getString("art")
+        assertTrue("art must be served by this app: $art", art.startsWith("/api/art?u="))
+        assertTrue("the player's own URL is carried in the query", art.contains("10.0.0.1"))
+    }
+
+    @Test
+    fun `a record with no cover says so rather than pointing at nothing`() {
+        players["10.0.0.1"]!!.state = TransportState.PLAYING
+        players["10.0.0.1"]!!.track = NowPlaying(album = "Bootleg", artist = "Unknown")
+        assertTrue(json("/api/now-playing").isNull("art"))
+    }
+
+    @Test
+    fun `a silent household says why instead of drawing an empty card`() {
+        val body = json("/api/now-playing")
+        assertFalse(body.getBoolean("playing"))
+        assertEquals("Nothing is playing.", body.getString("reason"))
+    }
+
+    @Test
+    fun `a radio stream is flagged, and the announcement becomes the credit`() {
+        players["10.0.0.1"]!!.state = TransportState.PLAYING
+        players["10.0.0.1"]!!.track = NowPlaying(
+            track = "BBC Radio 6 Music",
+            streamContent = "Bill Callahan - Drover"
+        )
+        players["10.0.0.1"]!!.currentUri = "x-sonosapi-stream:s20455?sid=254"
+
+        val body = json("/api/now-playing")
+        assertTrue(body.getBoolean("stream"))
+        assertEquals("Bill Callahan", body.getString("artist"))
+    }
+
+    @Test
+    fun `naming a zone pins the card to that room`() {
+        players["10.0.0.1"]!!.state = TransportState.PAUSED
+        players["10.0.0.1"]!!.track = NowPlaying(album = "Blue", artist = "Joni Mitchell")
+
+        val body = json("/api/now-playing", mapOf("zone" to "RINCON_A"))
+        assertEquals("Living Room", body.getJSONObject("zone").getString("room"))
+        assertEquals("Blue", body.getString("album"))
+    }
+
+    // ---------------------------------------------------------------- zones
+
+    @Test
+    fun `the zone list names every playable group`() {
+        val zones = json("/api/zones").getJSONArray("zones")
+        assertEquals(2, zones.length())
+        val names = (0 until zones.length()).map { zones.getJSONObject(it).getString("room") }
+        assertTrue(names.containsAll(listOf("Living Room", "Study")))
+    }
+
+    @Test
+    fun `health reports the version the page was served by`() {
+        val body = json("/api/health")
+        assertTrue(body.getBoolean("ok"))
+        assertEquals("1.0.0", body.getString("version"))
+    }
+
+    // ------------------------------------------------------------ the page
+
+    @Test
+    fun `the root path serves the page`() {
+        val response = api().handle(get("/"))
+        assertEquals(200, response.status)
+        assertTrue(response.contentType.startsWith("text/html"))
+    }
+
+    @Test
+    fun `a file that is not in the bundle is a 404`() {
+        assertEquals(404, api().handle(get("/nope.js")).status)
+    }
+
+    @Test
+    fun `a traversing path cannot escape the bundle`() {
+        assertEquals(404, api().handle(get("/../../etc/passwd")).status)
+        assertEquals(404, api().handle(get("/assets/../../secret")).status)
+    }
+
+    @Test
+    fun `nothing here answers a POST`() {
+        // Every route is a GET and none of them changes anything. That is what
+        // makes serving the whole LAN without a password defensible, so a
+        // method that could write must stay refused.
+        val post = Request("POST", "/api/now-playing", emptyMap(), emptyMap(), ByteArray(0), false)
+        assertEquals(405, api().handle(post).status)
+    }
+
+    @Test
+    fun `the art route refuses a URL off the local network`() {
+        val response = api().handle(get("/api/art", mapOf("u" to "https://example.com/x.jpg")))
+        assertEquals(404, response.status)
+    }
+
+    @Test
+    fun `extras answers from cache without opening a socket when fast is set`() {
+        // Nothing has been looked up, so every field is empty — the point is
+        // that it RETURNS, promptly, rather than going to MusicBrainz.
+        val body = json("/api/extras", mapOf("album" to "Spiderland", "artist" to "Slint", "fast" to "1"))
+        assertTrue(body.getBoolean("cached"))
+        assertTrue(body.isNull("release"))
+        assertNotNull(body)
+    }
+
+    @Test
+    fun `extras with no album named is a bad request`() {
+        assertEquals(400, api().handle(get("/api/extras")).status)
+    }
+}

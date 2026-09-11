@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The card itself: a sleeve on the left, three lines of text on the right.
+
+  A vector rather than the usual stack of five PNG densities, because it is a
+  shape made of rectangles and there is nothing a rasteriser would do better.
+  It also keeps the APK free of binary assets that cannot be reviewed in a diff.
+
+  Adaptive-icon geometry: the 108dp canvas is masked to a 72dp circle-ish shape
+  by the launcher, so everything meaningful stays inside the middle 66dp — the
+  drawing below spans 27..81, which leaves the corners to be cropped.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- The sleeve -->
+    <path
+        android:fillColor="#D4A017"
+        android:pathData="M30,38 L54,38 A3,3 0 0 1 57,41 L57,67 A3,3 0 0 1 54,70 L30,70 A3,3 0 0 1 27,67 L27,41 A3,3 0 0 1 30,38 Z" />
+    <!-- The label, so the sleeve reads as a record rather than a blank square -->
+    <path
+        android:fillColor="#16191D"
+        android:pathData="M42,50 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+
+    <!-- The three lines of text: title, artist, blurb -->
+    <path
+        android:fillColor="#E8EDF2"
+        android:pathData="M64,42 L81,42 A2,2 0 0 1 81,46 L64,46 A2,2 0 0 1 64,42 Z" />
+    <path
+        android:fillColor="#9AA2AB"
+        android:pathData="M64,52 L77,52 A2,2 0 0 1 77,56 L64,56 A2,2 0 0 1 64,52 Z" />
+    <path
+        android:fillColor="#9AA2AB"
+        android:pathData="M64,62 L81,62 A2,2 0 0 1 81,66 L64,66 A2,2 0 0 1 64,62 Z" />
+</vector>

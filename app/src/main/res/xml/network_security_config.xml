@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Two reasons cleartext has to be allowed, both local:
+
+  1. Sonos speaks plain HTTP on port 1400 — SOAP control and album art alike.
+     There is no TLS endpoint on a player to prefer instead.
+  2. The page is served from this app's own HTTP server, over the LAN.
+
+  Neither leaves the local network. The metadata lookups that DO leave it
+  (MusicBrainz, Wikipedia, Pitchfork) are HTTPS and unaffected by this.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

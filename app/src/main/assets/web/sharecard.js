@@ -1,0 +1,450 @@
+/*
+ * sharecard.js — render an album share card as a PNG, in the browser.
+ *
+ * Copyright (c) 2026 Lewis Menzies (Music Duck / MusicD)
+ * Released under the MIT License. See the LICENSE file for details.
+ *
+ * Ported unmodified from MusicD Remote Lite so the two apps produce the SAME
+ * picture — this file is the card's visual definition, and a divergence here
+ * would mean a record shared from the Sonos app and the same record shared from
+ * the Roon app no longer matched.
+ *
+ * Layout (1200 × 600, fixed) — the app's own material:
+ *
+ *   +--------------------------------------------------------+
+ *   |  the cover again, blown up and softened, as the ground  |
+ *   |    +------------------------------------------------+  |
+ *   |    | +--------+   RELEASED 2009                     |  |
+ *   |    | | cover  |   Album Title                       |  |
+ *   |    | | 424px  |   by Artist                         |  |
+ *   |    | +--------+   PITCHFORK  8.7 [BEST NEW MUSIC]   |  |
+ *   |    | ----------------------------------------------- |  |
+ *   |    | the album's blurb, full width, every word of it  |  |
+ *   |    | Wikipedia                            [MusicD]   |  |
+ *   |    +------------------------------------------------+  |
+ *   +--------------------------------------------------------+
+ *
+ *  THE CARD IS 600 TALL UNTIL IT ISN'T. Everything above the rule is fixed
+ *  1200x600 and unchanged. A blurb makes the card GROW downward instead of
+ *  being squeezed or cut: the text is never ellipsized, because a share card
+ *  that ends mid-sentence is worse than a tall one. 600 is the floor, not the
+ *  height.
+ *
+ *  The card used to be a hard vertical split: art on the left half, a flat
+ *  #0e1012 slab on the right. It now reads the way the app does — the artwork
+ *  IS the background, and a translucent pane sits on it holding the sharp
+ *  cover and the text.
+ *
+ *  THE SOFTENING IS A DOWNSCALE, NOT A BLUR. `ctx.filter = 'blur()'` is not
+ *  dependable across the browsers this runs in, so the ground is the cover
+ *  drawn into a 24px offscreen canvas and scaled back up — bilinear
+ *  interpolation does the work. That needs no filter support and costs one
+ *  tiny draw.
+ *
+ *  The card stays dark in every theme. It is a standalone image that will be
+ *  seen outside the app, on backgrounds nobody here controls, and the wordmark
+ *  and the text colours are built for a dark ground.
+ */
+
+const ShareCard = (() => {
+  const CARD_W    = 1200;
+  const CARD_H    = 600;
+  const INSET     = 48;    // gap from the card edge to the glass pane
+  const PANE_X    = INSET;
+  const PANE_Y    = INSET;
+  const PANE_W    = CARD_W - INSET * 2;
+  const PANE_H    = CARD_H - INSET * 2;
+  const PANE_R    = 28;    // pane corner radius
+  const PANE_PAD  = 40;    // gap from the pane edge to its contents
+  const ART_W     = 424;   // the sharp cover, inside the pane
+  const ART_H     = 424;
+  const ART_R     = 18;
+  const ART_X     = PANE_X + PANE_PAD;
+  const ART_Y     = PANE_Y + Math.round((PANE_H - ART_H) / 2);
+  const DIVIDER   = 44;    // gap between the cover and the text column
+  const TEXT_X    = ART_X + ART_W + DIVIDER;
+  const TEXT_PAD_R = 44;
+  const TEXT_W    = PANE_X + PANE_W - TEXT_PAD_R - TEXT_X;
+  const WORDMARK_W = 110;
+  const WORDMARK_PAD = 34;
+
+  // The dark the card is built on, and the pane drawn over the softened cover.
+  const GROUND    = '#12151a';
+  const PANE_FILL = 'rgba(18,21,26,.5)';
+  const PANE_EDGE = 'rgba(255,255,255,.14)';
+
+  // The app's own review language, lifted from style.css so the card and the
+  // screens say the same thing the same way: .pf-score is a dark pill with
+  // white tabular numerals, and Best New Music is this gold on near-black
+  // wherever it appears.
+  const BNM_BG = '#d4a017';
+  const BNM_FG = '#1a1000';
+
+  // Solved against the same worst case as the RELEASED line below: a white
+  // sleeve under the scrim and the pane flattens to rgb(83,85,88). White
+  // measures 7.48:1 there and #c2cad3 4.52:1 — the body text and the credit
+  // both clear AA at the sizes they are drawn.
+  //
+  // The blurb is white, and its size and leading started as Roon's, measured
+  // off its own share card and scaled: Roon draws a 512-wide card with a 17px
+  // line pitch and a 12px glyph band in pure white, which at 1200 is a 39.8px
+  // pitch and a 28px band. That was set at 28/40 and then nudged one notch to
+  // 30/43 — 7% — because side by side in a forum post it still read a shade
+  // small. The leading ratio is unchanged at 1.43, so this is a size change
+  // and not a spacing one. Weight, not colour, keeps the blurb under the
+  // title: 30px regular against 56px bold.
+  const BIO_FG    = '#ffffff';
+  const CREDIT_FG = '#c2cad3';
+  const LABEL_FG  = '#9aa2ab';
+
+  const BIO_SIZE   = 30;
+  const BIO_LH     = 43;
+  const BIO_RULE_GAP = 30;   // pane content bottom -> the hairline
+  const BIO_TEXT_GAP = 26;   // hairline -> first line of blurb
+  const CREDIT_GAP = 16;     // last line of blurb -> the credit
+  const CREDIT_H   = 24;
+
+  const BNM_CHIP = { font: '800 18px "Manrope", sans-serif', bg: BNM_BG, fg: BNM_FG,
+                     padX: 12, h: 32, r: 8 };
+
+  function fmtScore(n) { return (n % 1 === 0) ? n.toFixed(1) : String(n); }
+
+  /** A filled pill of text. Returns the width it took. */
+  function pill(ctx, x, y, text, o) {
+    ctx.font = o.font;
+    const w = Math.round(ctx.measureText(text).width + o.padX * 2);
+    roundRectPath(ctx, x, y, w, o.h, o.r);
+    ctx.fillStyle = o.bg;
+    ctx.fill();
+    ctx.fillStyle = o.fg;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + o.padX, y + o.h / 2 + 1);
+    ctx.textBaseline = 'top';
+    return w;
+  }
+
+  // A rounded rectangle path. roundRect() is still missing in enough shipping
+  // browsers to be worth not depending on.
+  function roundRectPath(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x,     y + h, rr);
+    ctx.arcTo(x,     y + h, x,     y,     rr);
+    ctx.arcTo(x,     y,     x + w, y,     rr);
+    ctx.closePath();
+  }
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function formatReleaseDate(raw) {
+    if (!raw) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) {
+      const y = +m[1], mo = +m[2], d = +m[3];
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return `${d} ${MONTHS[mo-1]} ${y}`;
+    }
+    m = s.match(/^(\d{4})-(\d{1,2})$/);
+    if (m) { const mo = +m[2]; if (mo>=1&&mo<=12) return `${MONTHS[mo-1]} ${m[1]}`; }
+    m = s.match(/^(\d{4})$/);
+    if (m) return m[1];
+    return s;
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload  = () => resolve(img);
+      img.onerror = () => reject(new Error('image load failed: ' + src));
+      img.src = src;
+    });
+  }
+
+  // Word-wrap text to maxWidth. Returns { lines, overflow } — overflow is true
+  // when the text didn't fully fit in maxLines (or a single word is wider than
+  // the column). Ellipsis is NOT applied here: fitText() first tries smaller
+  // font sizes and only ellipsizes as the final fallback.
+  function wrapText(ctx, text, maxWidth, maxLines) {
+    if (!text) return { lines: [], overflow: false };
+    const words = String(text).split(/\s+/);
+    const lines = [];
+    let cur = '';
+    let overflow = false;
+    for (const w of words) {
+      const candidate = cur ? cur + ' ' + w : w;
+      if (ctx.measureText(candidate).width <= maxWidth) {
+        cur = candidate;
+      } else {
+        if (cur) lines.push(cur);
+        if (lines.length >= maxLines) { cur = ''; overflow = true; break; }
+        cur = w;
+        if (ctx.measureText(w).width > maxWidth) overflow = true;  // single over-wide word
+      }
+    }
+    if (cur && lines.length < maxLines) lines.push(cur);
+    else if (cur) overflow = true;
+    return { lines, overflow };
+  }
+
+  // Fit text into maxLines within maxWidth by stepping the font size down until
+  // it fits; only when even the smallest size overflows is the last line
+  // ellipsized. Returns { lines, size, lh } for the chosen size.
+  function fitText(ctx, text, maxWidth, maxLines, weight, sizes, lhRatio) {
+    let r = null, size = sizes[0];
+    for (const s of sizes) {
+      size = s;
+      ctx.font = `${weight} ${s}px "Manrope", sans-serif`;
+      r = wrapText(ctx, text, maxWidth, maxLines);
+      if (!r.overflow) break;
+    }
+    if (r.overflow && r.lines.length) {
+      // Final fallback at the smallest size: trim the last line to an ellipsis.
+      let last = r.lines[r.lines.length - 1];
+      while (last.length && ctx.measureText(last + '…').width > maxWidth) last = last.slice(0, -1);
+      r.lines[r.lines.length - 1] = last.replace(/\s+$/, '') + '…';
+    }
+    return { lines: r.lines, size, lh: Math.round(size * lhRatio) };
+  }
+
+  async function render(data) {
+    const cover = await loadImage(data.coverUrl).catch(() => null);
+    const wm    = await loadImage(data.wordmarkUrl).catch(() => null);
+
+    const canvas = document.createElement('canvas');
+
+    // Measured before the canvas is sized, because the blurb is what decides
+    // how tall the card is. wrapText is given a line limit no real extract can
+    // reach: every word is kept, and the card grows to hold them.
+    const measure = document.createElement('canvas').getContext('2d');
+    measure.font = `400 ${BIO_SIZE}px "Manrope", sans-serif`;
+    const bioText = String(data.bio || '').replace(/\s+/g, ' ').trim();
+    const bioLines = bioText
+      ? wrapText(measure, bioText, PANE_W - PANE_PAD * 2, 999).lines : [];
+    const grow = bioLines.length
+      ? BIO_RULE_GAP + BIO_TEXT_GAP + bioLines.length * BIO_LH + CREDIT_GAP + CREDIT_H
+      : 0;
+
+    const cardH = CARD_H + grow;
+    const paneH = PANE_H + grow;
+
+    canvas.width  = CARD_W;
+    canvas.height = cardH;
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'top';
+    ctx.textAlign    = 'left';
+
+    // --- Ground: the cover again, softened, filling the card ---
+    ctx.fillStyle = GROUND;
+    ctx.fillRect(0, 0, CARD_W, cardH);
+    if (cover) {
+      drawSoftened(ctx, cover, CARD_W, cardH);
+      // Two scrims over it, doing different jobs. The flat one sets the floor
+      // for how light the ground can get behind the pane — a white sleeve would
+      // otherwise leave the pane sitting on near-white. The gradient darkens the
+      // bottom, where the wordmark sits.
+      ctx.fillStyle = 'rgba(12,14,18,.44)';
+      ctx.fillRect(0, 0, CARD_W, cardH);
+      const vign = ctx.createLinearGradient(0, cardH * 0.45, 0, cardH);
+      vign.addColorStop(0, 'rgba(8,10,13,0)');
+      vign.addColorStop(1, 'rgba(8,10,13,.55)');
+      ctx.fillStyle = vign;
+      ctx.fillRect(0, 0, CARD_W, cardH);
+    }
+
+    // --- The pane ---
+    ctx.save();
+    roundRectPath(ctx, PANE_X, PANE_Y, PANE_W, paneH, PANE_R);
+    ctx.fillStyle = PANE_FILL;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = PANE_EDGE;
+    ctx.stroke();
+    ctx.restore();
+
+    // --- The sharp cover, inside the pane ---
+    ctx.save();
+    roundRectPath(ctx, ART_X, ART_Y, ART_W, ART_H, ART_R);
+    ctx.clip();
+    if (cover) {
+      drawCover(ctx, cover, ART_X, ART_Y, ART_W, ART_H);
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,.06)';
+      ctx.fillRect(ART_X, ART_Y, ART_W, ART_H);
+    }
+    ctx.restore();
+    // A hairline round the cover so a sleeve that is white to its edge does not
+    // bleed into the pane.
+    ctx.save();
+    roundRectPath(ctx, ART_X + 0.5, ART_Y + 0.5, ART_W - 1, ART_H - 1, ART_R);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(0,0,0,.35)';
+    ctx.stroke();
+    ctx.restore();
+
+    // --- Measure text blocks ---
+    const releaseStr = formatReleaseDate(data.releaseRaw);
+    const metaText   = releaseStr ? 'Released ' + releaseStr : null;
+    const META_SIZE  = 26;
+    const META_H     = META_SIZE + 4;
+    const META_GAP   = 24;   // gap below the year line
+
+    // Title and artist are adaptive: up to 4 lines each, stepping the font size
+    // down until the text fits (56→36px title, 37→24px artist); only when even
+    // the smallest size overflows is the last line ellipsized. Worst case
+    // (meta + 4 title lines @36 + 4 artist lines @24 ≈ 426px) fits the 600px card.
+    const title  = fitText(ctx, data.title || '', TEXT_W, 4, 700, [56, 48, 42, 36, 31, 27], 68 / 56);
+    const titleH = title.lines.length * title.lh;
+
+    const artist  = fitText(ctx, 'by ' + (data.artist || ''), TEXT_W, 4, 400, [37, 32, 28, 24, 21], 48 / 37);
+    const artistH = artist.lines.length * artist.lh;
+
+    const BLOCK_GAP  = 18;   // gap between title and artist
+
+    // The Pitchfork score, when the record has one. A number and a flag only:
+    // the written review is never carried, here or anywhere else in this app.
+    const hasScore  = typeof data.score === 'number' && !isNaN(data.score);
+    const bnm       = !!data.isBestNewMusic;
+    const showScore = hasScore || bnm;
+    const SCORE_GAP = 26;
+    const SCORE_H   = 90;
+
+    // Total height of the text block
+    const blockH = (metaText ? META_H + META_GAP : 0) + titleH + BLOCK_GAP + artistH +
+                   (showScore ? SCORE_GAP + SCORE_H : 0);
+
+    // Vertically centre the block in the pane, with a slight upward nudge
+    // (optical centre sits a little above mathematical centre).
+    const startY = PANE_Y + Math.round((PANE_H - blockH) / 2) - 10;
+    let ry = Math.max(PANE_Y + PANE_PAD, startY);
+
+    // --- Year / release date ---
+    if (metaText) {
+      // Solved against the WORST case the pane can present: a white sleeve
+      // under the scrim and the pane, which flattens to rgb(83,85,88). The old
+      // #7f868d measured 2.31:1 there and #9aa2ab 2.89 — both under even the
+      // large-text floor. tools/check-sharecard.js recomputes this from the
+      // literals rather than trusting the number written here.
+      ctx.fillStyle = '#c2cad3';
+      ctx.font = `600 ${META_SIZE}px "Manrope", sans-serif`;
+      ctx.fillText(metaText.toUpperCase(), TEXT_X, ry);
+      ry += META_H + META_GAP;
+    }
+
+    // --- Album title ---
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `700 ${title.size}px "Manrope", sans-serif`;
+    title.lines.forEach((line, i) => ctx.fillText(line, TEXT_X, ry + i * title.lh));
+    ry += titleH + BLOCK_GAP;
+
+    // --- Artist ---
+    ctx.fillStyle = '#cdd3d9';
+    ctx.font = `400 ${artist.size}px "Manrope", sans-serif`;
+    artist.lines.forEach((line, i) => ctx.fillText(line, TEXT_X, ry + i * artist.lh));
+    ry += artistH;
+
+    // --- The score, under the artist ---
+    if (showScore) {
+      const sy = ry + SCORE_GAP;
+      // A quiet label first, in the same voice as the RELEASED line, so the
+      // number is attributed without a logo and without shouting.
+      ctx.font = '700 18px "Manrope", sans-serif';
+      ctx.fillStyle = LABEL_FG;
+      ctx.fillText('PITCHFORK', TEXT_X, sy);
+
+      const ny = sy + 26;
+      let sx = TEXT_X;
+      if (hasScore) {
+        const txt = fmtScore(data.score);
+        ctx.font = '800 58px "Manrope", sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(txt, sx, ny);
+        const nw = ctx.measureText(txt).width;
+        ctx.font = '700 20px "Manrope", sans-serif';
+        ctx.fillStyle = LABEL_FG;
+        ctx.fillText('/10', sx + nw + 9, ny + 34);
+        sx += nw + 9 + ctx.measureText('/10').width + 24;
+      }
+      if (bnm) pill(ctx, sx, ny + Math.round((58 - BNM_CHIP.h) / 2), 'BEST NEW MUSIC', BNM_CHIP);
+    }
+
+    // --- The blurb, full width inside the pane, under everything above ---
+    if (bioLines.length) {
+      const ruleY = PANE_Y + PANE_H - PANE_PAD + BIO_RULE_GAP;
+      // A hairline at the pane's own edge weight, so the blurb reads as part of
+      // the pane rather than a second box stuck underneath it.
+      ctx.strokeStyle = 'rgba(255,255,255,.10)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(PANE_X + PANE_PAD, ruleY + 0.5);
+      ctx.lineTo(PANE_X + PANE_W - PANE_PAD, ruleY + 0.5);
+      ctx.stroke();
+
+      let by = ruleY + BIO_TEXT_GAP;
+      ctx.fillStyle = BIO_FG;
+      ctx.font = `400 ${BIO_SIZE}px "Manrope", sans-serif`;
+      bioLines.forEach((line, i) => ctx.fillText(line, PANE_X + PANE_PAD, by + i * BIO_LH));
+
+      by += bioLines.length * BIO_LH + CREDIT_GAP;
+      ctx.font = '600 18px "Manrope", sans-serif';
+      ctx.fillStyle = CREDIT_FG;
+      // Wikipedia's text is CC BY-SA. The credit is a licence condition on a
+      // picture that leaves this app, not a nicety — it does not get trimmed.
+      ctx.fillText(data.bioSource || 'Wikipedia', PANE_X + PANE_PAD, by);
+    }
+
+    // --- Wordmark pinned bottom-right (only if a wordmark image was supplied) ---
+    if (wm) {
+      const wmH = Math.round(WORDMARK_W * (wm.height / wm.width));
+      ctx.globalAlpha = 0.88;
+      ctx.drawImage(
+        wm,
+        PANE_X + PANE_W - WORDMARK_PAD - WORDMARK_W,
+        PANE_Y + paneH - WORDMARK_PAD - wmH,
+        WORDMARK_W, wmH
+      );
+      ctx.globalAlpha = 1;
+    }
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => blob ? resolve(blob) : reject(new Error('toBlob failed')),
+        'image/png'
+      );
+    });
+  }
+
+  // The ground. Draw the cover into a tiny offscreen canvas and scale it back
+  // up: the interpolation is the softening, so this needs no filter support and
+  // costs one 24px draw. `cover` fills the card, cropping rather than
+  // letterboxing, the same as the sharp copy inside the pane.
+  function drawSoftened(ctx, img, w, h) {
+    const SMALL = 24;
+    const off = document.createElement('canvas');
+    off.width = SMALL;
+    off.height = Math.max(1, Math.round(SMALL * (h / w)));
+    const octx = off.getContext('2d');
+    drawCover(octx, img, 0, 0, off.width, off.height);
+    const prev = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = true;
+    // Bleed a little past every edge: the outermost pixels of an upscale are
+    // the least smoothed, and they are the ones that would sit on the border.
+    const over = Math.round(w * 0.06);
+    ctx.drawImage(off, -over, -over, w + over * 2, h + over * 2);
+    ctx.imageSmoothingEnabled = prev;
+  }
+
+  function drawCover(ctx, img, dx, dy, dw, dh) {
+    const ir = img.width / img.height;
+    const dr = dw / dh;
+    let sx, sy, sw, sh;
+    if (ir > dr) { sh = img.height; sw = sh * dr; sx = (img.width - sw) / 2; sy = 0; }
+    else         { sw = img.width;  sh = sw / dr; sx = 0; sy = (img.height - sh) / 2; }
+    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  }
+
+  return { render };
+})();
