@@ -49,6 +49,7 @@ class CardApi(
         "/api/now-playing" -> nowPlaying(request)
         "/api/extras" -> extras(request)
         "/api/art" -> artwork(request)
+        "/api/debug" -> Json.obj(Diagnostics(household).run())
         else -> static(request.path)
     }
 
@@ -105,11 +106,21 @@ class CardApi(
         return Json.obj(cardJson(state))
     }
 
-    private fun reasonForNothing(): String =
-        if (household.groups().isEmpty())
+    /**
+     * Why there is no card — and the three answers are genuinely different.
+     *
+     * Reporting "nothing is playing" when in fact not one player could be
+     * reached is how a network fault gets mistaken for a quiet house, and it
+     * sent the first round of debugging looking in the wrong place entirely.
+     */
+    private fun reasonForNothing(): String = when {
+        household.groups().isEmpty() ->
             "No Sonos players found on the network."
-        else
+        !household.reachable ->
+            "Found players, but none of them would answer."
+        else ->
             "Nothing is playing."
+    }
 
     /**
      * The card payload.

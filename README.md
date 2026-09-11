@@ -121,9 +121,25 @@ worse than a button that is not there.
 
 ### If it finds no players
 
-Discovery is SSDP, which is multicast, and plenty of mesh systems, guest VLANs
-and switches with "client isolation" drop it. One speaker's IP address fixes it
-completely — the whole household topology comes from any single player:
+**Press "Find my speakers" on the page.** It runs the whole discovery chain and
+reports each step: which networks this device is on, what multicast managed on
+each interface, what a direct scan of the subnet found, and which addresses were
+tried. It ends with the most likely cause in plain words. That is far quicker
+than guessing, and it is there because the first install of this app said "No
+Sonos players found" and could say nothing else.
+
+The app looks for players two ways, in this order:
+
+1. **SSDP multicast**, sent from *every* network interface rather than whichever
+   one the routing table prefers.
+2. **A direct scan** of this device's own subnet for anything listening on port
+   1400 — no multicast involved. This is what works on mesh systems, guest VLANs
+   and switches with client isolation, which drop multicast outright.
+
+If both fail, the near-certain cause is that the device is **on a different
+subnet from the speakers** — a guest network, or a mesh putting wifi and
+ethernet on separate ranges. A scan cannot cross that, but a hand-entered
+address can: the whole household topology comes from any single player.
 
 ```
 adb push hosts.txt /sdcard/Android/data/com.musicd.sharecard/files/hosts.txt

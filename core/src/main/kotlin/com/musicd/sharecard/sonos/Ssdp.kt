@@ -2,24 +2,39 @@ package com.musicd.sharecard.sonos
 
 import com.musicd.sharecard.Log
 import java.net.DatagramPacket
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.MulticastSocket
+import java.net.NetworkInterface
 import java.net.SocketTimeoutException
 import java.net.URI
 
 /**
- * Finding a Sonos player on the network.
+ * Finding a Sonos player by multicast.
  *
- * Only ONE has to be found. A single reachable player can describe the entire
- * household through ZoneGroupTopology — including rooms whose own SSDP replies
- * were dropped — so this is a best-effort sweep rather than an inventory, and
- * a partial answer is a complete success.
+ * Only ONE has to be found. A single reachable player describes the entire
+ * household through ZoneGroupTopology — including rooms whose own replies were
+ * dropped — so this is a best-effort sweep rather than an inventory, and a
+ * partial answer is a complete success.
  *
- * ANDROID DROPS MULTICAST BEFORE IT REACHES USERSPACE unless a MulticastLock is
- * held. That lock is the Android module's to take (see CardService); without it
- * this returns nothing at all on a phone, on a network full of players, with no
- * error to explain it.
+ * SENT FROM EVERY INTERFACE, ONE SOCKET EACH. This used to be a single socket
+ * bound to the wildcard address, letting the kernel choose where the datagram
+ * went — and on Android that is a well-known way to get nothing back at all.
+ * A phone or a streamer commonly has several interfaces up at once (wifi,
+ * ethernet, a VPN, `dummy0`), the default route is not necessarily the one the
+ * speakers are on, and a multicast send follows the route rather than the
+ * network the app cares about. Binding per interface and sending from each is
+ * the only way to be sure the probe leaves on the one with the music on it.
+ *
+ * ANDROID ALSO DROPS INBOUND MULTICAST unless a MulticastLock is held. The
+ * replies to an M-SEARCH are unicast, so the lock is not strictly needed for
+ * this — but it is held anyway (see CardService), because it costs nothing and
+ * the failure it prevents is silent.
+ *
+ * Even with all of that, multicast is filtered outright by plenty of mesh
+ * systems, guest VLANs and switches with client isolation. [SonosScan] is the
+ * fallback for those networks, and it needs no multicast whatsoever.
  */
 object Ssdp {
 
@@ -27,20 +42,27 @@ object Ssdp {
     const val ADDRESS = "239.255.255.250"
     const val PORT = 1900
 
-    /**
-     * Send M-SEARCH and collect replies for a little longer than MX.
-     *
-     * [mx] is what the spec asks responders to spread their replies over, so
-     * the listen window has to exceed it or the slowest player is cut off.
-     * Sent more than once because a dropped datagram is normal on wifi and
-     * there is no retransmission underneath us.
-     */
+    /** What a sweep saw, kept so the diagnostics page can show its working. */
+    data class Result(
+        val hosts: List<String>,
+        /** One line per interface tried, and what it managed. */
+        val notes: List<String>
+    )
+
     fun discover(
         searchTarget: String = Sonos.ZONE_PLAYER_ST,
         mx: Int = 2,
-        attempts: Int = 3,
-        timeoutMs: Int = 4000
-    ): List<String> {
+        attempts: Int = 2,
+        timeoutMs: Int = 3000
+    ): List<String> = sweep(searchTarget, mx, attempts, timeoutMs).hosts
+
+    /** As [discover], but reporting what each interface did. */
+    fun sweep(
+        searchTarget: String = Sonos.ZONE_PLAYER_ST,
+        mx: Int = 2,
+        attempts: Int = 2,
+        timeoutMs: Int = 3000
+    ): Result {
         val message = (
             "M-SEARCH * HTTP/1.1\r\n" +
                 "HOST: $ADDRESS:$PORT\r\n" +
@@ -51,48 +73,79 @@ object Ssdp {
             ).toByteArray(Charsets.US_ASCII)
 
         val found = LinkedHashSet<String>()
-        try {
-            // Bound to an ephemeral port rather than 1900: binding the SSDP
-            // port itself needs it to be free, and on Android it very often is
-            // not. Replies to an M-SEARCH are unicast back to the source port,
-            // so a random one is all this needs.
-            MulticastSocket().use { socket ->
-                socket.soTimeout = 400
-                socket.timeToLive = 4
-                val group = InetSocketAddress(InetAddress.getByName(ADDRESS), PORT)
-                val deadline = System.currentTimeMillis() + timeoutMs
+        val notes = ArrayList<String>()
 
-                repeat(attempts) { attempt ->
-                    runCatching {
-                        socket.send(DatagramPacket(message, message.size, group))
-                    }.onFailure {
-                        Log.w(TAG, "could not send M-SEARCH: ${it.message}")
-                        return@repeat
-                    }
-                    // Listen between sends rather than only after the last one,
-                    // so a player that answers the first probe is recorded even
-                    // if the socket would otherwise be busy sending.
-                    val until = minOf(
-                        deadline,
-                        System.currentTimeMillis() + if (attempt + 1 < attempts) 500 else timeoutMs
-                    )
-                    collectUntil(socket, until, found)
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "discovery failed: ${e.message}")
+        val interfaces = usableInterfaces()
+        if (interfaces.isEmpty()) notes += "no usable network interface is up"
+
+        // Every interface gets its own socket and its own listen window. One
+        // that refuses to send must not stop the others being tried.
+        for (nic in interfaces) {
+            val before = found.size
+            val note = probe(nic, message, attempts, timeoutMs, found)
+            notes += "${nic.name}: $note, ${found.size - before} new"
         }
 
         if (found.isEmpty()) {
-            Log.i(
-                TAG,
-                "no Sonos player answered SSDP — check wifi, and that the app holds " +
-                    "a MulticastLock"
-            )
+            Log.w(TAG, "no player answered SSDP on any interface: $notes")
         } else {
-            Log.i(TAG, "found players at $found")
+            Log.i(TAG, "SSDP found players at $found")
         }
-        return found.toList()
+        return Result(found.toList(), notes)
+    }
+
+    /**
+     * The interfaces worth probing: up, not loopback, and carrying an IPv4
+     * address. Sonos is IPv4-only, so an interface with no IPv4 address on it
+     * cannot reach a speaker whatever else is true of it.
+     */
+    private fun usableInterfaces(): List<NetworkInterface> = try {
+        NetworkInterface.getNetworkInterfaces().asSequence()
+            .filter {
+                runCatching {
+                    it.isUp && !it.isLoopback && it.supportsMulticast() &&
+                        it.inetAddresses.asSequence().any { a -> a is Inet4Address }
+                }.getOrDefault(false)
+            }
+            .toList()
+    } catch (e: Exception) {
+        Log.w(TAG, "could not list network interfaces: ${e.message}", e)
+        emptyList()
+    }
+
+    private fun probe(
+        nic: NetworkInterface,
+        message: ByteArray,
+        attempts: Int,
+        timeoutMs: Int,
+        into: MutableSet<String>
+    ): String = try {
+        MulticastSocket().use { socket ->
+            socket.soTimeout = 300
+            socket.timeToLive = 4
+            // The line this whole class turns on: send from THIS interface
+            // rather than wherever the routing table would have gone.
+            runCatching { socket.networkInterface = nic }
+                .onFailure { return "cannot bind (${it.message})" }
+
+            val group = InetSocketAddress(InetAddress.getByName(ADDRESS), PORT)
+            val deadline = System.currentTimeMillis() + timeoutMs
+
+            repeat(attempts) { attempt ->
+                try {
+                    socket.send(DatagramPacket(message, message.size, group))
+                } catch (e: Exception) {
+                    return "send failed (${e.message})"
+                }
+                // Listen between sends, not only after the last one, so a
+                // player that answers the first probe is recorded either way.
+                val slice = if (attempt + 1 < attempts) 400L else timeoutMs.toLong()
+                collectUntil(socket, minOf(deadline, System.currentTimeMillis() + slice), into)
+            }
+            "probed"
+        }
+    } catch (e: Exception) {
+        "failed (${e.message})"
     }
 
     private fun collectUntil(socket: MulticastSocket, until: Long, into: MutableSet<String>) {
@@ -104,15 +157,15 @@ object Ssdp {
             } catch (e: SocketTimeoutException) {
                 continue
             } catch (e: Exception) {
-                Log.d(TAG, "receive failed: ${e.message}")
+                Log.w(TAG, "receive failed: ${e.message}")
                 return
             }
             val reply = String(packet.data, 0, packet.length, Charsets.US_ASCII)
+            if (!isSearchResponse(reply)) continue
             // The LOCATION header names the player's own address; the packet's
             // source address is the fallback for a reply that omits it.
-            val host = hostOfLocation(headerOf(reply, "location"))
-                ?: packet.address?.hostAddress
-            if (!host.isNullOrEmpty() && isSearchResponse(reply)) into += host
+            val host = hostOfLocation(headerOf(reply, "location")) ?: packet.address?.hostAddress
+            if (!host.isNullOrEmpty()) into += host
         }
     }
 

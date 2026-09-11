@@ -78,10 +78,34 @@ class Household(
      * reach for when discovery comes back empty.
      */
     seedHosts: List<String> = emptyList(),
-    private val discover: () -> List<String> = { Ssdp.discover() }
+    private val discover: () -> List<String> = { Ssdp.discover() },
+    /**
+     * The multicast-free fallback. Injected so the tests can drive the
+     * SSDP-fails-then-scan-succeeds path without a network.
+     */
+    private val scan: () -> SonosScan.Result = { SonosScan.scan() }
 ) {
 
     private val seeds = LinkedHashSet<String>(seedHosts)
+
+    /**
+     * What the last discovery attempt actually did, for the diagnostics page.
+     * "No Sonos players found" is a symptom with several possible causes, and
+     * without this the user is told the symptom and left to guess.
+     */
+    @Volatile
+    var lastDiscovery: List<String> = emptyList()
+        private set
+
+    /**
+     * True when a scan ran and not one player would answer. Distinct from
+     * "nothing is playing": one means the app cannot see the household at all,
+     * the other means it can and the house is quiet. Reporting the second when
+     * the first is true is how a network fault gets mistaken for silence.
+     */
+    @Volatile
+    var reachable: Boolean = false
+        private set
 
     @Volatile
     private var zones: List<Zone> = emptyList()
@@ -108,18 +132,52 @@ class Household(
         val fresh = System.currentTimeMillis() - topologyAt < TOPOLOGY_TTL_MS
         if (!force && fresh && zones.isNotEmpty()) return zones
 
-        if (seeds.isEmpty() || zones.isEmpty()) {
-            seeds += discover()
+        // AN ADDRESS WE ALREADY HAVE IS TRIED FIRST, ALWAYS.
+        //
+        // This used to search whenever `zones` was empty, which is true on
+        // every cold start — so somebody who had put a speaker's address in
+        // hosts.txt, precisely BECAUSE discovery does not work on their
+        // network, still sat through a full multicast sweep and then a full
+        // subnet scan before their own address was tried. Eleven seconds to
+        // reach an answer that was in hand the whole time.
+        var state = if (knownHosts.isEmpty()) null else fetchTopology()
+
+        if (state.isNullOrEmpty()) {
+            val notes = ArrayList<String>()
+            if (knownHosts.isNotEmpty()) {
+                notes += "${knownHosts.size} known address(es) did not answer; searching"
+            }
+            val byMulticast = discover()
+            notes += "SSDP found ${byMulticast.size} player(s)"
+            seeds += byMulticast
+
+            // The fallback, and the reason this app works on networks that
+            // filter multicast. Only once SSDP has come back empty — never as
+            // the first move, because it is hundreds of connects where one
+            // datagram would have done.
+            if (byMulticast.isEmpty()) {
+                notes += "SSDP found nothing; scanning this device's own subnets for port ${Sonos.PORT}"
+                val scanned = scan()
+                notes += scanned.notes
+                seeds += scanned.hosts
+            }
+            lastDiscovery = notes
+            state = fetchTopology()
         }
 
-        val state = fetchTopology()
         if (state.isNullOrEmpty()) {
             // Keep the last good picture rather than emptying the UI: a single
             // failed scan is far more often a moment of wifi than a household
             // that has gone away.
-            Log.w(TAG, "no player answered; keeping ${zones.size} known zones")
+            reachable = false
+            Log.w(
+                TAG,
+                "no player answered. tried ${knownHosts.size} host(s): ${knownHosts.take(8)}. " +
+                    "discovery: $lastDiscovery"
+            )
             return zones
         }
+        reachable = true
 
         val parsed = parseZoneGroupState(state)
         if (parsed.isEmpty()) return zones
@@ -136,7 +194,10 @@ class Household(
     private fun fetchTopology(): String? {
         for (host in knownHosts) {
             val answer = runCatching { playerAt(host).zoneGroupState() }
-                .onFailure { Log.d(TAG, "$host would not describe the household: ${it.message}") }
+                // Warn, not debug. This is the failure that produces "No Sonos
+                // players found", and a message nobody can see is the reason
+                // that was a guessing game the first time round.
+                .onFailure { Log.w(TAG, "$host would not describe the household: ${it.message}") }
                 .getOrNull()
             if (!answer.isNullOrEmpty()) return answer
         }
@@ -196,7 +257,7 @@ class Household(
             }
             ZoneState(group, transport, merge(track, media), uri)
         } catch (e: Exception) {
-            Log.d(TAG, "${group.coordinator.name} would not answer: ${e.message}")
+            Log.w(TAG, "${group.coordinator.name} would not answer: ${e.message}")
             null
         }
     }
