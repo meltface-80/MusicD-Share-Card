@@ -9,8 +9,12 @@ https://meltface-80.github.io/MusicD-Share-Card/
 ## What it does
 
 Open it and you get a card for the record that's on: cover, title, artist, year,
-and a short description from Wikipedia. Then share it, copy it, save it, or send
-it straight to Discord.
+a short description from Wikipedia and a Pitchfork score where there is one.
+Then share it, copy it, save it, or send it straight to Discord.
+
+Everything fits one screen — card, buttons, links, suggestions — and the page
+does not scroll. The card stays put until you press **Refresh**; leaving the app
+and coming back does not throw it away.
 
 <img src="docs/screenshots/app.jpg" width="360" alt="The app: the card, the room it is playing in, and buttons to download it or post it to Discord">
 
@@ -74,18 +78,34 @@ Until you do, the app will say so rather than looking broken.
 It asks Roon for transport only. It doesn't browse your library, and it has no
 playback controls of any kind.
 
-## Finding the record elsewhere
+## Reading about it, and finding it
 
-Under the card is a row of links for whatever is playing: the Pitchfork review
-the score came from, and a pre-filled search on Qobuz, TIDAL, Spotify, Apple
-Music, Amazon Music, Deezer and Bandcamp. They open the app if you have it and the web
-player if you don't.
+Under the card is a row of links for whatever is playing:
 
-They're searches rather than links to the album itself — that would need each
-service's own id for the record, which needs their APIs and their credentials.
+- the **Wikipedia** article the description came from, and the **Pitchfork**
+  review the score came from
+- a pre-filled search on **Qobuz, TIDAL, Spotify, Apple Music, Amazon Music,
+  Deezer** and **Bandcamp**
 
-There's no Roon link: Roon has no web player and no link scheme to open, so
-there's nothing a tap could go to.
+They open the service's app if you have it and its web player if you don't.
+They're searches rather than links to the album itself — that needs each
+service's own id for the record, and their APIs need credentials. Qobuz is the
+exception: it resolves the real album and opens the app on it.
+
+There's no Roon link. Roon has no web player and no link scheme, so there's
+nothing a tap could go to.
+
+## If you like this, try these
+
+Three acts worth hearing next, with one album each, under the links. They come
+from ListenBrainz where it answers and Deezer otherwise — no account, no key.
+
+Nothing keyless does album-to-album similarity, so these are artists *like* this
+artist rather than records like this record, and the heading says so.
+
+**Hold a service chip** — Qobuz, TIDAL, whichever — and it takes a tick. That's
+where the suggestions link to from then on. It's remembered per device, so your
+phone and the iPad can differ. There's no settings screen for it.
 
 ## Discord
 
@@ -102,10 +122,14 @@ Webhook URL**.
 
 <img src="docs/screenshots/webhooks.jpg" width="360" alt="The webhook settings: channel name, the name to post as, the webhook URL, a picture to upload, and the PIN">
 
-## If it can't find anything
+## If something looks wrong
 
 Press **Find my speakers**. It runs the whole search and tells you what it found,
-what it didn't, and the most likely reason.
+what it didn't, and the most likely reason — plus what the Pitchfork and
+suggestion lookups were asked and what they answered. An empty row has several
+causes that look identical from the card, and that page tells them apart.
+
+It's also where the last crash goes, so "it just closed" comes with a trace.
 
 ## Licence
 
