@@ -326,15 +326,33 @@ class MainActivity : Activity() {
          */
         private fun openExternally(url: Uri): Boolean {
             QobuzAlbum.appUri(url.toString())?.let { app ->
-                if (start(Uri.parse(app))) return true
+                val uri = Uri.parse(app)
+                // Addressed to the Qobuz app, which is the shape
+                // open.qobuz.com's own page emits, then the same scheme left to
+                // implicit resolution. Either lands on the record; the https
+                // link below only opens the app on its Home screen.
+                if (start(uri, QobuzAlbum.APP_PACKAGE)) {
+                    LinkLog.note("$app -> ${QobuzAlbum.APP_PACKAGE}")
+                    return true
+                }
+                if (start(uri, null)) {
+                    LinkLog.note("$app -> opened (no package)")
+                    return true
+                }
+                LinkLog.note("$app -> nothing answered it; using the web link")
                 Log.d(TAG, "no app answered $app — falling back to the web link")
             }
-            if (!start(url)) Log.w(TAG, "nothing could open $url")
+            val opened = start(url, null)
+            LinkLog.note("$url -> " + if (opened) "opened" else "NOTHING COULD OPEN IT")
+            if (!opened) Log.w(TAG, "nothing could open $url")
             return true
         }
 
-        private fun start(url: Uri): Boolean = try {
-            startActivity(Intent(Intent.ACTION_VIEW, url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        private fun start(url: Uri, packageName: String?): Boolean = try {
+            val intent = Intent(Intent.ACTION_VIEW, url)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (packageName != null) intent.setPackage(packageName)
+            startActivity(intent)
             true
         } catch (e: Exception) {
             false

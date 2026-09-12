@@ -330,4 +330,17 @@ class PitchforkTest {
         assertEquals("massive-attack", pf.slugify("Massive Attack"))
         assertEquals("good-kid-m-a-a-d-city", pf.slugify("good kid, m.A.A.d city"))
     }
+
+    @Test
+    fun `a feed title that names the artist too still matches the album`() {
+        // A feed <title> is whatever the publisher puts there. Matching only
+        // the whole string makes the fallback miss exactly the records it
+        // exists for; the artist check on the review page is what actually
+        // stops a wrong match.
+        assertTrue(pf.titleForms("Bon Iver: SABLE, fABLE").contains("sable fable"))
+        assertTrue(pf.titleForms("SABLE, fABLE").contains("sable fable"))
+        assertTrue(pf.titleForms("Björk: Post").contains("post"))
+        // The whole string is still a form, for a title that has a colon in it.
+        assertTrue(pf.titleForms("Untitled: Unmastered").contains("untitled unmastered"))
+    }
 }
