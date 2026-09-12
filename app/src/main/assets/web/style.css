@@ -31,6 +31,22 @@ html, body {
      touch-action gesture and is unaffected — which matters, because it is how
      iOS copies the card. */
   touch-action: pan-x pan-y;
+
+  /*
+   * NO TEXT SELECTION ON THE CHROME — AND THE CARD IS EXEMPTED BELOW.
+   *
+   * Holding a finger anywhere near a button was selecting the label and
+   * throwing up Copy / Look Up / Translate, which is what a web page does and
+   * not what an app should. Captions, buttons and notices are not text anybody
+   * wants to select.
+   *
+   * THE ONE EXCEPTION IS THE CARD ITSELF. `user-select: none` on the card
+   * image kills the iOS long-press menu, and that menu is the only way an
+   * iPhone copies or saves the picture. `.stage img` puts it back explicitly
+   * rather than relying on this rule not reaching it — see the rule there.
+   */
+  -webkit-user-select: none;
+  user-select: none;
   background: var(--bg);
   color: var(--text);
   font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -177,9 +193,33 @@ body {
   display: block;
   width: 100%;
   height: auto;
+  /*
+   * PUT BACK WHAT THE PAGE-WIDE RULE TAKES AWAY.
+   *
+   * html/body carry `user-select: none` so holding a finger near a button does
+   * not throw up Copy / Look Up / Translate. That rule must not reach the card:
+   * on iOS the long-press menu is the only way to copy or save the picture, and
+   * `user-select: none` silently removes it. This is not belt and braces — it is
+   * the thing that keeps the feature alive.
+   */
   -webkit-touch-callout: default;
   -webkit-user-select: auto;
   user-select: auto;
+}
+
+/*
+ * The crash report, which exists to be read off the screen and typed out or
+ * photographed. Selecting it is the point.
+ */
+.diag, .diag * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* A text field with no text selection is a text field you cannot correct. */
+.wh-input, input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .placeholder {

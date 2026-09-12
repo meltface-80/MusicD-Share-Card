@@ -16,8 +16,8 @@ android {
         // Bumping versionName is what publishes a new APK into dist/ and
         // repoints the README at it — see the workflow. versionCode must rise
         // with it or Android refuses to install over the previous build.
-        versionCode = 12
-        versionName = "0.12.0"
+        versionCode = 13
+        versionName = "0.13.0"
     }
 
     buildFeatures {
