@@ -560,4 +560,70 @@ class PitchforkTest {
             s.shutdown()
         }
     }
+
+    // ------------------------------------------------- surviving a restart
+
+    /**
+     * THE POINT OF THE CACHE, end to end.
+     *
+     * The device is never switched off but the service is — a reboot, an
+     * update, Android reclaiming memory — and every one of those used to throw
+     * away every album ever looked up. Playing a record for the second time
+     * paid for the index fetch all over again.
+     */
+    @Test
+    fun `a score looked up once is still known after a restart`() {
+        val indexPath = "/reviews/albums/"
+        val (s, fake) = server(
+            mapOf(
+                indexPath to indexPage(
+                    indexed("The Singer in My Band", "This Is Lorelei",
+                        "this-is-lorelei-the-singer-in-my-band", "8.0")
+                )
+            )
+        )
+        val store = MemoryStore()
+        try {
+            val host = s.url("/").toString().trimEnd('/')
+            val first = Pitchfork(metadataHttpClient(), "test", host, store)
+            assertEquals(8.0, first.reviewFor("The Singer in My Band", "This Is Lorelei")!!.score!!, 0.001)
+            val asked = fake.asked.size
+            assertTrue("nothing was fetched at all", asked > 0)
+
+            // A new Pitchfork is a new process. Nothing in memory.
+            val afterRestart = Pitchfork(metadataHttpClient(), "test", host, store)
+            val review = afterRestart.reviewFor("The Singer in My Band", "This Is Lorelei")
+            assertEquals(8.0, review!!.score!!, 0.001)
+            assertEquals("it went back to Pitchfork for an answer it had", asked, fake.asked.size)
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    @Test
+    fun `a record Pitchfork never reviewed is remembered as such`() {
+        // The miss costs the same three requests as the hit, so it is worth
+        // exactly as much to write down.
+        val (s, fake) = server(emptyMap())
+        val store = MemoryStore()
+        try {
+            val host = s.url("/").toString().trimEnd('/')
+            assertNull(Pitchfork(metadataHttpClient(), "test", host, store).reviewFor("Nope Xyzzy", "Zzzz"))
+            val asked = fake.asked.size
+            assertNull(Pitchfork(metadataHttpClient(), "test", host, store).reviewFor("Nope Xyzzy", "Zzzz"))
+            assertEquals("a remembered miss must cost nothing", asked, fake.asked.size)
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    /** A shelf that lives as long as the test, standing in for the file. */
+    private class MemoryStore : com.musicd.sharecard.meta.CacheStore {
+        private val shelves = HashMap<String, MutableMap<String, String>>()
+        override fun load(namespace: String) = shelves[namespace].orEmpty().toMap()
+        override fun put(namespace: String, key: String, value: String) {
+            shelves.getOrPut(namespace) { LinkedHashMap() }[key] = value
+        }
+        override fun remove(namespace: String, key: String) { shelves[namespace]?.remove(key) }
+    }
 }

@@ -101,8 +101,26 @@ was simply not there, however carefully the DIDL was parsed.
   awaited, and `rediscover()` refuses to tear down a socket that is already
   open. `Source.notice()` is what stops the wait itself looking like a broken
   app.
-- **Only `TokenStore` writes anything**, and nothing on the network can reach
-  it. The rule that every route is a read is unchanged.
+- **Three things write to disk, and nothing on the network reaches any of
+  them**: `TokenStore` (Roon's pairing token), `WebhookStore` (the Discord
+  URLs), and `CacheStore` (what the metadata lookups found). No route touches
+  any of them; the cache is written by the lookup path on its own thread, after
+  the request that triggered it has been answered. The rule that every route is
+  a read stands unchanged, and a NEW route that writes still goes behind
+  `Access.mayConfigure` in the same change.
+- **A cache may never break a lookup.** A full disk, a file written by a version
+  that shaped it differently, a permission that changed underneath — every one
+  of those has to end as "we did not remember that one", never as a failed card.
+  Every disk step in `TtlCache` goes through `quietly {}` and catches Throwable,
+  for the same reason the request path does.
+- **Persistence is OPT-IN and the default path is untouched.** A `TtlCache` with
+  no `Persist` behaves exactly as it did before any of this existed, and
+  `TtlCacheTest` asserts that first. The art bytes and Pitchfork's hourly index
+  deliberately pass none: one is large and cheap to refetch, the other is a
+  recent-reviews window that must stay fresh.
+- **The shelf is read LAZILY, never in a constructor.** These caches are built
+  while `startForeground()`'s five seconds are running — see `CardService` —
+  and a file read in there is exactly what killed the app before.
 - **The Roon client is a port of MusicD Remote Lite's**, trimmed to the shortest
   path to `now_playing`. That app is a remote — it browses, queues, seeks and
   sets volume; this one makes a picture, so the browse tree, queue, transport
