@@ -286,6 +286,13 @@ class CardApi(
                 .put("release", extras?.year?.toString() ?: JSONObject.NULL)
                 .putOrNull("bio", extras?.album?.description)
                 .putOrNull("bioSource", extras?.album?.source)
+                // The article the blurb was taken from. It was already
+                // fetched — Metadata has carried this URL since the port and
+                // nothing ever offered it — and the card credits "Wikipedia"
+                // in type too small to be a link, which left the one source
+                // the words actually came from as the only thing on the page
+                // you could not follow.
+                .putOrNull("bioUrl", extras?.album?.url)
                 .put("score", review?.score ?: JSONObject.NULL)
                 .put("isBestNewMusic", review?.isBestNewMusic ?: false)
                 // The review this app just read the score off. It was already

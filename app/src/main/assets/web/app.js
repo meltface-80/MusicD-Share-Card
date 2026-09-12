@@ -312,8 +312,12 @@
                        (full.score != null && full.score !== painted.score) ||
                        // A review found on the slow path adds a link even when
                        // the score is unchanged, and the links are drawn by
-                       // paint() — without this the chip never appears.
-                       (full.reviewUrl && full.reviewUrl !== painted.reviewUrl);
+                       // paint() — without this the chip never appears. The
+                       // article behind the blurb is the same story: the words
+                       // can already be on screen from the cache while the URL
+                       // for them arrives a moment later.
+                       (full.reviewUrl && full.reviewUrl !== painted.reviewUrl) ||
+                       (full.bioUrl && full.bioUrl !== painted.bioUrl);
         if (!better) return;
         return paint(mine, playing, merge(painted, full));
       }).catch(() => { /* the card without it is already up */ });
@@ -321,8 +325,8 @@
   }
 
   const EMPTY = {
-    release: "", bio: "", bioSource: "", score: null, isBestNewMusic: false,
-    reviewUrl: "", links: []
+    release: "", bio: "", bioSource: "", bioUrl: "", score: null,
+    isBestNewMusic: false, reviewUrl: "", links: []
   };
 
   function extrasOf(j) {
@@ -330,6 +334,7 @@
       release: j && j.release ? String(j.release) : "",
       bio: (j && j.bio) || "",
       bioSource: (j && j.bioSource) || "",
+      bioUrl: (j && j.bioUrl) || "",
       score: j && typeof j.score === "number" ? j.score : null,
       isBestNewMusic: !!(j && j.isBestNewMusic),
       reviewUrl: (j && j.reviewUrl) || "",
@@ -342,6 +347,7 @@
       release: b.release || a.release,
       bio: b.bio || a.bio,
       bioSource: b.bioSource || a.bioSource,
+      bioUrl: b.bioUrl || a.bioUrl,
       score: b.score != null ? b.score : a.score,
       isBestNewMusic: b.isBestNewMusic || a.isBestNewMusic,
       reviewUrl: b.reviewUrl || a.reviewUrl,
@@ -412,18 +418,31 @@
     linksEl.innerHTML = "";
     const services = (extras && extras.links) || [];
     const review = extras && extras.reviewUrl;
-    if (!services.length && !review) {
+    // The article the blurb was lifted from — Wikipedia for every record that
+    // has one. The card already credits it in small type under the words; this
+    // is the same credit made followable.
+    const article = extras && extras.bioUrl;
+    const reading = !!(review || article);
+    if (!services.length && !reading) {
       linksEl.classList.add("hidden");
       return;
     }
 
     const label = document.createElement("p");
     label.className = "links-label";
-    label.textContent = review ? "Read about it, or find it on" : "Find it on";
+    label.textContent = reading ? "Read about it, or find it on" : "Find it on";
     linksEl.appendChild(label);
 
+    // Both of these go to a page about THIS record rather than a search for
+    // it, which is what sets them apart from the row that follows.
     if (review) {
       linksEl.appendChild(link(review, "Pitchfork review", "links-review"));
+    }
+    if (article) {
+      // Named by whoever the blurb came from rather than hard-coded, so a
+      // second source added later labels its own chip.
+      const source = (extras && extras.bioSource) || "Wikipedia";
+      linksEl.appendChild(link(article, source, "links-review"));
     }
     for (const svc of services) {
       if (!svc || !svc.url || !svc.name) continue;
@@ -1011,16 +1030,24 @@
   zoneSel.addEventListener("change", () => load(false));
 
   /*
-   * Redraw when the page is brought back, not on a timer.
+   * NOTHING REDRAWS THE CARD BUT THE REFRESH BUTTON.
    *
-   * This runs on a device that is always on, and a poll would mean asking a
-   * speaker what it is doing every few seconds for the rest of the day to
-   * answer a question nobody is in the room to read. Coming back to the tab is
-   * the moment somebody actually wants to know.
+   * There is no timer — this runs on a device that is never switched off, and
+   * a poll would mean asking a speaker what it is doing every few seconds for
+   * the rest of the day to answer a question nobody is in the room to read.
+   *
+   * AND THERE IS NO visibilitychange EITHER, which is the part that had to be
+   * taken back out. Redrawing when the page came back sounded like the same
+   * rule — ask at the moment somebody wants to know — but it is not what it
+   * does. Going to the Home Screen and returning fires it, so the card you
+   * were looking at was thrown away and replaced by a spinner every single
+   * time, and a card you had deliberately left up to send or show somebody
+   * could not survive a glance at anything else. Leaving the app is not a
+   * request for a different record.
+   *
+   * The cost is a card that can be stale, which is the correct trade: it says
+   * what it is a picture of, and Refresh is one tap away.
    */
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && current) load(false);
-  });
 
   /*
    * PINCH TO ZOOM, OFF.

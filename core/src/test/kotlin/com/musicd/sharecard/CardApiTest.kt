@@ -4,6 +4,8 @@ import com.musicd.sharecard.api.ArtProxy
 import com.musicd.sharecard.api.Assets
 import com.musicd.sharecard.api.CardApi
 import com.musicd.sharecard.http.Request
+import com.musicd.sharecard.library.Normalize
+import com.musicd.sharecard.meta.CacheStore
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
 import com.musicd.sharecard.meta.metadataHttpClient
@@ -54,7 +56,7 @@ class CardApiTest {
         }
     }
 
-    private fun api(): CardApi {
+    private fun api(shelf: CacheStore = CacheStore.NONE): CardApi {
         players.values.forEach { it.topology = topology }
         val http = metadataHttpClient()
         val household = Household(
@@ -64,7 +66,7 @@ class CardApiTest {
         )
         return CardApi(
             Sources(listOf(SonosSource(household))),
-            Metadata(http, "test"),
+            Metadata(http, "test", shelf),
             Pitchfork(http, "test"),
             ArtProxy(http),
             assets,
@@ -233,6 +235,54 @@ class CardApiTest {
             assertTrue("$url is not https", url.startsWith("https://"))
             assertTrue("$url does not name the record", url.contains("Laughing%20Stock"))
         }
+    }
+
+    /**
+     * The words on the card come from a Wikipedia article and the card credits
+     * it in small type — but the article itself was never offered, so the one
+     * source the blurb actually came from was the only thing on the page you
+     * could not follow. Metadata has carried that URL since the port.
+     *
+     * PRIMED THROUGH THE CACHE rather than the network: en.wikipedia.org is
+     * hard-coded in the lookup and there is nothing here to point at a mock.
+     * The shelf is the supported way in, `fast=1` reads it without opening a
+     * socket, and it exercises the encode/decode round trip on the way past.
+     */
+    @Test
+    fun `extras carries the article the blurb was taken from`() {
+        val key = Normalize.text("Laughing Stock") + "||" + Normalize.text("Talk Talk")
+        val article = "https://en.wikipedia.org/wiki/Laughing_Stock"
+        val remembered = mapOf(
+            key to System.currentTimeMillis().toString() + "|" + JSONObject()
+                .put("year", 1991)
+                .put("bio", "The fifth and final studio album by Talk Talk.")
+                .put("src", "Wikipedia")
+                .put("url", article)
+                .toString()
+        )
+        val shelf = object : CacheStore {
+            override fun load(namespace: String) =
+                if (namespace == "extras") remembered else emptyMap()
+            override fun put(namespace: String, key: String, value: String) {}
+            override fun remove(namespace: String, key: String) {}
+        }
+
+        val body = JSONObject(
+            String(
+                api(shelf).handle(
+                    get(
+                        "/api/extras",
+                        mapOf("album" to "Laughing Stock", "artist" to "Talk Talk", "fast" to "1")
+                    )
+                ).body,
+                Charsets.UTF_8
+            )
+        )
+        assertEquals("Wikipedia", body.getString("bioSource"))
+        assertEquals(article, body.getString("bioUrl"))
+        // And the blurb it belongs to, so a URL can never arrive on its own
+        // and label a chip for words that are not on the card.
+        assertTrue(body.getString("bio").isNotEmpty())
     }
 
     @Test
