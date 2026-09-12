@@ -195,6 +195,15 @@ was simply not there, however carefully the DIDL was parsed.
   version put Save below the fold behind three paragraphs of prose, and a
   settings screen you have to scroll to finish is one people abandon half done.
   Short fields pair across the width; every explanation is one line.
+- **The icon is a BEAMED PAIR, and the notehead tilt is not decoration.** It
+  was three grey dashes (unreadable), then a single quaver whose flag is a
+  hairline curl — at the ~12dp a home-screen icon gives that note, the flag
+  thinned to nothing and left a stem with a blob on it, reported as "a funny
+  looking music note". A beam is a solid bar that survives the size, and two
+  heads say "music" where one says "a shape". The heads lean with their right
+  end up because every notehead in engraved music does; an upright one looks
+  wrong without looking obviously wrong. `android:rotation` is clockwise and
+  PIL's is not, so the vector says -22 where the script says 22.
 - **iOS needs a real PNG icon, and `tools/make-icons.py` draws it.**
   `apple-touch-icon` will not take an SVG or an adaptive icon, and without one
   the Home Screen shows a screenshot or a bare letter. The PNGs in
@@ -477,6 +486,14 @@ was simply not there, however carefully the DIDL was parsed.
   writes `raw.githubusercontent.com/...` and not `github.com/.../raw/...`. The
   app this was ported from carries a comment saying exactly this above a check
   that only tests the scheme; that was fixed here rather than copied.
+- **The update bar is drawn ONLY on the device running the app.** The APK
+  installs there; a page open on an iPad across the house is looking at
+  software it cannot replace, and its Update button asked for a PIN and then
+  offered to update a machine in another room. Reported as "shows the update
+  button, does nothing". `/api/update/status` carries `onDevice` — taken from
+  the socket address, like every other trust decision here — and the page hides
+  the whole bar on it, which also stops a LAN page spending a request on GitHub
+  for an answer it will not draw.
 - **`/api/update/check` and `/api/update/apply` are POST and gated.** Replacing
   the APK on an always-on device in another room is a bigger write than adding a
   webhook, so both go through `Access.mayConfigure` — and both refuse a GET,

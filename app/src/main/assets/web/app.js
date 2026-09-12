@@ -904,11 +904,10 @@
    * everything up to that point is :core, and tested there. This is only the
    * bar that reports it.
    *
-   * WHO CHECKS. The check is a write route — it reaches out to GitHub — so it
-   * is gated exactly like adding a webhook: the device's own WebView is trusted
-   * without a PIN, anything else on the network needs one. So the device checks
-   * when its page opens, and every other device reads what it found. An iPad
-   * with the PIN can still ask for a fresh check.
+   * WHERE IT SHOWS. On the device running the app, and nowhere else. The APK
+   * installs HERE; a page open on an iPad is looking at software it cannot
+   * replace, and the button there asked for a PIN and then updated a machine
+   * in another room. /api/update/status says which kind of page this is.
    *
    * THIS IS NOT A POLL. One request when somebody opens the page, in the same
    * spirit as asking a speaker what is playing only when there is somebody
@@ -918,12 +917,19 @@
   async function checkForUpdate() {
     if (!updateEl) return;
     try {
-      // Ask the device to look only if this browser is allowed to. Elsewhere,
-      // read whatever the device found last.
-      if (setup.mayConfigure) {
-        await fetch("/api/update/check", { method: "POST", cache: "no-store" });
+      // ONLY ON THE DEVICE ITSELF. The APK installs here, on the machine
+      // running the app — so an update bar on an iPad across the house is
+      // offering to replace software on something else, which is not what
+      // anybody pressing it means. It asked for a PIN and then did nothing
+      // visible, which was worse than not being there.
+      const state = await getJson("/api/update/status");
+      if (!state || !state.onDevice) {
+        updateEl.classList.add("hidden");
+        return;
       }
-      showUpdate(await getJson("/api/update/status"));
+      // Here, and only here, is it worth going out to GitHub to look.
+      const response = await fetch("/api/update/check", { method: "POST", cache: "no-store" });
+      showUpdate(await response.json().catch(() => state));
     } catch (e) {
       // An update notice that cannot be fetched is not worth a line of red on
       // a page whose actual job is drawing a card.
