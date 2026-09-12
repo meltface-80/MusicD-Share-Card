@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--
+  maximum-scale and user-scalable turn pinch-zoom off. Android and desktop
+  honour them; iOS Safari has ignored user-scalable since iOS 10 for
+  accessibility, so app.js refuses the gesture events as well. Neither touches
+  the long press, which is how iOS copies the card.
+-->
+<meta name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>MusicD Share Card</title>
 

@@ -274,6 +274,10 @@ class CardApi(
                             .put("name", it.name)
                             .put("masked", it.masked)
                             .put("kind", it.kind)
+                            // Not secret, and the page needs it to show what a
+                            // post will look like before one is sent.
+                            .put("username", it.username)
+                            .put("avatarUrl", it.avatarUrl)
                     }
                 )
             )
@@ -295,7 +299,9 @@ class CardApi(
             val webhook = Webhook(
                 id = WebhookUrls.idFor(url),
                 name = name.ifEmpty { "Discord" },
-                url = url
+                url = url,
+                username = WebhookUrls.validateUsername(body.str("username")),
+                avatarUrl = WebhookUrls.validateAvatar(body.str("avatarUrl"))
             )
             webhooks.add(webhook)
             Log.i(TAG, "added webhook ${webhook.name} (${webhook.masked})")

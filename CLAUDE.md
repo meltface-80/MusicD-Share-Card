@@ -142,6 +142,19 @@ was simply not there, however carefully the DIDL was parsed.
   it offers a stranger on your wifi is a picture of your own album in your own
   channel. Any NEW route that writes goes behind `Access.mayConfigure` in the
   same change.
+- **A webhook can choose its display name and avatar; it CANNOT drop the APP
+  tag.** Discord marks every webhook message that way on purpose, so a reader
+  can tell a person from an integration, and no field turns it off. Posting as
+  the account itself would mean driving a user token — self-botting, against
+  Discord's terms, not something to build. `username` and `avatar_url` are as
+  close as this goes, and the settings panel says so before anything is sent
+  rather than leaving it to be discovered in a channel.
+- **Pinch-zoom is off, but NOT via `touchstart`.** The viewport meta covers
+  Android and desktop; iOS has ignored `user-scalable` since iOS 10, so the
+  `gesturestart`/`gesturechange`/`gestureend` events are refused instead —
+  they fire only for a multi-finger pinch. A `touchstart` that calls
+  `preventDefault` would kill the long press, which is how iOS copies the card,
+  and it would fail silently.
 - **A webhook URL never leaves the process.** No route returns one — listings
   carry `Webhook.masked`, the id is a hash rather than the token, and the server
   does the posting so the page never needs it. `CardApiTest` asserts no route

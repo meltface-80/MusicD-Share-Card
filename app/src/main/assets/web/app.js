@@ -596,7 +596,8 @@
 
     const rows = webhooks.map((h) =>
       '<li><span class="wh-name">' + escapeHtml(h.name) + "</span>" +
-      '<span class="wh-mask">' + escapeHtml(h.masked) + "</span>" +
+      '<span class="wh-mask">' +
+      escapeHtml(h.username ? "posts as " + h.username : h.masked) + "</span>" +
       '<button class="wh-del" data-id="' + escapeHtml(h.id) + '">Remove</button></li>'
     ).join("");
 
@@ -620,6 +621,16 @@
       "\u2192 Copy Webhook URL.</p>" +
       '<input class="wh-input" id="wh-name" placeholder="Name (e.g. Vinyl chat)">' +
       '<input class="wh-input" id="wh-url" placeholder="https://discord.com/api/webhooks/…">' +
+      "<h3>Post as</h3>" +
+      // The honest limit, said once and up front rather than discovered in the
+      // channel: Discord tags every webhook message APP and no field turns
+      // that off. Name and picture are as close as it goes.
+      '<p class="wh-note">Discord shows this name and picture on the message. It will ' +
+      "still carry the <b>APP</b> tag beside it \u2014 Discord marks every webhook that " +
+      "way so a reader can tell a person from an integration, and there is no setting " +
+      "that removes it. Leave blank to use the webhook\u2019s own name from Discord.</p>" +
+      '<input class="wh-input" id="wh-username" placeholder="Display name (e.g. Menzies)">' +
+      '<input class="wh-input" id="wh-avatar" placeholder="Avatar image URL (https://…)">' +
       gate +
       '<div class="wh-buttons">' +
       '<button class="primary" id="wh-add">Save</button>' +
@@ -646,12 +657,16 @@
     errEl.textContent = "";
     const name = (document.getElementById("wh-name").value || "").trim();
     const url = (document.getElementById("wh-url").value || "").trim();
+    const username = (document.getElementById("wh-username").value || "").trim();
+    const avatarUrl = (document.getElementById("wh-avatar").value || "").trim();
     if (!url) { errEl.textContent = "Paste the webhook URL from Discord."; return; }
     try {
       const response = await fetch("/api/webhooks" + pinParam(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name, url: url })
+        body: JSON.stringify({
+          name: name, url: url, username: username, avatarUrl: avatarUrl
+        })
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || ("Refused (" + response.status + ")"));
@@ -699,6 +714,23 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && current) load(false);
   });
+
+  /*
+   * PINCH TO ZOOM, OFF.
+   *
+   * The viewport meta handles Android and desktop. iOS Safari has ignored
+   * user-scalable since iOS 10 — deliberately, for accessibility — so the
+   * only thing left is refusing the gesture events, which are iOS-only and
+   * fire ONLY for a multi-finger pinch.
+   *
+   * NOT touchstart. A touchstart that calls preventDefault kills the long
+   * press, and the long press is how an iPhone copies the card — the one
+   * control iOS has that genuinely works. It would fail silently, and only
+   * for somebody holding a finger on the picture.
+   */
+  for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
+    document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+  }
 
   load(false);
 })();

@@ -57,7 +57,13 @@ class WebhookFile(context: Context) : WebhookStore {
             val id = o.optString("id")
             val url = o.optString("url")
             if (id.isEmpty() || url.isEmpty()) continue
-            out += Webhook(id, o.optString("name").ifEmpty { "Discord" }, url)
+            out += Webhook(
+                id,
+                o.optString("name").ifEmpty { "Discord" },
+                url,
+                o.optString("username"),
+                o.optString("avatarUrl")
+            )
         }
         return out
     }
@@ -69,13 +75,15 @@ class WebhookFile(context: Context) : WebhookStore {
         val kept = all().filter { it.id != webhook.id } + webhook
         json.put("webhooks", JSONArray().also { array ->
             for (w in kept) {
-                array.put(
-                    JSONObject().put("id", w.id).put("name", w.name).put("url", w.url)
-                )
+                array.put(row(w))
             }
         })
         write(json)
     }
+
+    private fun row(w: Webhook) = JSONObject()
+        .put("id", w.id).put("name", w.name).put("url", w.url)
+        .put("username", w.username).put("avatarUrl", w.avatarUrl)
 
     override fun remove(id: String): Boolean {
         val before = all()
@@ -84,9 +92,7 @@ class WebhookFile(context: Context) : WebhookStore {
         val json = read()
         json.put("webhooks", JSONArray().also { array ->
             for (w in kept) {
-                array.put(
-                    JSONObject().put("id", w.id).put("name", w.name).put("url", w.url)
-                )
+                array.put(row(w))
             }
         })
         write(json)

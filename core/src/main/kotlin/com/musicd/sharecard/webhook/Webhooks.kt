@@ -14,7 +14,26 @@ import java.net.URI
 data class Webhook(
     val id: String,
     val name: String,
-    val url: String
+    val url: String,
+    /**
+     * The name Discord shows on the message, overriding the webhook's own.
+     *
+     * HOW CLOSE THIS CAN GET, AND WHERE IT STOPS. Discord lets a webhook choose
+     * a display name and an avatar per message, so a card can arrive as
+     * "Menzies" with Menzies' picture instead of the webhook's. What it CANNOT
+     * do is drop the APP tag beside the name: Discord marks every webhook
+     * message that way on purpose, so a reader can always tell a person from an
+     * integration, and no field turns it off.
+     *
+     * Posting as the account itself would mean driving a user token, which is
+     * self-botting — against Discord's terms and a good way to lose the
+     * account. Not something to build.
+     *
+     * Empty means "leave it to the webhook's own settings in Discord".
+     */
+    val username: String = "",
+    /** A public https image. Discord fetches it; this app never does. */
+    val avatarUrl: String = ""
 ) {
     /**
      * Enough to recognise which webhook this is, and not enough to use it.
@@ -115,6 +134,52 @@ object WebhookUrls {
         val parts = uri.path.removePrefix("/api/webhooks/").split('/').filter { it.isNotEmpty() }
         if (parts.size < 2 || parts[1].length < 8) {
             throw WebhookRejected("That webhook URL looks truncated — copy the whole thing.")
+        }
+        return url
+    }
+
+    /**
+     * A display name Discord will accept.
+     *
+     * Discord rejects a few names outright ("clyde", "discord") and caps the
+     * length. Silently sending one that will be refused turns a working post
+     * into a 400 nobody can explain.
+     */
+    fun validateUsername(raw: String): String {
+        val name = raw.trim()
+        if (name.isEmpty()) return ""
+        if (name.length > 80) throw WebhookRejected("That name is too long for Discord.")
+        val folded = name.lowercase()
+        if (folded.contains("clyde") || folded.contains("discord")) {
+            throw WebhookRejected("Discord does not allow \u201Cclyde\u201D or \u201Cdiscord\u201D in a webhook name.")
+        }
+        return name
+    }
+
+    /**
+     * An avatar URL Discord can fetch.
+     *
+     * Discord does the fetching, not this app, so this is not an SSRF check —
+     * it is a check that the thing will work at all. A LAN address is invisible
+     * to Discord's servers and would silently fall back to the default avatar.
+     */
+    fun validateAvatar(raw: String): String {
+        val url = raw.trim()
+        if (url.isEmpty()) return ""
+        val uri = runCatching { URI(url) }.getOrNull()
+            ?: throw WebhookRejected("That avatar is not a URL.")
+        if (!uri.scheme.equals("https", ignoreCase = true)) {
+            throw WebhookRejected("An avatar URL must start with https://")
+        }
+        val host = uri.host?.lowercase().orEmpty()
+        if (host.isEmpty()) throw WebhookRejected("That avatar URL names no host.")
+        if (host == "localhost" || host.startsWith("192.168.") || host.startsWith("10.") ||
+            host.startsWith("127.") || host.startsWith("172.")
+        ) {
+            throw WebhookRejected(
+                "Discord fetches the avatar itself, so it has to be a public URL — " +
+                    "an address on your own network is invisible to it."
+            )
         }
         return url
     }
