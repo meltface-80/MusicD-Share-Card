@@ -226,6 +226,21 @@ was simply not there, however carefully the DIDL was parsed.
 - **`optString` is unsafe.** Android's `org.json` returns the literal text
   `"null"` where the desktop one returns `""`. Use `str()` / `strOrNull()`. The
   JVM tests cannot catch this, so `JsonSafeTest` scans the source instead.
+- **A `Regex` in a companion object IS A STATIC INITIALISER, and Android's
+  engine is stricter than this JVM's.** `java.util.regex` here treats a dangling
+  `}` or `]` as a literal; Android's is ICU-backed and refuses it. One unescaped
+  `}` in Pitchfork's rating pattern shipped as 0.19.0, and the app would not
+  open at all — "The card server could not start. ExceptionInInitializerError:
+  null" — because the class never loaded. Same shape as `setXIncludeAware`, new
+  place. Every literal `{`, `}` and `]` outside a character class must be
+  escaped; `RegexPortabilityTest` scans the source for it, because no test that
+  runs on this JVM can catch it. It found two more the moment it was written.
+- **Report the CAUSE, not the wrapper.** "ExceptionInInitializerError: null"
+  names no class, no line and no reason — everything is in the cause, and the
+  startup error printed only the top of the chain. `describe()` walks it and
+  names the first frame in this app's own code, which is the class whose
+  initialiser threw. Use it anywhere a Throwable is turned into text somebody
+  will read.
 - **Hardening the XML parser is BEST-EFFORT, and every setting must go through
   `quietly {}`.** `setXIncludeAware` is not implemented by Android and the base
   class throws `UnsupportedOperationException`. In a static initialiser that
