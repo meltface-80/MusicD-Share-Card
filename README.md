@@ -30,7 +30,7 @@ wins.
 
 ## Install
 
-[**Download musicd-share-card-0.24.0.apk**](dist/musicd-share-card-0.24.0.apk)
+[**Download musicd-share-card-0.25.0.apk**](dist/musicd-share-card-0.25.0.apk)
 and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 
@@ -78,7 +78,7 @@ playback controls of any kind.
 
 Under the card is a row of links for whatever is playing: the Pitchfork review
 the score came from, and a pre-filled search on Qobuz, TIDAL, Spotify, Apple
-Music, Amazon Music and Deezer. They open the app if you have it and the web
+Music, Amazon Music, Deezer and Bandcamp. They open the app if you have it and the web
 player if you don't.
 
 They're searches rather than links to the album itself — that would need each

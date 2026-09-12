@@ -65,7 +65,8 @@ object StreamingLinks {
             Link("spotify", "Spotify", "https://open.spotify.com/search/$query"),
             Link("apple", "Apple Music", "https://music.apple.com/search?term=$query"),
             Link("amazon", "Amazon Music", "https://music.amazon.com/search/$query"),
-            Link("deezer", "Deezer", "https://www.deezer.com/search/$query")
+            Link("deezer", "Deezer", "https://www.deezer.com/search/$query"),
+            Link("bandcamp", "Bandcamp", "https://bandcamp.com/search?q=$query&item_type=a")
         )
     }
 
@@ -102,6 +103,11 @@ object StreamingLinks {
      * DEEZER — www.deezer.com/search/<q>. Deezer also serves /<lang>/search/,
      * and drops the language segment when it is absent rather than 404ing.
      *
+     * BANDCAMP — bandcamp.com/search?q=, with item_type=a to keep the results
+     * to albums rather than mixing in tracks and artists. An unknown parameter
+     * there is ignored rather than fatal, so the worst it costs is a wider
+     * result page.
+     *
      * NONE OF THE LAST FOUR HAS BEEN OPENED ON A PHONE. The URL building below
      * is tested; which app answers which host is not something a JVM test or
      * this build environment can establish, and the failure mode is a link that
@@ -135,7 +141,7 @@ object StreamingLinks {
      * string — and a title with a real plus in it comes back wrong from
      * whichever end decodes it the other way. Half these services take the
      * query as a PATH segment, where "+" is not a space at all and would be
-     * searched for literally. Titles carrying "&", "#" or a quote are the
+     * searched for literally (Spotify, Amazon and Deezer). Titles carrying "&", "#" or a quote are the
      * reason any of this is encoded to begin with.
      *
      * A SLASH IS THE EXCEPTION THAT MUST NOT MERELY BE ENCODED. Qobuz's search
