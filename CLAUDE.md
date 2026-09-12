@@ -142,6 +142,22 @@ was simply not there, however carefully the DIDL was parsed.
   it offers a stranger on your wifi is a picture of your own album in your own
   channel. Any NEW route that writes goes behind `Access.mayConfigure` in the
   same change.
+- **A WebView opens no file picker without a `WebChromeClient`.** `<input
+  type="file">` is silently inert without one — no picker, no error, no log
+  line — which is what the avatar photo button did. `onShowFileChooser` must
+  launch `params.createIntent()` and `onActivityResult` must hand the result
+  back with `parseResult`. A callback that is never answered leaves that input
+  dead for the life of the page, so cancelling, failing and being destroyed all
+  have to answer it with null.
+  `FilePickerContractTest` scans for this, because it cannot be reproduced on a
+  JVM and the failure mode is silence.
+- **The file input is hidden by clip/opacity rather than `display: none`, but
+  that was NOT the bug.** It was shipped as a second suspected cause and the
+  field disproved it: the same page, with the same `display: none`, worked
+  perfectly in Safari on iOS and did nothing only in the Android WebView. The
+  missing `WebChromeClient` was the whole of it. The clip/opacity pattern stays
+  because it also keeps the control keyboard-reachable, but do not go looking
+  for a browser this fixed — there wasn't one.
 - **An avatar is UPLOADED to Discord, not linked.** `avatar_url` is fetched by
   Discord's own servers, so a picture this app serves from a home network is
   invisible to it and falls back silently to the default — and a photo on a

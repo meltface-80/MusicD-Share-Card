@@ -186,7 +186,7 @@ class DiscordPoster(private val http: OkHttpClient = webhookHttpClient()) {
         const val TAG = "Discord"
         val PNG = "image/png".toMediaType()
         val JSON = "application/json".toMediaType()
-        const val USER_AGENT = "MusicDShareCard (https://github.com/meltface-80/New)"
+        const val USER_AGENT = "MusicDShareCard (https://github.com/meltface-80/MusicD-Share-Card)"
 
         /** Discord's own limit for a webhook attachment on a free server. */
         const val MAX_BYTES = 8 * 1024 * 1024
