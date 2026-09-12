@@ -79,16 +79,31 @@ class ShareBridge(private val activity: Activity) {
             });
           }
 
-          // Deliberately NOT shimmed: window.ClipboardItem and
-          // navigator.clipboard.write. Handing an image to the Android
-          // clipboard means handing over a content:// URI, and the app pasting
-          // it has no grant to read our FileProvider — so the copy appeared to
-          // succeed and pasted nothing. The page feature-detects both before
-          // it draws the Copy button, so leaving them absent removes the
-          // button rather than leaving one that lies.
+          // COPY IS REMOVED, NOT SHIMMED, AND NOT MERELY LEFT ALONE.
           //
-          // Text copying is fine and does not go through a URI.
+          // Handing an image to the Android clipboard means handing over a
+          // content:// URI, and the app doing the pasting holds no grant
+          // against our FileProvider — so the write resolves and nothing is
+          // pasted. Declining to shim it was not enough: Android's WebView HAS
+          // both ClipboardItem and clipboard.write natively, so the page's
+          // feature-detect passed and drew a Copy button that then did nothing.
+          // Reported from a real install.
+          //
+          // So the capability is taken away, which is the honest description of
+          // this platform: an image cannot reach the clipboard from here.
+          // Share does the same job and works. Text copying is untouched — it
+          // does not go through a URI.
+          try { delete window.ClipboardItem; } catch (e) { /* non-configurable */ }
+          try {
+            Object.defineProperty(window, "ClipboardItem", {
+              value: undefined, configurable: true, writable: true
+            });
+          } catch (e) { /* nothing more to try */ }
+
           var clip = navigator.clipboard || {};
+          // The other half of the detect. Left in place it would still draw the
+          // button on a WebView that grew a ClipboardItem of its own.
+          try { delete clip.write; } catch (e) { /* ignore */ }
           if (typeof clip.writeText !== "function") {
             clip.writeText = function (text) {
               return new Promise(function (resolve, reject) {

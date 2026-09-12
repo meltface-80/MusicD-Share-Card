@@ -46,7 +46,18 @@ object Ssdp {
     data class Result(
         val hosts: List<String>,
         /** One line per interface tried, and what it managed. */
-        val notes: List<String>
+        val notes: List<String>,
+        /**
+         * The full LOCATION URLs, not just the hosts.
+         *
+         * Sonos publishes its control paths at fixed addresses, so a host was
+         * all that was needed for it. A standard DLNA renderer does not: its
+         * description document can be on any port at any path, and LOCATION is
+         * the only thing that says where. Throwing that away and guessing ports
+         * was how the first version of the UPnP source was written, and it
+         * would have found almost nothing.
+         */
+        val locations: List<String> = emptyList()
     )
 
     fun discover(
@@ -55,6 +66,12 @@ object Ssdp {
         attempts: Int = 2,
         timeoutMs: Int = 3000
     ): List<String> = sweep(searchTarget, mx, attempts, timeoutMs).hosts
+
+    /** The full description-document URLs, which a DLNA renderer needs. */
+    fun discoverLocations(
+        searchTarget: String,
+        timeoutMs: Int = 3000
+    ): List<String> = sweep(searchTarget, timeoutMs = timeoutMs).locations
 
     /** As [discover], but reporting what each interface did. */
     fun sweep(
@@ -73,6 +90,7 @@ object Ssdp {
             ).toByteArray(Charsets.US_ASCII)
 
         val found = LinkedHashSet<String>()
+        val locations = LinkedHashSet<String>()
         val notes = ArrayList<String>()
 
         val interfaces = usableInterfaces()
@@ -82,7 +100,7 @@ object Ssdp {
         // that refuses to send must not stop the others being tried.
         for (nic in interfaces) {
             val before = found.size
-            val note = probe(nic, message, attempts, timeoutMs, found)
+            val note = probe(nic, message, attempts, timeoutMs, found, locations)
             notes += "${nic.name}: $note, ${found.size - before} new"
         }
 
@@ -91,7 +109,7 @@ object Ssdp {
         } else {
             Log.i(TAG, "SSDP found players at $found")
         }
-        return Result(found.toList(), notes)
+        return Result(found.toList(), notes, locations.toList())
     }
 
     /**
@@ -118,7 +136,8 @@ object Ssdp {
         message: ByteArray,
         attempts: Int,
         timeoutMs: Int,
-        into: MutableSet<String>
+        into: MutableSet<String>,
+        locations: MutableSet<String> = LinkedHashSet()
     ): String = try {
         MulticastSocket().use { socket ->
             socket.soTimeout = 300
@@ -140,7 +159,9 @@ object Ssdp {
                 // Listen between sends, not only after the last one, so a
                 // player that answers the first probe is recorded either way.
                 val slice = if (attempt + 1 < attempts) 400L else timeoutMs.toLong()
-                collectUntil(socket, minOf(deadline, System.currentTimeMillis() + slice), into)
+                collectUntil(
+                    socket, minOf(deadline, System.currentTimeMillis() + slice), into, locations
+                )
             }
             "probed"
         }
@@ -148,7 +169,12 @@ object Ssdp {
         "failed (${e.message})"
     }
 
-    private fun collectUntil(socket: MulticastSocket, until: Long, into: MutableSet<String>) {
+    private fun collectUntil(
+        socket: MulticastSocket,
+        until: Long,
+        into: MutableSet<String>,
+        locations: MutableSet<String> = LinkedHashSet()
+    ) {
         val buffer = ByteArray(2048)
         while (System.currentTimeMillis() < until) {
             val packet = DatagramPacket(buffer, buffer.size)
@@ -164,7 +190,9 @@ object Ssdp {
             if (!isSearchResponse(reply)) continue
             // The LOCATION header names the player's own address; the packet's
             // source address is the fallback for a reply that omits it.
-            val host = hostOfLocation(headerOf(reply, "location")) ?: packet.address?.hostAddress
+            val location = headerOf(reply, "location")
+            if (!location.isNullOrBlank()) locations += location.trim()
+            val host = hostOfLocation(location) ?: packet.address?.hostAddress
             if (!host.isNullOrEmpty()) into += host
         }
     }

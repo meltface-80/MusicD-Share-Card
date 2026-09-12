@@ -13,6 +13,7 @@ import android.os.IBinder
 import com.musicd.sharecard.Log
 import com.musicd.sharecard.ShareCardApp
 import com.musicd.sharecard.api.Assets
+import com.musicd.sharecard.roon.RoonClient
 
 /**
  * The card server, running as a foreground service.
@@ -109,6 +110,23 @@ class CardService : Service() {
                 // only on the device that crashed.
                 hostNotes = {
                     CrashLog.read(this)?.let { listOf("Last crash:\n$it") }.orEmpty()
+                },
+                // Roon's pairing token, so the extension is approved once and
+                // not on every restart.
+                tokenStore = RoonTokenFile(this),
+                // Discord webhooks. Private storage, and never handed back out
+                // over the network — only a mask is.
+                webhookStore = WebhookFile(this),
+                // Roon's discovery is SOOD, which is multicast — the same lock
+                // SSDP needs, and the same silent failure without it.
+                roonMulticastLock = object : RoonClient.MulticastLock {
+                    override fun acquire() = takeMulticastLock()
+                    override fun release() {
+                        // Held for the life of the service rather than per
+                        // scan: Roon rediscovers on every reconnect, and a lock
+                        // that is dropped between them is a lock that is not
+                        // held when it matters.
+                    }
                 }
             ).also { it.start() }
 
@@ -147,7 +165,11 @@ class CardService : Service() {
         super.onDestroy()
     }
 
+    @Synchronized
     private fun takeMulticastLock() {
+        // Idempotent: both SSDP and Roon's SOOD ask for this, and a second
+        // lock object would leak the first.
+        if (multicastLock?.isHeld == true) return
         try {
             val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             multicastLock = wifi.createMulticastLock("musicd-sharecard").apply {

@@ -59,6 +59,45 @@ tests. `SeedHosts` lives there rather than in the Android module for exactly thi
 reason: the parsing is the part that can be wrong, and a bad address fails later
 as "no Sonos players found", which is indistinguishable from a network problem.
 
+## The app is not a Sonos app
+
+`Source` is the interface and Sonos is one implementation of it. That shape was
+arrived at the hard way: Sonos was wired in first and its assumptions ended up
+pressed into every layer, until Roon proved the cost by handing a speaker its
+own session id where the title should be. Read through the speaker the record
+was simply not there, however carefully the DIDL was parsed.
+
+- **Ask whoever actually knows.** `RoonSource` asks Roon, which has the album,
+  the artist and a real cover because it is the thing playing them.
+  `SonosSource` is right for what the speakers stream themselves — Spotify
+  Connect, Apple Music via the Sonos app, radio. `UpnpSource` is the same
+  conversation with any DLNA renderer.
+- **Roon is asked FIRST, and that ordering is load-bearing.** Both it and Sonos
+  can see a room Roon is playing to; only one of them knows the record.
+- **Zone ids are prefixed with their source** (`roon:…`, `sonos:…`) so two
+  sources cannot collide on one room, and the picker says which is which.
+- **Roon's first run needs a human.** The Core does not answer `register` until
+  somebody enables the extension in Settings → Extensions, and that wait is open
+  ended. `Source.notice()` is what stops that looking like a broken app.
+- **Only `TokenStore` writes anything**, and nothing on the network can reach
+  it. The rule that every route is a read is unchanged.
+- **The Roon client is a port of MusicD Remote Lite's**, trimmed to the shortest
+  path to `now_playing`. That app is a remote — it browses, queues, seeks and
+  sets volume; this one makes a picture, so the browse tree, queue, transport
+  verbs and settings panel are all left out, and `required_services` asks for
+  TRANSPORT only.
+- **`now_playing.three_line` is line1=track, line2=artist, line3=ALBUM.** Read in
+  the wrong order it makes a card headed with a track name, which looks almost
+  right.
+- **A UPnP renderer's control URL is not at a fixed path.** Sonos publishes its
+  at constants; everyone else names theirs in a device description whose own
+  address comes from the SSDP `LOCATION` header. Guessing ports instead of
+  keeping LOCATION was the first version of `UpnpSource` and it would have found
+  almost nothing.
+- **`/api/health` must not touch the network.** It reported the zone count once,
+  which meant a liveness check ran a multicast sweep and a description fetch per
+  renderer.
+
 ## Things about this codebase that are easy to get wrong
 
 - **The art proxy allows two things and nothing else: a KNOWN player, or a
@@ -78,10 +117,30 @@ as "no Sonos players found", which is indistinguishable from a network problem.
   cannot be read back: `toBlob` throws and there is no card. Sonos sends no CORS
   header, so pointing the page at a player directly can never work, however much
   simpler it looks. See `ArtProxy`.
-- **Every route is a GET and none of them changes anything.** That is the only
-  reason this server can answer the whole LAN without a password. Do not add a
-  route that writes — to a player, to disk, or to a setting — without putting an
-  authentication gate in front of the socket in the same change.
+- **Reads are open; the few writes are gated, and the gate is in [Access].**
+  This server answered the whole LAN without a password because it held no
+  secrets. A Discord webhook URL is a credential — whoever has it can post to
+  that channel from anywhere, forever — so the gate this rule always demanded
+  arrived with it. Loopback is trusted without a PIN (standing at the device
+  beats any PIN typed across the house); anything else needs the PIN, which is
+  served ONLY to loopback. Adding or removing a webhook is gated; POSTING a card
+  to an existing one is not, because that is the everyday action and the worst
+  it offers a stranger on your wifi is a picture of your own album in your own
+  channel. Any NEW route that writes goes behind `Access.mayConfigure` in the
+  same change.
+- **A webhook URL never leaves the process.** No route returns one — listings
+  carry `Webhook.masked`, the id is a hash rather than the token, and the server
+  does the posting so the page never needs it. `CardApiTest` asserts no route
+  leaks it; keep that true.
+- **A read route must still refuse a POST.** Widening the top-level method gate
+  for the webhook routes quietly made `POST /api/now-playing` answer 200. Write
+  routes are named in `fixedRoute`; everything else is GET-only.
+- **Android cannot put an image on the clipboard.** It arrives as a content://
+  URI the pasting app has no grant to read, so the write resolves and nothing
+  is pasted. Declining to shim it was NOT enough — the WebView has
+  `ClipboardItem` and `clipboard.write` natively, so the page's detect passed
+  and drew a button that did nothing. `ShareBridge` now deletes both. Share does
+  the same job and works; iOS long-press and desktop Copy are untouched.
 - **Never poll.** The app asks a speaker what is playing when somebody opens the
   page or presses Refresh. This runs on a device that is never switched off; a
   timer anywhere means interrogating the household all day to answer a question

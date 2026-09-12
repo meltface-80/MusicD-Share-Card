@@ -115,7 +115,10 @@ class ServerTest {
             seedHosts = emptyList(),
             port = 0,
             bindAddress = HttpServer.LOOPBACK,
-            version = "1.2.3"
+            version = "1.2.3",
+            // No real sources: this is a test of the socket, not of whatever
+            // happens to be playing on the network running it.
+            sourcesOverride = com.musicd.sharecard.source.Sources(emptyList())
         )
         app.start()
         try {
@@ -128,6 +131,8 @@ class ServerTest {
             val health = get("$root/api/health")
             assertEquals(200, health.status)
             assertTrue(health.body.contains("\"version\":\"1.2.3\""))
+            // Health must not have gone near the network to answer that.
+            assertTrue("health is a liveness check, not a scan", health.body.length < 200)
 
             assertEquals(404, get("$root/missing.js").status)
         } finally {

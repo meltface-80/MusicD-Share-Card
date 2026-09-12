@@ -1,16 +1,21 @@
 package com.musicd.sharecard.api
 
 import com.musicd.sharecard.Log
+import com.musicd.sharecard.str
 import com.musicd.sharecard.api.Json.putOrNull
 import com.musicd.sharecard.http.HttpServer
 import com.musicd.sharecard.http.Request
 import com.musicd.sharecard.http.Response
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
-import com.musicd.sharecard.sonos.Didl
-import com.musicd.sharecard.sonos.Group
-import com.musicd.sharecard.sonos.Household
-import com.musicd.sharecard.sonos.ZoneState
+import com.musicd.sharecard.source.Playing
+import com.musicd.sharecard.webhook.DiscordPoster
+import com.musicd.sharecard.webhook.Webhook
+import com.musicd.sharecard.webhook.WebhookRejected
+import com.musicd.sharecard.webhook.WebhookStore
+import com.musicd.sharecard.webhook.WebhookUrls
+import com.musicd.sharecard.source.Sources
+import com.musicd.sharecard.source.ZoneRef
 import org.json.JSONObject
 
 /**
@@ -23,18 +28,25 @@ import org.json.JSONObject
  * this app is passing through.
  */
 class CardApi(
-    private val household: Household,
+    private val sources: Sources,
     private val metadata: Metadata,
     private val pitchfork: Pitchfork,
     private val art: ArtProxy,
     private val assets: Assets,
     private val version: String,
-    private val hostNotes: () -> List<String> = { emptyList() }
+    private val hostNotes: () -> List<String> = { emptyList() },
+    private val webhooks: WebhookStore = WebhookStore.inMemory(),
+    private val discord: DiscordPoster = DiscordPoster()
 ) : HttpServer.Handler {
 
+    private val access = Access { webhooks.pin() }
+
     override fun handle(request: Request): Response {
-        if (request.method != "GET" && request.method != "HEAD") {
-            return Json.error(405, "This server only answers GET.")
+        // Reads are open, as they have always been. The few routes that write
+        // are POST/DELETE and are gated in [route] — see [Access] for why the
+        // gate guards configuration and not the card itself.
+        if (request.method !in ALLOWED_METHODS) {
+            return Json.error(405, "That method is not used here.")
         }
         return try {
             route(request)
@@ -47,42 +59,77 @@ class CardApi(
         }
     }
 
-    private fun route(request: Request): Response = when (request.path) {
+    private fun route(request: Request): Response {
+        // The one route with a variable path segment.
+        if (request.path.startsWith("/api/webhooks/")) return webhookById(request)
+        return fixedRoute(request)
+    }
+
+    private fun fixedRoute(request: Request): Response {
+        // EVERY ROUTE BELOW IS A READ, and a POST to one must still be refused.
+        // Allowing POST at the top level so the webhook routes could use it
+        // quietly made "POST /api/now-playing" answer 200 — the method gate had
+        // become a formality rather than a rule. The write routes are named,
+        // and everything else is GET-only exactly as before.
+        if (request.method !in READ_METHODS && request.path != "/api/webhooks") {
+            return Json.error(405, "That route only answers GET.")
+        }
+        return readRoute(request)
+    }
+
+    private fun readRoute(request: Request): Response = when (request.path) {
+        "/api/webhooks" -> when (request.method) {
+            "POST" -> addWebhook(request)
+            in READ_METHODS -> listWebhooks(request)
+            else -> Json.error(405, "That method is not used here.")
+        }
+        "/api/setup" -> setup(request)
         "/api/health" -> health()
         "/api/zones" -> zones(request)
         "/api/now-playing" -> nowPlaying(request)
         "/api/extras" -> extras(request)
         "/api/art" -> artwork(request)
-        "/api/debug" -> Json.obj(Diagnostics(household, hostNotes).run())
+        "/api/debug" -> Json.obj(Diagnostics(sources, hostNotes).run())
         else -> static(request.path)
     }
 
     // ------------------------------------------------------------- the card
 
+    /**
+     * Is the server up. Nothing more, and deliberately so.
+     *
+     * This used to report the zone count, which meant a liveness check ran a
+     * multicast sweep and a device-description fetch per renderer. A health
+     * endpoint that takes four seconds and talks to every box on the network is
+     * not a health endpoint.
+     */
     private fun health(): Response = Json.obj(
-        JSONObject()
-            .put("ok", true)
-            .put("version", version)
-            .put("zones", household.groups().size)
+        JSONObject().put("ok", true).put("version", version)
     )
 
-    /** Which rooms exist, and which one the card would be about right now. */
+    /** Which rooms exist, across every source, and which one is selected. */
     private fun zones(request: Request): Response {
-        val refresh = request.param("refresh") == "1"
-        household.refresh(force = refresh)
-        val groups = household.groups()
+        if (request.param("refresh") == "1") sources.refresh()
         return Json.obj(
             JSONObject()
-                .put("zones", Json.array(groups.map(::groupJson)))
-                .putOrNull("selected", household.preferredZoneUid)
+                .put("zones", Json.array(sources.zones().map(::zoneJson)))
+                .putOrNull("selected", sources.preferredZoneId)
         )
     }
 
-    private fun groupJson(group: Group): JSONObject = JSONObject()
-        .put("uid", group.uid)
-        .put("name", group.displayName)
-        .put("room", group.coordinator.name)
-        .put("rooms", Json.strings(group.roomNames))
+    /**
+     * A zone, named by its source when more than one source has any.
+     *
+     * "Kitchen" is enough when only the speakers are seen. With Roon in the
+     * house there can be two entries for the same room — one per source — and
+     * they answer differently, so the caption has to say which is which.
+     */
+    private fun zoneJson(zone: ZoneRef): JSONObject = JSONObject()
+        .put("uid", zone.id)
+        .put("name", zone.name)
+        .put("room", zone.name)
+        .put("source", zone.source)
+        .put("rooms", Json.strings(zone.rooms))
 
     /**
      * What the card is about.
@@ -94,83 +141,70 @@ class CardApi(
      */
     private fun nowPlaying(request: Request): Response {
         val wanted = request.param("zone")
-        if (wanted != null) household.preferredZoneUid = wanted
-        household.refresh(force = request.param("refresh") == "1")
+        if (wanted != null) sources.preferredZoneId = wanted
+        if (request.param("refresh") == "1") sources.refresh()
 
-        val state = household.nowPlaying(wanted ?: household.preferredZoneUid)
-            ?: return Json.obj(
+        val playing = sources.nowPlaying(wanted ?: sources.preferredZoneId)
+        if (playing == null || playing.isEmpty) {
+            return Json.obj(
                 JSONObject()
                     .put("playing", false)
                     .put("reason", reasonForNothing())
+                    // Something the user can act on beats a description of the
+                    // symptom — a first Roon run is not a broken app, it is one
+                    // waiting to be let in.
+                    .put("notices", Json.strings(sources.notices()))
             )
+        }
 
         // Remember what actually answered, so the next card without a zone=
-        // comes from the same room rather than re-deciding on a tie.
-        household.preferredZoneUid = state.group.uid
-        return Json.obj(cardJson(state))
+        // comes from the same place rather than re-deciding on a tie.
+        sources.preferredZoneId = playing.zoneId
+        return Json.obj(cardJson(playing).put("notices", Json.strings(sources.notices())))
     }
 
-    /**
-     * Why there is no card — and the three answers are genuinely different.
-     *
-     * Reporting "nothing is playing" when in fact not one player could be
-     * reached is how a network fault gets mistaken for a quiet house, and it
-     * sent the first round of debugging looking in the wrong place entirely.
-     */
-    private fun reasonForNothing(): String = when {
-        household.groups().isEmpty() ->
-            "No Sonos players found on the network."
-        !household.reachable ->
-            "Found players, but none of them would answer."
-        else ->
-            "Nothing is playing."
-    }
+    private fun reasonForNothing(): String =
+        if (!sources.anyZones()) "No players found on the network."
+        else "Nothing is playing."
 
     /**
      * The card payload.
      *
-     * `album` and `artist` are what the card is HEADED with, and they are
-     * chosen here so the page never has to decide: album falls back to the
-     * track title for a source that carries no album, and the album artist
-     * beats the track artist on a compilation.
+     * Every source has already resolved its own quirks by this point — whether
+     * `dc:creator` beat `upnp:artist`, or which of Roon's three lines is the
+     * album — so this is a straight copy.
      */
-    internal fun cardJson(state: ZoneState): JSONObject {
-        val np = state.nowPlaying
-        // A station announcing "Artist - Title" is the only metadata some
-        // streams ever send, and without splitting it the card is headed with
-        // the whole string and no artist at all.
-        val announced = if (np.artist.isEmpty() && np.streamContent.isNotEmpty())
-            Didl.splitStreamContent(np.streamContent) else null
-
-        val album = np.displayAlbum.ifEmpty { announced?.second.orEmpty() }
-        val artist = np.displayArtist.ifEmpty { announced?.first.orEmpty() }
-
-        return JSONObject()
-            .put("playing", state.isPlaying)
-            .put("state", state.state.name)
-            .put("stream", state.isStream)
-            .put("zone", groupJson(state.group))
-            .putOrNull("album", album)
-            .putOrNull("artist", artist)
-            .putOrNull("track", np.track.ifEmpty { announced?.second.orEmpty() })
-            // The page asks this server for the picture, never the speaker —
-            // see ArtProxy for why the canvas depends on it.
-            .putOrNull("art", artPath(state))
-    }
+    internal fun cardJson(playing: Playing): JSONObject = JSONObject()
+        .put("playing", playing.state.isPlaying)
+        .put("state", playing.state.name)
+        .put("stream", playing.isStream)
+        .put("source", playing.source)
+        .put(
+            "zone",
+            JSONObject()
+                .put("uid", playing.zoneId)
+                .put("name", playing.zoneName)
+                .put("room", playing.zoneName)
+                .put("source", playing.source)
+        )
+        .putOrNull("album", playing.album)
+        .putOrNull("artist", playing.artist)
+        .putOrNull("track", playing.track)
+        // The page asks this server for the picture, never the player — see
+        // ArtProxy for why the canvas depends on it.
+        .putOrNull("art", artPath(playing))
 
     /**
      * The path the page should ask for the cover, or null when there is none.
      *
-     * The absolute player URL is carried in the query rather than resolved
-     * again later, because the player that answered is the only one that can
-     * serve it: Sonos art paths are relative to the coordinator, and a group
-     * that regroups between the card being drawn and the picture being fetched
-     * would otherwise have the request go to the wrong speaker.
+     * The source's absolute URL is carried in the query rather than resolved
+     * again later, because only the source that answered knows where its art
+     * lives — a speaker's `/getaa`, a Roon Core's image service, a streaming
+     * service's CDN.
      */
-    private fun artPath(state: ZoneState): String? {
-        val absolute = Didl.absoluteArt(state.nowPlaying.artUri, state.group.coordinator.baseUrl)
-        if (absolute.isEmpty()) return null
-        return "/api/art?u=" + urlEncode(absolute)
+    private fun artPath(playing: Playing): String? {
+        if (playing.artUrl.isEmpty()) return null
+        return "/api/art?u=" + urlEncode(playing.artUrl)
     }
 
     private fun artwork(request: Request): Response {
@@ -221,6 +255,125 @@ class CardApi(
         )
     }
 
+    // --------------------------------------------------------------- webhooks
+
+    /**
+     * The configured webhooks, MASKED.
+     *
+     * Open to read, because the page needs to draw a button per webhook and a
+     * name is not a secret. The URL never appears here — see [Webhook.masked].
+     */
+    private fun listWebhooks(request: Request): Response = Json.obj(
+        JSONObject()
+            .put(
+                "webhooks",
+                Json.array(
+                    webhooks.all().map {
+                        JSONObject()
+                            .put("id", it.id)
+                            .put("name", it.name)
+                            .put("masked", it.masked)
+                            .put("kind", it.kind)
+                    }
+                )
+            )
+            // So the page knows whether to ask for a PIN before offering to add
+            // one, rather than letting somebody type a URL and then refusing it.
+            .put("mayConfigure", access.mayConfigure(request))
+    )
+
+    /**
+     * Add one. Gated: this is where the credential enters.
+     */
+    private fun addWebhook(request: Request): Response {
+        if (!access.mayConfigure(request)) return needsPin()
+        val body = Json.body(request)
+        val name = body.str("name").trim().take(40)
+        val raw = body.str("url").trim()
+        return try {
+            val url = WebhookUrls.validate(raw)
+            val webhook = Webhook(
+                id = WebhookUrls.idFor(url),
+                name = name.ifEmpty { "Discord" },
+                url = url
+            )
+            webhooks.add(webhook)
+            Log.i(TAG, "added webhook ${webhook.name} (${webhook.masked})")
+            Json.obj(
+                JSONObject().put("ok", true).put("id", webhook.id)
+                    .put("name", webhook.name).put("masked", webhook.masked)
+            )
+        } catch (e: WebhookRejected) {
+            Json.error(400, e.message ?: "That webhook URL was refused.")
+        }
+    }
+
+    /** `/api/webhooks/<id>` — DELETE removes it, POST sends the card to it. */
+    private fun webhookById(request: Request): Response {
+        val rest = request.path.removePrefix("/api/webhooks/").trim('/')
+        val id = rest.substringBefore('/')
+        val action = rest.substringAfter('/', "")
+        val webhook = webhooks.all().firstOrNull { it.id == id }
+            ?: return Json.error(404, "No such webhook.")
+
+        return when {
+            request.method == "DELETE" -> {
+                if (!access.mayConfigure(request)) return needsPin()
+                webhooks.remove(id)
+                Json.obj(JSONObject().put("ok", true))
+            }
+            request.method == "POST" && action == "post" -> postCard(request, webhook)
+            else -> Json.error(405, "That method is not used here.")
+        }
+    }
+
+    /**
+     * Send the card the page just drew.
+     *
+     * NOT gated, deliberately. This is the everyday action — "tap the button"
+     * must not mean "find the PIN first" — and the worst it offers a stranger
+     * on the network is posting a picture of the owner's own album to the
+     * owner's own channel. Adding a webhook is where the real damage would be,
+     * and that is gated.
+     *
+     * The PNG arrives as the raw request body rather than base64 in JSON: it is
+     * around a megabyte, and base64 would make it a third larger for nothing.
+     */
+    private fun postCard(request: Request, webhook: Webhook): Response {
+        val png = request.body
+        if (png.isEmpty()) return Json.error(400, "No card was sent.")
+        val caption = request.param("caption").orEmpty()
+        val outcome = discord.post(webhook, png, caption)
+        return if (outcome.ok) {
+            Json.obj(JSONObject().put("ok", true).put("detail", outcome.detail))
+        } else {
+            // 502: this app is fine, the other end refused. A 500 would send
+            // somebody looking at the wrong thing.
+            Json.error(502, outcome.detail)
+        }
+    }
+
+    /**
+     * What a device across the house needs in order to configure anything.
+     *
+     * The PIN itself is returned ONLY to loopback — that is, to the app's own
+     * screen on the device. Serving it to the LAN would make it decoration.
+     */
+    private fun setup(request: Request): Response {
+        val onDevice = access.isLoopback(request.remoteAddress)
+        return Json.obj(
+            JSONObject()
+                .put("onDevice", onDevice)
+                .put("mayConfigure", access.mayConfigure(request))
+                .put("pin", if (onDevice) webhooks.pin() else JSONObject.NULL)
+        )
+    }
+
+    private fun needsPin(): Response = Json.error(
+        401,
+        "Enter the PIN shown on the device running Share Card to change webhooks."
+    )
+
     // ------------------------------------------------------------- the page
 
     private fun static(path: String): Response {
@@ -250,5 +403,10 @@ class CardApi(
          * nobody can see the mismatch.
          */
         val NO_STORE = mapOf("Cache-Control" to "no-store")
+
+        val ALLOWED_METHODS = setOf("GET", "HEAD", "POST", "DELETE")
+
+        /** The methods a route that changes nothing may be asked with. */
+        val READ_METHODS = setOf("GET", "HEAD")
     }
 }

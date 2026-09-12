@@ -1,16 +1,31 @@
 # MusicD Share Card
 
-A native Android app that makes a share card for whatever is playing on your
-Sonos — and serves the same card to any browser in the house.
+A native Android app that makes a share card for whatever is playing — and
+serves the same card to any browser in the house.
 
 Open it and the card is there. It does not matter where the music came from:
 Roon, Spotify Connect, Apple Music through the Sonos app, a Sonos playlist, a
-radio station. The app asks the speakers what is on their transport, and every
-source ends up in the same place.
+radio station, or anything on a DLNA renderer.
 
-**The card is the same picture
-[MusicD Remote Lite](https://github.com/meltface-80/Android-Random-Remote)
-draws.** `sharecard.js` is that app's file, ported unmodified, so a record shared
+**It asks whoever actually knows.** That is the whole design. Roon streaming to
+a Sonos speaker hands the speaker a session id where the title should be — read
+through the speaker the record is not there at all — so Roon is asked directly,
+through its own extension API, and answers with the album, the artist and a real
+cover. The speakers are asked about what the speakers themselves stream. A DLNA
+renderer is asked in plain UPnP.
+
+| Source | Used for | Gives |
+| --- | --- | --- |
+| **Roon** | anything Roon is playing, anywhere | album, artist, cover, from the Core |
+| **Sonos** | Spotify Connect, Apple Music via the Sonos app, radio | DIDL-Lite off the coordinator |
+| **UPnP / DLNA** | any other renderer on the network | DIDL-Lite off its AVTransport |
+
+Adding another source means implementing one interface. The card, the page and
+the API do not change.
+
+**The card — and now the Roon client — come from
+[MusicD Remote Lite](https://github.com/meltface-80/Android-Random-Remote).**
+The card is the same picture it draws. `sharecard.js` is that app's file, ported unmodified, so a record shared
 from Sonos and the same record shared from Roon produce matching cards. The album
 blurb, the release year and the Pitchfork score come from the same lookups too.
 
@@ -116,8 +131,37 @@ There is no Copy button on iOS or in the Android app, and that is deliberate
 rather than unfinished. `ClipboardItem` with an image is not available to Safari
 at all; on Android the image reaches the clipboard as a `content://` URI that the
 pasting app has no grant to read, so the copy reports success and pastes nothing.
-Both platforms have something that genuinely works, and a button that lies is
-worse than a button that is not there.
+The Android shell removes the capability outright rather than leaving a button
+that lies — merely declining to add it was not enough, because the WebView has
+the API natively and the page's feature-detect passed. Both platforms have
+something that genuinely works instead.
+
+### Posting to Discord
+
+Add a webhook once and a button appears on the card for it. Tap it and the card
+is posted — no share sheet, no saving a file first. Several can be configured;
+each gets its own button.
+
+In Discord: **Edit Channel → Integrations → Webhooks → Copy Webhook URL**, then
+paste it into **Webhooks** on the card page.
+
+**The URL is a credential** — anyone holding it can post to that channel from
+anywhere, for as long as it exists. So it is typed once and never comes back
+out: no route returns it, the list shows only a mask, and the app itself does
+the posting so no browser ever sees it.
+
+Because of that, adding or removing a webhook is the one thing on this server
+that is not open:
+
+| Where you are | Adding / removing | Posting a card |
+| --- | --- | --- |
+| The device running the app | no PIN needed | no PIN needed |
+| Any other device | needs the PIN | no PIN needed |
+
+The PIN is shown in **Webhooks** on the device's own screen, and is served
+nowhere else — a PIN handed to the network would be decoration. Posting is
+deliberately ungated: it is the everyday action, and the worst it offers someone
+on your wifi is a picture of your own album in your own channel.
 
 ### If it finds no players
 
@@ -147,6 +191,16 @@ adb push hosts.txt /sdcard/Android/data/com.musicd.sharecard/files/hosts.txt
 
 One address per line; `#` starts a comment. The file can also be written with a
 file manager on the device itself. Restart the app afterwards.
+
+## Roon needs letting in, once
+
+Roon does not answer an extension until you approve it. On first run the app
+says so; go to **Roon → Settings → Extensions** and enable **MusicD Share
+Card**. The token is kept afterwards, so it never asks again — even across
+restarts of a device that lives in a rack.
+
+The app asks Roon for `transport` only. It does not browse your library, and it
+has no transport controls of any kind.
 
 ## Verification
 

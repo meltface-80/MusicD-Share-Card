@@ -54,6 +54,12 @@
   /** The card currently on screen, for the action buttons to hand over. */
   let current = null;
 
+  /** Configured webhooks, masked — the page never sees a webhook URL. */
+  let webhooks = [];
+
+  /** The PIN, when this page is the one running on the device itself. */
+  let setup = { onDevice: false, mayConfigure: false, pin: null };
+
   const isIOS = /iP(hone|ad|od)/.test(navigator.platform || "") ||
     (navigator.userAgent.includes("Mac") && "ontouchend" in document);
 
@@ -79,7 +85,9 @@
       share: '<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/>',
       copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
       download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
-      search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>'
+      search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+      send: '<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>',
+      cog: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>'
     };
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]}</svg>`;
@@ -157,10 +165,16 @@
     auto.value = "";
     auto.textContent = "Whatever’s playing";
     zoneSel.appendChild(auto);
+    // Two sources can see the same room and answer differently — Roon playing
+    // to a Sonos speaker is exactly that — so the caption has to say which is
+    // which whenever more than one source is present.
+    const manySources = new Set(zones.map((z) => z.source)).size > 1;
     for (const zone of zones) {
       const option = document.createElement("option");
       option.value = zone.uid;
-      option.textContent = zone.name;
+      option.textContent = manySources && zone.source
+        ? zone.name + " (" + zone.source + ")"
+        : zone.name;
       zoneSel.appendChild(option);
     }
     // Only restore a room the user actually chose. Re-selecting whatever the
@@ -184,6 +198,7 @@
 
     try {
       await loadZones(force);
+      await loadWebhooks();
       if (mine !== token) return;
 
       const params = new URLSearchParams();
@@ -194,15 +209,22 @@
 
       if (!playing.album && !playing.artist) {
         message(playing.reason || "Nothing is playing.");
-        var noPlayers = !playing.reason || playing.reason.indexOf("No Sonos") === 0 ||
-          playing.reason.indexOf("would answer") > 0;
-        hintEl.textContent = noPlayers
-          ? "The app cannot see your speakers. Run the check below to find out why."
-          : "Start something on a Sonos zone, then press refresh.";
+        var notices = playing.notices || [];
+        var noPlayers = !playing.reason || playing.reason.indexOf("No players") === 0;
+        // A source asking to be let in is not a failure, and must not be
+        // buried under a network troubleshooter — a first Roon run needs one
+        // tap in Roon and nothing else.
+        hintEl.textContent = notices.length ? notices.join(" ")
+          : noPlayers
+            ? "The app cannot see any players. Run the check below to find out why."
+            : "Start something playing, then press refresh.";
         // A dead end with no next step is what made the first failure so hard
         // to act on: the app knew far more than it was saying.
-        if (noPlayers) offerDiagnostics();
+        if (noPlayers && !notices.length) offerDiagnostics();
         return;
+      }
+      if (playing.notices && playing.notices.length) {
+        hintEl.textContent = playing.notices.join(" ");
       }
 
       spinner("Building the card…");
@@ -337,6 +359,9 @@
     const verb = playing.playing ? "Playing in" : "Last played in";
     const bits = [];
     if (room) bits.push(verb + " <b>" + escapeHtml(room) + "</b>");
+    // Which source answered. Worth saying: it is the difference between a card
+    // Roon described and one the speaker guessed at.
+    if (playing.source) bits.push("via " + escapeHtml(playing.source));
     if (playing.stream) bits.push("live stream");
     nowEl.innerHTML = bits.join(" · ");
   }
@@ -419,6 +444,16 @@
     a.innerHTML = icon("download") + "<span>Download</span>";
     actions.appendChild(a);
 
+    // One button per configured webhook, then the way to add more.
+    for (const hook of webhooks) {
+      const b = button("", hook.name, "send");
+      b.onclick = () => postTo(hook, b);
+      actions.appendChild(b);
+    }
+    const cog = button("", webhooks.length ? "Webhooks" : "Add a Discord webhook", "cog");
+    cog.onclick = showWebhookSettings;
+    actions.appendChild(cog);
+
     hintEl.textContent = isIOS
       ? "Press and hold the card to copy it, save it to Photos or share it."
       : "";
@@ -461,6 +496,9 @@
         items.map((i) => "<li>" + escapeHtml(String(i)) + "</li>").join("") + "</ul>");
     }
     section("The app", d.app);
+    // Each source in its own words. Roon's line is where "not approved yet"
+    // appears, and that is not a network problem however much it looks like one.
+    section("Sources", d.sources);
     section("This device's networks", d.interfaces);
     section("Multicast (SSDP)", (d.ssdp && d.ssdp.notes) || []);
     section("Direct scan of this subnet", (d.scan && d.scan.notes) || []);
@@ -480,6 +518,146 @@
     hintEl.innerHTML = "";
     nowEl.innerHTML = "";
     show("<div class=\"diag\">" + rows.join("") + "</div>");
+  }
+
+  /*
+   * POSTING.
+   *
+   * The PNG goes to this app's server, which forwards it to Discord. The page
+   * never holds the webhook URL — that is the whole point. See DiscordPoster
+   * for why the post happens server-side rather than here.
+   */
+  async function postTo(hook, b) {
+    errEl.textContent = "";
+    const span = b.querySelector("span");
+    const was = span ? span.textContent : "";
+    b.disabled = true;
+    if (span) span.textContent = "Posting…";
+    try {
+      const caption = current.album
+        ? "**" + current.album + "**" + (current.artist ? " by " + current.artist : "")
+        : "";
+      const response = await fetch(
+        "/api/webhooks/" + encodeURIComponent(hook.id) + "/post?caption=" +
+          encodeURIComponent(caption),
+        { method: "POST", body: current.blob, headers: { "Content-Type": "image/png" } }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || ("Discord said " + response.status));
+      if (span) span.textContent = "Posted";
+      setTimeout(() => { if (span) span.textContent = was; }, 1800);
+    } catch (e) {
+      if (span) span.textContent = was;
+      errEl.textContent = (e && e.message) ? e.message : String(e);
+    } finally {
+      b.disabled = false;
+    }
+  }
+
+  async function loadWebhooks() {
+    try {
+      const data = await getJson("/api/webhooks");
+      webhooks = data.webhooks || [];
+      setup.mayConfigure = !!data.mayConfigure;
+    } catch (e) {
+      webhooks = [];
+    }
+  }
+
+  /*
+   * The webhook panel.
+   *
+   * A URL typed here is a credential: anyone holding it can post to that
+   * channel from anywhere, forever. So it is sent once and never comes back —
+   * the list below shows a mask, and there is no "show" button, because there
+   * is nothing on this page that could show it.
+   */
+  async function showWebhookSettings() {
+    errEl.textContent = "";
+    try {
+      setup = await getJson("/api/setup");
+    } catch (e) { /* fall back to what the list said */ }
+    await loadWebhooks();
+
+    const rows = webhooks.map((h) =>
+      '<li><span class="wh-name">' + escapeHtml(h.name) + "</span>" +
+      '<span class="wh-mask">' + escapeHtml(h.masked) + "</span>" +
+      '<button class="wh-del" data-id="' + escapeHtml(h.id) + '">Remove</button></li>'
+    ).join("");
+
+    const gate = setup.mayConfigure ? "" :
+      '<p class="wh-note">To add or remove a webhook from this device, enter the ' +
+      "PIN shown in the Share Card app on the device it is running on.</p>" +
+      '<input class="wh-input" id="wh-pin" inputmode="numeric" placeholder="PIN">';
+
+    const pinLine = setup.onDevice && setup.pin
+      ? '<p class="wh-note">PIN for other devices: <b>' + escapeHtml(setup.pin) + "</b></p>"
+      : "";
+
+    show(
+      '<div class="diag wh">' +
+      "<h3>Discord webhooks</h3>" +
+      (rows ? '<ul class="wh-list">' + rows + "</ul>"
+            : '<p class="wh-note">None yet.</p>') +
+      pinLine +
+      "<h3>Add one</h3>" +
+      '<p class="wh-note">In Discord: Edit Channel \u2192 Integrations \u2192 Webhooks ' +
+      "\u2192 Copy Webhook URL.</p>" +
+      '<input class="wh-input" id="wh-name" placeholder="Name (e.g. Vinyl chat)">' +
+      '<input class="wh-input" id="wh-url" placeholder="https://discord.com/api/webhooks/…">' +
+      gate +
+      '<div class="wh-buttons">' +
+      '<button class="primary" id="wh-add">Save</button>' +
+      '<button id="wh-back">Back to the card</button>' +
+      "</div></div>"
+    );
+    actions.innerHTML = "";
+    hintEl.textContent = "";
+
+    document.getElementById("wh-back").onclick = () => load(false);
+    document.getElementById("wh-add").onclick = addWebhook;
+    for (const b of document.querySelectorAll(".wh-del")) {
+      b.onclick = () => removeWebhook(b.getAttribute("data-id"));
+    }
+  }
+
+  function pinParam() {
+    const field = document.getElementById("wh-pin");
+    const pin = field && field.value ? field.value.trim() : "";
+    return pin ? "?pin=" + encodeURIComponent(pin) : "";
+  }
+
+  async function addWebhook() {
+    errEl.textContent = "";
+    const name = (document.getElementById("wh-name").value || "").trim();
+    const url = (document.getElementById("wh-url").value || "").trim();
+    if (!url) { errEl.textContent = "Paste the webhook URL from Discord."; return; }
+    try {
+      const response = await fetch("/api/webhooks" + pinParam(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name, url: url })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || ("Refused (" + response.status + ")"));
+      await showWebhookSettings();
+    } catch (e) {
+      errEl.textContent = (e && e.message) ? e.message : String(e);
+    }
+  }
+
+  async function removeWebhook(id) {
+    errEl.textContent = "";
+    try {
+      const response = await fetch(
+        "/api/webhooks/" + encodeURIComponent(id) + pinParam(), { method: "DELETE" }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || ("Refused (" + response.status + ")"));
+      await showWebhookSettings();
+    } catch (e) {
+      errEl.textContent = (e && e.message) ? e.message : String(e);
+    }
   }
 
   function flash(b, text) {
