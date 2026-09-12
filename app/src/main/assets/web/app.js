@@ -370,6 +370,8 @@
     describe(playing);
     buildActions();
     buildLinks(extras);
+    // Not awaited: the card is finished, and this only ever improves one chip.
+    upgradeQobuz(mine, playing);
   }
 
   /*
@@ -411,9 +413,48 @@
     }
     for (const svc of services) {
       if (!svc || !svc.url || !svc.name) continue;
-      linksEl.appendChild(link(svc.url, svc.name, ""));
+      const a = link(svc.url, svc.name, "");
+      // Marked so the Qobuz one can be upgraded in place when its album id
+      // arrives; see upgradeQobuz.
+      if (svc.service) a.dataset.service = svc.service;
+      linksEl.appendChild(a);
     }
     linksEl.classList.remove("hidden");
+  }
+
+  /*
+   * QOBUZ, THE ONE THAT NEEDS A SECOND LOOKUP.
+   *
+   * The search link lands on the Qobuz download store's search page and never
+   * opens the app, because there IS no search route on the host the app claims
+   * — only /album/<id>. So the id is fetched separately, off Qobuz's own public
+   * search page, and the chip is swapped for an open.qobuz.com link when it
+   * arrives. It says "Qobuz ↗" until then and "Open in Qobuz" after, because a
+   * search and the record itself are not the same promise.
+   *
+   * SEPARATE FROM THE CARD, DELIBERATELY. That lookup is rate-gated to one
+   * request every second and a half; folding it into /api/extras would hold the
+   * whole card back for a link. A record Qobuz does not carry simply never
+   * upgrades, which is the honest outcome — a wrong album would be worse than
+   * the search page.
+   */
+  async function upgradeQobuz(mine, playing) {
+    const chip = linksEl.querySelector('[data-service="qobuz"]');
+    if (!chip) return;
+    const params = new URLSearchParams();
+    params.set("album", playing.album || "");
+    if (playing.artist) params.set("artist", playing.artist);
+    try {
+      const data = await getJson("/api/qobuz?" + params);
+      if (mine !== token || !data || !data.url) return;
+      // The chip may have been rebuilt while that was in flight.
+      const now = linksEl.querySelector('[data-service="qobuz"]');
+      if (!now) return;
+      now.href = data.url;
+      now.textContent = "Open in Qobuz";
+    } catch (e) {
+      // No upgrade is a fine outcome: the search link is still there.
+    }
   }
 
   function link(href, text, className) {

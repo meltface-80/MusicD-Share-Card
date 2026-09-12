@@ -248,6 +248,24 @@ was simply not there, however carefully the DIDL was parsed.
   answering on port 1400, every one of them "would not describe the household".
   Nothing here reads a namespace URI; every lookup goes through `Xml.localName`,
   which strips the prefix off the tag name.
+- **QOBUZ NEEDS AN ALBUM ID; A SEARCH LINK CAN NEVER OPEN THAT APP.** Shipping
+  `StreamingLinks` alone gave Qobuz the same pre-filled search as everyone else,
+  and it landed on the download store's search page — reported from the field as
+  "opened the Qobuz Download website". open.qobuz.com is the host both platforms
+  hand to the app, and its router knows five shapes, all of them ids
+  (`/album/:id`, `/artist/:id`, …). There is no search route on it or in the app
+  behind it, and play.qobuz.com is claimed by the same app so it lands in the
+  same place. `QobuzAlbum` reads the id off Qobuz's own public search page — no
+  API, no key — and the page swaps the chip when it arrives. A record Qobuz does
+  not carry never upgrades, which is right: **a wrong album is worse than a
+  search page**, so `pick` takes the exact album+artist slug wherever it appears
+  and never the first hit.
+- **The Qobuz link then goes through `qobuzapp://` first, on Android.** The
+  https link works but not from cold — the app opens on Home having dropped the
+  album, and only a second tap lands on the record. open.qobuz.com's own page
+  skips https entirely on a phone. `QobuzAlbum.appUri` builds that scheme and is
+  deliberately strict, because the string is handed to `startActivity`: our
+  host, our path, an id of letters and digits, and no query or fragment.
 - **A streaming link is an https link, never a custom scheme, and the HOST is
   the part that goes wrong.** `spotify://` opens the app and does nothing at all
   when the app is absent; an https link opens the app on a phone that has it and
