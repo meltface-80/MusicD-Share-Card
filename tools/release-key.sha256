@@ -1,0 +1,23 @@
+e37c46d366db31124f231d68755cd9856b146e3f437fc5a99ff190701be84c21
+
+# SHA-256 of the certificate every published APK must be signed with.
+#
+# Not a secret — a certificate fingerprint is public by design. It lives here
+# rather than in a repository secret so that changing the release key is a
+# visible commit rather than a silent settings change, and so CI catches a
+# build signed with the wrong key BEFORE it reaches dist/.
+#
+# What this exists to catch is the build minting a NEW key on every run, which
+# is exactly what was happening while SHARECARD_KEYSTORE_BASE64 was unset: a
+# fresh debug key per runner, so no published build could ever install over
+# another, and Android's whole explanation was "App not installed".
+#
+# The key is EC secp256r1, alias "sharecard", valid until January 2054. The
+# private half belongs in the SHARECARD_KEYSTORE_BASE64 repository secret and
+# NOWHERE ELSE — not in this repository, and it must never be. If it is lost a
+# new one can be generated, but everybody with the app installed has to
+# uninstall before they can install again, so keep a backup of the secret's
+# value somewhere that is not this repository.
+#
+# This check is skipped entirely while the secret is unset (see the workflow's
+# have_key guard), so committing it ahead of the secret existing costs nothing.
