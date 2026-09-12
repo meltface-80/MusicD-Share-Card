@@ -264,7 +264,10 @@ class PitchforkTest {
     }
 
     @Test
-    fun `the constructed URL is tried first and the feed is not fetched when it hits`() {
+    fun `an album too old for the index falls through to its own review page`() {
+        // Nothing lists a review from 1991, so the index answers nothing and
+        // the constructed URL is what finds it. The RSS feed is never reached,
+        // because the page itself had the rating on it.
         val path = "/reviews/albums/slint-spiderland/"
         val (s, fake) = server(mapOf(path to page("\"10.0\"")))
         try {
@@ -272,16 +275,14 @@ class PitchforkTest {
             val review = pf.reviewFor("Spiderland", "Slint")
             assertNotNull(review)
             assertEquals(10.0, review!!.score!!, 0.001)
-            // One request. An album that resolves straight away must not cost
-            // a feed download as well.
-            assertEquals(listOf(path), fake.asked)
+            assertEquals(listOf("/reviews/albums/", path), fake.asked)
         } finally {
             s.shutdown()
         }
     }
 
     @Test
-    fun `the edition is stripped before the feed is ever asked`() {
+    fun `the edition is stripped before the feed is ever asked, index first`() {
         val path = "/reviews/albums/bjork-post/"
         val (s, fake) = server(mapOf(path to page("\"9.0\"")))
         try {
@@ -291,7 +292,8 @@ class PitchforkTest {
             assertEquals(9.0, review!!.score!!, 0.001)
             // The long name first, then the short one. No feed.
             assertEquals(
-                listOf("/reviews/albums/bjork-post-deluxe-edition/", path), fake.asked
+                listOf("/reviews/albums/", "/reviews/albums/bjork-post-deluxe-edition/", path),
+                fake.asked
             )
         } finally {
             s.shutdown()
@@ -432,5 +434,130 @@ class PitchforkTest {
             "The Singer in My Band", "This Is Lorelei"
         )
         assertTrue("$wrongArtist", wrongArtist is Pitchfork.Outcome.WrongArtist)
+    }
+
+    // ------------------------------------ the index, which is where the score is
+
+    /**
+     * THE ONE THAT MATTERS, and it took a dump off a real device to find.
+     *
+     * "https://pitchfork.com/reviews/albums/this-is-lorelei-the-singer-in-my-band/
+     *  -> page read, NO SCORE IN IT"
+     *
+     * The right review, fetched, HTTP 200, and no rating anywhere in it — while
+     * a human reading that page sees 8.0. A review page served to something
+     * that is not a browser simply does not carry the number, so no amount of
+     * parsing it will ever work.
+     *
+     * The LISTING does carry it, in a window.__PRELOADED_STATE__ blob, and
+     * MusicD Remote Lite has read it that way all along — which is why typing
+     * the album into that app's search box finds the 8.0. Same source here now.
+     */
+    private fun indexPage(vararg reviews: String) = """
+        <html><body><script>
+        window.__PRELOADED_STATE__ = {"transformed":{"bundle":{"containers":[
+          {"items":[${reviews.joinToString(",")}]}
+        ]}}};
+        </script></body></html>
+    """.trimIndent()
+
+    private fun indexed(
+        album: String, artist: String, slug: String, score: String, bnm: Boolean = false
+    ) = """{"contentType":"review","url":"/reviews/albums/$slug/",
+        "dangerousHed":"<em>$album</em>","subHed":{"name":"$artist"},
+        "ratingValue":{"score":"$score","isBestNewMusic":$bnm,"isBestNewReissue":false}}"""
+
+    @Test
+    fun `the score comes out of Pitchfork's own index`() {
+        val html = indexPage(
+            indexed("The Singer in My Band", "This Is Lorelei", "this-is-lorelei-the-singer-in-my-band", "8.0")
+        )
+        val state = pf.extractPreloadedState(html)
+        assertNotNull("the preloaded state was not found", state)
+        val items = pf.collectListing(org.json.JSONObject(state!!))
+        assertEquals(1, items.size)
+        assertEquals("The Singer in My Band", items[0].album)
+        assertEquals("This Is Lorelei", items[0].artist)
+        assertEquals(8.0, items[0].score!!, 0.001)
+        assertTrue(items[0].url.endsWith("/reviews/albums/this-is-lorelei-the-singer-in-my-band/"))
+    }
+
+    @Test
+    fun `a review is recognised by its shape, not by where the page put it`() {
+        // Pitchfork reshuffling its containers must not silently empty the
+        // list, so the walk looks for contentType + ratingValue + url wherever
+        // they turn up rather than following a fixed path.
+        val buried = """<html><script>window.__PRELOADED_STATE__ = {"a":{"b":[{"c":{"d":[
+            ${indexed("Post", "Björk", "bjork-post", "9.0")}
+        ]}}]}};</script></html>"""
+        val items = pf.collectListing(org.json.JSONObject(pf.extractPreloadedState(buried)!!))
+        assertEquals(1, items.size)
+        assertEquals(9.0, items[0].score!!, 0.001)
+    }
+
+    @Test
+    fun `the preloaded state survives a brace inside a review's own text`() {
+        // The blob is found by matching braces, and a title or blurb containing
+        // one would end a naive scan early.
+        val html = """<html><script>window.__PRELOADED_STATE__ = {"t":"a } b {","items":[
+            ${indexed("Kid A", "Radiohead", "radiohead-kid-a", "10.0")}
+        ]};</script></html>"""
+        val state = pf.extractPreloadedState(html)!!
+        assertTrue("the scan stopped early: $state", state.endsWith("]}"))
+        assertEquals(10.0, pf.collectListing(org.json.JSONObject(state))[0].score!!, 0.001)
+    }
+
+    @Test
+    fun `Best New Music comes through the index too`() {
+        val html = indexPage(indexed("Ants From Up There", "Black Country, New Road", "x-y", "9.0", bnm = true))
+        assertTrue(pf.collectListing(org.json.JSONObject(pf.extractPreloadedState(html)!!))[0].isBestNewMusic)
+    }
+
+    @Test
+    fun `a page with no preloaded state is not an error`() {
+        assertNull(pf.extractPreloadedState("<html><body>nothing</body></html>"))
+        assertNull(pf.extractPreloadedState(""))
+    }
+
+    @Test
+    fun `the index is consulted before the review page is ever fetched`() {
+        // The listing is one request, cached, and carries the score. Fetching a
+        // review page per album to find a number that is not on it is what the
+        // last two releases did.
+        val indexPath = "/reviews/albums/"
+        val (s, fake) = server(
+            mapOf(
+                indexPath to indexPage(
+                    indexed("The Singer in My Band", "This Is Lorelei",
+                        "this-is-lorelei-the-singer-in-my-band", "8.0")
+                )
+            )
+        )
+        try {
+            val pf = Pitchfork(metadataHttpClient(), "test", s.url("/").toString().trimEnd('/'))
+            val review = pf.reviewFor("The Singer in My Band", "This Is Lorelei")
+            assertNotNull("the index should have answered it", review)
+            assertEquals(8.0, review!!.score!!, 0.001)
+            assertTrue(review.url.endsWith("/reviews/albums/this-is-lorelei-the-singer-in-my-band/"))
+            assertEquals("one request, and it was the index", listOf(indexPath), fake.asked)
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    @Test
+    fun `the index is not allowed to answer for a different artist`() {
+        // A covers record, a re-recording, a namesake. The index names the
+        // artist properly, which is a better check than a slug read backwards.
+        val indexPath = "/reviews/albums/"
+        val (s, _) = server(
+            mapOf(indexPath to indexPage(indexed("Mezzanine", "Somebody Else", "somebody-else-mezzanine", "6.0")))
+        )
+        try {
+            val pf = Pitchfork(metadataHttpClient(), "test", s.url("/").toString().trimEnd('/'))
+            assertNull(pf.reviewFor("Mezzanine", "Massive Attack"))
+        } finally {
+            s.shutdown()
+        }
     }
 }

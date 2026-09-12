@@ -263,6 +263,20 @@ was simply not there, however carefully the DIDL was parsed.
   answering on port 1400, every one of them "would not describe the household".
   Nothing here reads a namespace URI; every lookup goes through `Xml.localName`,
   which strips the prefix off the tag name.
+- **THE SCORE IS IN THE INDEX, NOT ON THE REVIEW PAGE.** A review page served
+  to something that is not a browser carries no rating at all — the diagnostics
+  said "page read, NO SCORE IN IT" for a review a human reads an 8.0 off. Two
+  releases went into parsing that page better. The LISTING at `/reviews/albums/`
+  ships its reviews in a `window.__PRELOADED_STATE__` blob with the score, the
+  Best New Music flag, the artist and the URL all in it, and MusicD Remote Lite
+  has read it that way all along — which is why typing an album into ITS search
+  box finds the score. One fetch, cached, shared by every album. Ask the index
+  first; the review page is the fallback for anything too old to be listed.
+- **A review is recognised by its SHAPE in that blob** — `contentType` plus
+  `ratingValue` plus `url` — walked from the root rather than followed down a
+  fixed path, so Pitchfork reshuffling its containers empties nothing. And the
+  blob is found by MATCHING BRACES, not by a regex: it is a couple of megabytes
+  and a brace inside a review's own text ends a naive scan early.
 - **Pitchfork's `ratingValue` is an OBJECT, not a number.**
   `"ratingValue": { "score": "8.5", "isBestNewMusic": true, … }` — a pattern
   looking for `"ratingValue": 8.5` cannot match it, because after the colon
