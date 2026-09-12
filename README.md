@@ -75,7 +75,8 @@ player if you don't.
 They're searches rather than links to the album itself — that would need each
 service's own id for the record, which needs their APIs and their credentials.
 
-There's no Roon link: Roon has no web player and no link scheme to open.
+There's no Roon link: Roon has no web player and no link scheme to open, so
+there's nothing a tap could go to.
 
 ## Discord
 

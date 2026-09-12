@@ -262,10 +262,26 @@ was simply not there, however carefully the DIDL was parsed.
   literal plus because they carry the query in the PATH. And `%2F` is decoded
   back into a path segment by Qobuz's own redirect, so "AC/DC" 404s. Both are in
   `StreamingLinks.searchQuery` with a test each.
-- **Nothing links to Roon, deliberately.** Roon publishes no URL scheme and no
-  web player, so there is no link to build — and searching its library from here
-  would need the BROWSE service this app deliberately does not ask for. A link
-  that opened nothing would be worse than its absence.
+- **Nothing links to Roon, and that is a SCOPE decision, not a technical wall.**
+  Half of it is a wall: Roon publishes no URL scheme and no web player, so there
+  is no link to build. Checked against RoonLabs' own `node-roon-api` and
+  `node-roon-api-browse` — the whole extension API is MOO over a WebSocket, and
+  the only URL anywhere in it is `msg.props.http_port` for the image service.
+  Grepping a full Roon remote for `roon://` finds nothing either.
+
+  The other half is NOT a wall, and an earlier note here wrongly implied it was.
+  `com.roonlabs.browse:1` has a `"search"` hierarchy, and MusicD Remote Lite
+  uses it against real hardware: `browse(hierarchy="search", input=title)`, take
+  the "Albums" heading out of the grouped results, `drillActionMenu` the album,
+  `invoke` its Play Now with a `zone_or_output_id`. A "Play in Roon" BUTTON is
+  entirely buildable and would do more than the six search links do.
+
+  It is left out because it would make this app able to start music. Every route
+  here is a read, `TokenStore` is the only thing that writes, and that rule is
+  load-bearing — see [Access]. Asked directly, the answer was to leave it out.
+  Reopen that decision with the owner, not on the grounds that it cannot be
+  done. One thing still unverified if it ever is: whether adding a service to
+  the registration re-prompts for approval in Roon → Settings → Extensions.
 - **`sharecard.js` is a port, not this project's code.** It is MusicD Remote
   Lite's file, and it is the card's visual definition. A change here that is not
   also made there means the two apps stop producing the same picture — which is
