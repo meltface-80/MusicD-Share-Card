@@ -302,6 +302,21 @@ was simply not there, however carefully the DIDL was parsed.
   not clip. The old `@media (max-width: 420px)` rule that gave each button
   `flex: 1 1 100%` is gone; it was what put them one per row on every phone
   this runs on.
+- **THE ACTION ROW IS UNIFORM ON BOTH PLATFORMS, and the filled Share button
+  was the last thing making them differ.** iOS has no Share button at all —
+  its share sheet is reached by holding the card — so it draws Download, the
+  webhook and the cog as three identical plain buttons, while Android drew a
+  filled yellow Share beside two plain ones. Same page, two apps, depending on
+  the phone. `.actions .primary` still exists and "Find my speakers" still uses
+  it: that one appears only when discovery has failed, it is the single thing
+  worth doing at that moment, and it is alone in the row.
+- **The two platforms differed because of a 420px BREAKPOINT, not a platform
+  check.** There is no Android branch in this stylesheet and never was. An
+  `@media (max-width: 420px)` rule stacked the buttons full width, and the
+  reporter's iPhone was 430pt while their Android was narrower — so one wrapped
+  into a neat row and the other became a column. When two devices disagree
+  about a layout here, look for a breakpoint they straddle before looking for a
+  platform.
 - **`overflow-wrap: anywhere` BREAKS WORDS MID-WORD. Use `break-word`.**
   `anywhere` lets the browser count a break between any two letters when it
   computes how narrow a cell may be, so it takes them at the first opportunity:
@@ -380,6 +395,19 @@ was simply not there, however carefully the DIDL was parsed.
   the network here refuses both hosts. Any answer that is not a usable list
   falls through to Deezer, and `attempts()` records which one answered — so
   the first real run says which, instead of an empty row saying nothing.
+- **A SUGGESTION IS AN ALBUM. Deezer's `/artist/{id}/albums` IS NOT.** That
+  endpoint is named for albums and returns every release filed under the act —
+  singles and EPs included — and taking the earliest gave a house act its first
+  twelve-inch. Reported from the field as "some are just tracks": Gat Decor's
+  "Passion", Hyper Go Go's "High". `record_type` is the field that separates
+  them and the filter is a WHITELIST — album, and nothing else — so a value
+  nobody has seen yet is excluded by default rather than suggested by default.
+  An act with no album keeps its name and loses the record; naming a single
+  would be the wrong answer where the bare act is an honest one.
+- **A FILTER THE SERVER APPLIES IS NOT EVIDENCE THE SERVER APPLIED IT.** The
+  MusicBrainz browse asks for `type=album` and now also checks `primary-type`
+  on every group that comes back. It was only asking, which is the same trust
+  Deezer's endpoint name was given — and that one was misplaced.
 - **No MusicBrainz id means ListenBrainz is not asked at all.** Resolving one
   by searching a name is how a row of suggestions ends up being about a
   different act that shares it. Skip and say so in the diagnostics.

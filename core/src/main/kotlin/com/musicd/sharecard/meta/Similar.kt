@@ -169,6 +169,11 @@ class Similar(
         var bestYear = Int.MAX_VALUE
         for (i in 0 until groups.length()) {
             val g = groups.optJSONObject(i) ?: continue
+            // ASKED FOR AND CHECKED. `type=album` narrows the browse, but a
+            // filter the server applies is not evidence the server applied it,
+            // and the cost of it being ignored is a single in the row — the
+            // exact fault Deezer shipped. Check the answer.
+            if (!g.str("primary-type").equals("Album", ignoreCase = true)) continue
             // A compilation or a live record carries "Album" as its primary
             // type with the rest in secondary-types; those are not the record
             // to name somebody's first listen after.
@@ -224,13 +229,40 @@ class Similar(
     private fun idOf(obj: JSONObject): String? =
         obj.opt("id")?.toString()?.takeIf { it.isNotBlank() && it != "null" }
 
+    /**
+     * One ALBUM by this act, and nothing else.
+     *
+     * `/artist/{id}/albums` is named for albums and is not one: it returns
+     * every release Deezer files under the act, singles and EPs included, and
+     * this took the earliest of them. For a house act that is almost always a
+     * twelve-inch, which is how the row came to suggest "Gat Decor · Passion"
+     * and "Hyper Go Go · High" — both singles, reported from the field as
+     * "some are just tracks".
+     *
+     * `record_type` is the field that separates them, and the filter is a
+     * WHITELIST rather than a list of things to skip: album, and that is all.
+     * A compilation is not a record to start somebody on, and an unfamiliar
+     * value a year from now should be excluded by default rather than
+     * suggested by default.
+     *
+     * An act with no album to its name keeps the name and loses the record —
+     * see [readDeezerAlbums]. Naming a single would be the wrong answer; the
+     * act on its own is an honest one.
+     */
     private fun deezerAlbum(id: String, name: String): Act {
         val json = dzGate.run { getJson("$deezer/artist/$id/albums?limit=50") }
-        val data = json?.optJSONArray("data") ?: return Act(name, null, null, null)
+        val (title, year) = readDeezerAlbums(json)
+        return Act(name, null, title, year)
+    }
+
+    /** Earliest full album in a Deezer artist-albums response, or nothing. */
+    internal fun readDeezerAlbums(json: JSONObject?): Pair<String?, Int?> {
+        val data = json?.optJSONArray("data") ?: return null to null
         var bestTitle: String? = null
         var bestYear = Int.MAX_VALUE
         for (i in 0 until data.length()) {
             val album = data.optJSONObject(i) ?: continue
+            if (!album.str("record_type").equals("album", ignoreCase = true)) continue
             val title = album.strOrNull("title")?.takeIf { it.isNotBlank() } ?: continue
             val year = yearOf(album.str("release_date")) ?: continue
             if (year < bestYear) {
@@ -238,7 +270,7 @@ class Similar(
                 bestTitle = title
             }
         }
-        return Act(name, null, bestTitle, bestYear.takeIf { it != Int.MAX_VALUE })
+        return bestTitle to bestYear.takeIf { it != Int.MAX_VALUE }
     }
 
     // ----------------------------------------------------------- diagnostics
@@ -324,8 +356,14 @@ class Similar(
         const val MUSICBRAINZ = "https://musicbrainz.org"
         const val DEEZER = "https://api.deezer.com"
 
-        /** How many acts the row shows. Five chips is one phone width. */
-        const val WANTED = 5
+        /**
+         * How many acts the row shows.
+         *
+         * Three, chosen by the owner over five. It is also what keeps the page
+         * to one screen: each row is a full-width chip, so two fewer is about
+         * seventy pixels back.
+         */
+        const val WANTED = 3
 
         /**
          * UNVERIFIED — see the class comment. ListenBrainz names its
