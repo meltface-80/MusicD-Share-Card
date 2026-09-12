@@ -25,10 +25,16 @@ is there. That's the whole thing — nothing else to run, no server, no account.
 
 ### Updating
 
-Every build is signed with a throwaway key at the moment, so Android sees a new
-APK as a different app and refuses to install it over the old one — uninstall
-first. That stops once a real signing key is in place; after that, new versions
-install straight over the top.
+The app updates itself. When a newer version is published it says so at the top
+of the page; press **Update** and it downloads it, checks it, and hands it to
+Android to install. Only the device running the app can start that — from
+another device you need the PIN, the same one webhooks ask for.
+
+One catch, for now: builds are signed with a throwaway key, so Android sees each
+one as a different app and refuses to replace the old one. Until that changes
+the app says so instead of offering the button, and you have to uninstall first.
+Two repository secrets fix it permanently — see
+[docs/signing.md](docs/signing.md).
 
 ## Using it from your other devices
 

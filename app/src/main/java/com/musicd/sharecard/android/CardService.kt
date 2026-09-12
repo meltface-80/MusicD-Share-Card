@@ -127,7 +127,13 @@ class CardService : Service() {
                         // that is dropped between them is a lock that is not
                         // held when it matters.
                     }
-                }
+                },
+                // Updating in place. Only the Android shell can do the last
+                // step, so :core does everything up to it and calls back here.
+                updateInstaller = ShareCardApp.UpdateInstaller(
+                    downloadDir = ApkInstaller.downloadDir(this),
+                    install = { apk -> ApkInstaller.install(this, apk) }
+                )
             ).also { it.start() }
 
             app = started

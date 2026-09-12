@@ -245,10 +245,15 @@ jobs:
           cp "$APK" "dist/$APK"
           version=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
           sha=$(sha256sum "$APK" | cut -d' ' -f1)
+          # raw.githubusercontent.com and not github.com/.../raw, which only
+          # redirects there. The in-app updater refuses an APK URL whose host
+          # differs from the manifest's own — a manifest that can point the
+          # installer anywhere is a manifest that can install anything — and the
+          # app reads this file from raw.githubusercontent.com.
           cat > dist/latest.json <<JSON
           {
             "version": "$version",
-            "url": "https://github.com/${GITHUB_REPOSITORY}/raw/${GITHUB_REF_NAME}/dist/$APK",
+            "url": "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/dist/$APK",
             "sha256": "$sha",
             "signed": $( [ "$HAVE_KEY" = "true" ] && echo true || echo false ),
             "notes": "Built from ${GITHUB_SHA}."

@@ -26,6 +26,10 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    // The update manifest may only name an https URL, and that rule is worth
+    // testing against a real TLS server rather than switching it off for the
+    // test. This provides the throwaway certificate MockWebServer serves with.
+    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
 }
 
 tasks.test {
