@@ -395,6 +395,19 @@ was simply not there, however carefully the DIDL was parsed.
   the network here refuses both hosts. Any answer that is not a usable list
   falls through to Deezer, and `attempts()` records which one answered — so
   the first real run says which, instead of an empty row saying nothing.
+- **A SUGGESTION IS AN ALBUM. Deezer's `/artist/{id}/albums` IS NOT.** That
+  endpoint is named for albums and returns every release filed under the act —
+  singles and EPs included — and taking the earliest gave a house act its first
+  twelve-inch. Reported from the field as "some are just tracks": Gat Decor's
+  "Passion", Hyper Go Go's "High". `record_type` is the field that separates
+  them and the filter is a WHITELIST — album, and nothing else — so a value
+  nobody has seen yet is excluded by default rather than suggested by default.
+  An act with no album keeps its name and loses the record; naming a single
+  would be the wrong answer where the bare act is an honest one.
+- **A FILTER THE SERVER APPLIES IS NOT EVIDENCE THE SERVER APPLIED IT.** The
+  MusicBrainz browse asks for `type=album` and now also checks `primary-type`
+  on every group that comes back. It was only asking, which is the same trust
+  Deezer's endpoint name was given — and that one was misplaced.
 - **No MusicBrainz id means ListenBrainz is not asked at all.** Resolving one
   by searching a name is how a row of suggestions ends up being about a
   different act that shares it. Skip and say so in the diagnostics.

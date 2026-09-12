@@ -8,6 +8,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -55,13 +56,21 @@ class SimilarTest {
         ]
     """.trimIndent()
 
-    /** MusicBrainz release groups: a studio album, a live record, a comp. */
+    /**
+     * MusicBrainz release groups: a studio album, a later one, a live record —
+     * and a SINGLE that is older than all of them, which is what gets picked
+     * by anything trusting `type=album` to have been applied server-side.
+     */
     private fun releaseGroups(first: String, firstYear: String) = """
         {"release-groups": [
-          {"title": "$first", "first-release-date": "$firstYear", "secondary-types": []},
-          {"title": "Later One", "first-release-date": "2001-05-05", "secondary-types": []},
+          {"title": "$first", "first-release-date": "$firstYear",
+           "primary-type": "Album", "secondary-types": []},
+          {"title": "Later One", "first-release-date": "2001-05-05",
+           "primary-type": "Album", "secondary-types": []},
+          {"title": "An Early Single", "first-release-date": "1977-01-01",
+           "primary-type": "Single", "secondary-types": []},
           {"title": "A Live Record", "first-release-date": "1979-01-01",
-           "secondary-types": ["Live"]}
+           "primary-type": "Album", "secondary-types": ["Live"]}
         ]}
     """.trimIndent()
 
@@ -142,8 +151,12 @@ class SimilarTest {
                     ok("""{"data": [{"id": 77, "name": "Bark Psychosis"}]}""")
                 path.startsWith("/artist/77/albums") -> ok(
                     """{"data": [
-                         {"title": "Hex", "release_date": "1994-02-14"},
-                         {"title": "Codename Dustsucker", "release_date": "2004-09-06"}
+                         {"title": "Blue Room", "release_date": "1992-01-01",
+                          "record_type": "single"},
+                         {"title": "Hex", "release_date": "1994-02-14",
+                          "record_type": "album"},
+                         {"title": "Codename Dustsucker", "release_date": "2004-09-06",
+                          "record_type": "album"}
                        ]}"""
                 )
                 else -> missing()
@@ -210,6 +223,78 @@ class SimilarTest {
         similar.forArtist("Talk Talk", null)
         assertEquals("ListenBrainz must not be asked without an id", 0, lbCalls)
         assertTrue(similar.attempts().any { it.contains("no MusicBrainz id") })
+    }
+
+    /**
+     * THE ONE THAT SHIPPED. `/artist/{id}/albums` is named for albums and is
+     * not one — Deezer files singles and EPs under it too, and taking the
+     * earliest release gave a house act its first twelve-inch. Reported from
+     * the field as "some are just tracks".
+     */
+    @Test
+    fun `a Deezer single is never offered as an album`() {
+        val similar = Similar(metadataHttpClient(), "test")
+        val (title, year) = similar.readDeezerAlbums(
+            org.json.JSONObject(
+                """{"data": [
+                     {"title": "Passion", "release_date": "1992-03-01", "record_type": "single"},
+                     {"title": "High", "release_date": "1992-05-01", "record_type": "ep"},
+                     {"title": "The Greatest Hits", "release_date": "1995-01-01",
+                      "record_type": "compilation"},
+                     {"title": "A Real Album", "release_date": "1996-09-09",
+                      "record_type": "album"}
+                   ]}"""
+            )
+        )
+        assertEquals("A Real Album", title)
+        assertEquals(1996, year)
+    }
+
+    @Test
+    fun `an act with no album keeps its name and loses the record`() {
+        // Naming a single would be the wrong answer. The act on its own is an
+        // honest one, and the row still points somewhere useful.
+        val similar = Similar(metadataHttpClient(), "test")
+        val (title, year) = similar.readDeezerAlbums(
+            org.json.JSONObject(
+                """{"data": [
+                     {"title": "Passion", "release_date": "1992-03-01", "record_type": "single"},
+                     {"title": "Untyped", "release_date": "1993-03-01"}
+                   ]}"""
+            )
+        )
+        assertNull(title)
+        assertNull(year)
+    }
+
+    @Test
+    fun `a release type nobody has seen before is not suggested`() {
+        // The filter is a whitelist: an unfamiliar value a year from now is
+        // excluded by default rather than offered by default.
+        val similar = Similar(metadataHttpClient(), "test")
+        val (title, _) = similar.readDeezerAlbums(
+            org.json.JSONObject(
+                """{"data": [{"title": "Something New", "release_date": "2030-01-01",
+                              "record_type": "mixtape"}]}"""
+            )
+        )
+        assertNull(title)
+    }
+
+    @Test
+    fun `the row is three acts, not five`() {
+        val many = (1..8).joinToString(",") {
+            """{"artist_mbid": "id-$it", "name": "Act $it"}"""
+        }
+        val host = serve { request ->
+            if (request.path.orEmpty().startsWith("/similar-artists/json")) ok("[$many]")
+            else missing()
+        }
+        val acts = Similar(
+            metadataHttpClient(), "test",
+            listenBrainz = base(host), musicBrainz = base(host), deezer = base(host)
+        ).forArtist("Talk Talk", "mbid")
+        assertEquals(3, acts.size)
     }
 
     @Test
