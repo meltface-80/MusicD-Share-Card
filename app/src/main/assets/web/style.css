@@ -269,17 +269,37 @@ body {
  * for), and the Pitchfork one is set apart because it is the only one that
  * goes to an actual page about this record rather than a search for it.
  */
+/*
+ * FOUR EVEN COLUMNS, NOT A RAGGED WRAP.
+ *
+ * Wrapping packed them left and spilled one lonely chip onto a third line —
+ * Bandcamp, on its own, under a row of three. A fixed four-column grid puts
+ * the eight in two rows of four with every chip the same width, and
+ * `minmax(0, 1fr)` is what lets a cell be narrower than its text so nothing
+ * reaches past the screen edge.
+ *
+ * THE TEXT WRAPS RATHER THAN TRUNCATING. "Amazon Music" does not fit one line
+ * of a quarter-width cell on a phone, and the alternatives were shortening the
+ * service names — which are the services' own — or an ellipsis, which hides
+ * exactly the word that tells two of them apart. `align-items: stretch` then
+ * makes the one-line chips as tall as the two-line ones, so the grid stays a
+ * grid.
+ *
+ * With a Pitchfork review there are nine and the ninth starts a third row.
+ * That is the honest outcome of a fixed grid and it is only drawn for records
+ * Pitchfork has reviewed.
+ */
 .links {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 7px;
   margin: 14px 0 0;
   padding: 0;
 }
 
 .links-label {
-  width: 100%;
+  grid-column: 1 / -1;
   margin: 0 0 2px;
   font-size: 12px;
   letter-spacing: .02em;
@@ -290,16 +310,28 @@ body {
 .links a {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 6px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text-dim);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
   text-decoration: none;
-  white-space: nowrap;
+  /*
+   * break-word, NOT anywhere. `anywhere` lets the browser count a break
+   * between any two letters when it works out how narrow the cell may be, so
+   * it took them at the first opportunity: "Bandcam / p" and "Qobu / z" on a
+   * 360px phone. `break-word` breaks a word only when it genuinely will not
+   * fit, which — at this size, in a quarter of a phone — no service name does.
+   * "Amazon Music" still wraps, at its space, which is the wrap that was
+   * wanted.
+   */
+  overflow-wrap: break-word;
 }
 
 .links a:active { transform: scale(.97); }
@@ -311,20 +343,63 @@ body {
 }
 
 /*
- * "If you like this" — the row below the links, and quieter than it.
+ * THE PREFERRED SERVICE, chosen by holding a finger on its chip.
  *
- * These chips carry a name, a record and a year, so they are long where the
- * service chips are one word. They wrap like the rest; what stops a phone
- * being a column of full-width buttons is the smaller type, not a width.
+ * -webkit-touch-callout is off on these chips ONLY. Held, an iOS link raises
+ * a preview sheet, and that sheet is what the long press would otherwise do
+ * instead of choosing. The card image keeps its callout — that menu is the one
+ * way an iPhone copies the picture — which is why this names a[data-service]
+ * and not a.
+ */
+.links a[data-service] {
+  -webkit-touch-callout: none;
+}
+
+.links a.preferred {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The tick, at the right of the label rather than beside it: it marks the
+   chip, it is not part of the name. */
+.links a.preferred::after {
+  content: "\2713";
+  margin-left: 5px;
+  font-weight: 700;
+}
+
+/*
+ * "If you like this" — a list, every row the width of the longest.
+ *
+ * ONE COLUMN OF max-content, WHICH IS THE WHOLE TRICK. The column is sized to
+ * the widest chip in it and every chip then stretches to fill the column, so
+ * five rows of wildly different names come out one length instead of a ragged
+ * staircase. `justify-content: center` centres that column on the page rather
+ * than pinning it left.
+ *
+ * NOT full width: these are suggestions, and a column of five screen-wide
+ * buttons would shout louder than the card they sit under.
  */
 .similar {
-  margin-top: 10px;
+  display: grid;
+  grid-template-columns: max-content;
+  justify-content: center;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.similar .links-label {
+  grid-column: 1;
+  text-align: center;
 }
 
 .similar a {
   font-weight: 500;
   font-size: 12.5px;
   color: var(--text-faint);
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 
 .placeholder {
@@ -358,26 +433,50 @@ body {
 
 /* ----------------------------------------------------------------- actions */
 
+/*
+ * ONE ROW, EQUAL WIDTHS, WHATEVER THE LABELS SAY.
+ *
+ * These wrapped, and on a phone that meant Share on its own line, then the
+ * webhook, then the cog — three rows of buttons between the card and the links
+ * and everything below them pushed off the screen. They are now a single row
+ * of equal cells: `flex: 1 1 0` makes every button the same width regardless
+ * of its label, and `min-width: 0` is the half that actually stops the
+ * overhang, because a flex item refuses to shrink below its content without
+ * it.
+ *
+ * THE LABEL WRAPS INSIDE THE BUTTON, and the icon sits above it rather than
+ * beside it. One of these buttons is named by the user — it is their webhook —
+ * so "Discord Now Playing" is a label this cannot shorten and must not clip.
+ * Stacking gives the text the whole width of the cell to wrap in, and
+ * `align-items: stretch` keeps every button the height of the tallest.
+ */
 .actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
   margin-top: 16px;
 }
 
 .actions button,
 .actions a {
+  flex: 1 1 0;
+  min-width: 0;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 11px 16px;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 6px;
   border-radius: 11px;
   border: 1px solid var(--line);
   background: #1e2228;
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
   cursor: pointer;
   text-decoration: none;
 }
@@ -396,11 +495,11 @@ body {
 .hint { color: var(--text-faint); font-size: 13px; margin: 12px 2px 0; line-height: 1.5; }
 .err  { color: var(--danger);     font-size: 13px; margin: 8px 2px 0; min-height: 1em; }
 
-/* A card is 2:1 and gets small fast; below this the actions stack rather than
-   wrap into a ragged second row. */
-@media (max-width: 420px) {
-  .actions button, .actions a { flex: 1 1 100%; justify-content: center; }
-}
+/*
+ * There is no narrow-screen rule any more, and its absence is the point. It
+ * used to give each button `flex: 1 1 100%` below 420px, which is what put
+ * them one per row on every phone this runs on.
+ */
 
 /* -------------------------------------------------------------- diagnostics
  *

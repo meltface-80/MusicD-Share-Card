@@ -420,6 +420,118 @@
    * arrives (see upgradeQobuz) and Pitchfork is set apart entirely: that link
    * is the review itself.
    */
+  /*
+   * THE PREFERRED SERVICE, AND WHY IT IS NOT A SETTING.
+   *
+   * The suggestion chips have to link SOMEWHERE, and that was Qobuz for
+   * everybody because Qobuz is first in the list. Making it a choice would
+   * normally mean a settings screen, and this page has one of those already —
+   * it is for webhooks, it is a credential form, and burying a one-tap
+   * preference behind it would be worse than the default it replaced.
+   *
+   * So the choice is made ON the thing being chosen: hold a finger on a
+   * service chip and it is marked with a tick. Nothing new to find, nothing to
+   * open, and the chip you press is the answer to the question.
+   *
+   * IT LIVES IN localStorage, NOT ON THE SERVER, and that is deliberate twice
+   * over. It is a per-DEVICE preference — the phone and the iPad across the
+   * house can reasonably differ — and it keeps this a read: every route here
+   * answers without writing, only three things in the whole app touch disk,
+   * and a new one of those would have to go behind the configure gate. A
+   * display preference is not worth that. Storage can also throw outright in a
+   * private window, so every touch of it is guarded and the default stands.
+   */
+  const PREF_KEY = "sharecard.preferredService";
+  const DEFAULT_SERVICE = "qobuz";
+
+  function preferredService() {
+    try {
+      return localStorage.getItem(PREF_KEY) || DEFAULT_SERVICE;
+    } catch (e) {
+      return DEFAULT_SERVICE;
+    }
+  }
+
+  function setPreferredService(service) {
+    if (!service || service === preferredService()) return;
+    try {
+      localStorage.setItem(PREF_KEY, service);
+    } catch (e) { /* the choice lasts this session, which is better than none */ }
+    markPreferred();
+    // The suggestions point at the old service until they are asked again.
+    // Cheap: the server answered from its shelf, so this is one local request.
+    if (current) buildSimilar(token, { artist: current.artist, album: current.album });
+  }
+
+  /** Exactly one chip carries the tick, so the old one has to lose it. */
+  function markPreferred() {
+    const chosen = preferredService();
+    let marked = false;
+    const chips = linksEl.querySelectorAll("a[data-service]");
+    for (const chip of chips) {
+      const mine = chip.dataset.service === chosen;
+      chip.classList.toggle("preferred", mine);
+      chip.setAttribute("aria-pressed", mine ? "true" : "false");
+      if (mine) marked = true;
+    }
+    // A remembered service this record has no chip for — nothing marked would
+    // look like the preference had been forgotten, so the default takes it.
+    if (!marked && chips.length) {
+      for (const chip of chips) {
+        if (chip.dataset.service === DEFAULT_SERVICE) {
+          chip.classList.add("preferred");
+          chip.setAttribute("aria-pressed", "true");
+        }
+      }
+    }
+  }
+
+  /*
+   * A HOLD, NOT A TAP, and the tap still has to work.
+   *
+   * A timer started on touchstart and cancelled by a move or a lift is the
+   * only way to tell the two apart — there is no long-press event. When it
+   * fires, the click that iOS and Android send afterwards has to be swallowed,
+   * or choosing a service would also open it.
+   *
+   * contextmenu covers the desktop right-click and is also what iOS raises
+   * when the callout is suppressed; preventing it is what stops a held chip
+   * showing a link preview instead of choosing.
+   */
+  const HOLD_MS = 500;
+
+  function holdToPrefer(chip, service) {
+    let timer = null;
+    let held = false;
+
+    const cancel = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+    const start = () => {
+      held = false;
+      cancel();
+      timer = setTimeout(() => {
+        held = true;
+        setPreferredService(service);
+      }, HOLD_MS);
+    };
+
+    chip.addEventListener("touchstart", start, { passive: true });
+    chip.addEventListener("touchmove", cancel, { passive: true });
+    chip.addEventListener("touchend", cancel);
+    chip.addEventListener("touchcancel", cancel);
+    chip.addEventListener("click", (e) => {
+      if (!held) return;
+      held = false;
+      e.preventDefault();
+    });
+    chip.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      setPreferredService(service);
+    });
+  }
+
   function buildLinks(extras) {
     linksEl.innerHTML = "";
     const services = (extras && extras.links) || [];
@@ -454,10 +566,16 @@
       if (!svc || !svc.url || !svc.name) continue;
       const a = link(svc.url, svc.name, "");
       // Marked so the Qobuz one can be upgraded in place when its album id
-      // arrives; see upgradeQobuz.
-      if (svc.service) a.dataset.service = svc.service;
+      // arrives (see upgradeQobuz), and so a held chip knows which service it
+      // is choosing.
+      if (svc.service) {
+        a.dataset.service = svc.service;
+        a.setAttribute("aria-pressed", "false");
+        holdToPrefer(a, svc.service);
+      }
       linksEl.appendChild(a);
     }
+    markPreferred();
     linksEl.classList.remove("hidden");
   }
 
@@ -481,7 +599,14 @@
   async function buildSimilar(mine, playing) {
     const artist = playing.artist || "";
     if (!artist) return;
-    const params = new URLSearchParams({ artist: artist, album: playing.album || "" });
+    // The service is the page's to choose and the URL is the server's to
+    // build: Qobuz's search needs a storefront segment, and the rules for that
+    // live in StreamingLinks with a test each.
+    const params = new URLSearchParams({
+      artist: artist,
+      album: playing.album || "",
+      service: preferredService()
+    });
 
     let acts = [];
     try {

@@ -514,6 +514,12 @@ class CardApi(
         val album = request.param("album").orEmpty()
         if (artist.isEmpty()) return Json.error(400, "No artist named.")
         val s = similar ?: return Json.obj(JSONObject().put("acts", JSONArray()))
+        // Which service the chips point at. The page holds that preference —
+        // it is per-device and it is not worth a write on this server — and
+        // names it here so the URL is still built where the storefront and
+        // encoding rules live. An unknown name falls back rather than failing:
+        // the worst case is a link to the first service instead of a 500.
+        val service = request.param("service").orEmpty()
 
         val fast = request.param("fast") == "1"
         val acts = if (fast) s.cachedForArtist(artist)
@@ -538,15 +544,28 @@ class CardApi(
                                 // with a test each; a second copy in app.js is
                                 // how they drift. One chip, so one service —
                                 // the first, which is the storefront-aware one.
-                                .putOrNull(
-                                    "url",
-                                    StreamingLinks.forAlbum(it.name, it.album ?: it.name)
-                                        .firstOrNull()?.url
-                                )
+                                .putOrNull("url", linkFor(it.name, it.album, service))
                         }
                     )
                 )
         )
+    }
+
+    /**
+     * One search link for a suggested act, on the service the page asked for.
+     *
+     * BUILT HERE, NOT BY THE PAGE. Qobuz's search 404s without a storefront
+     * segment, the query rides in the path for four of the seven so a space
+     * must be %20 rather than a plus, and a slash has to be spent rather than
+     * encoded — three rules that already live in [StreamingLinks] with a test
+     * each. A second copy of them in app.js is how they drift apart.
+     *
+     * The act's own name stands in for the album when no record could be
+     * named, so a lookup that managed only a name still lands somewhere.
+     */
+    private fun linkFor(act: String, album: String?, service: String): String? {
+        val links = StreamingLinks.forAlbum(act, album ?: act)
+        return (links.firstOrNull { it.service == service } ?: links.firstOrNull())?.url
     }
 
     /**

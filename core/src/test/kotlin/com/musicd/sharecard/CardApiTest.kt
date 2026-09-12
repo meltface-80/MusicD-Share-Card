@@ -77,6 +77,17 @@ class CardApiTest {
         )
     }
 
+    /** A shelf holding exactly these entries, already in date. */
+    private fun shelfWith(vararg entries: Pair<String, String>) = object : CacheStore {
+        private val stamped = entries.associate { (key, value) ->
+            key to System.currentTimeMillis().toString() + "|" + value
+        }
+        override fun load(namespace: String) =
+            if (namespace == "similar") stamped else emptyMap()
+        override fun put(namespace: String, key: String, value: String) {}
+        override fun remove(namespace: String, key: String) {}
+    }
+
     private fun apiWith(similar: Similar): CardApi {
         players.values.forEach { it.topology = topology }
         val http = metadataHttpClient()
@@ -360,6 +371,45 @@ class CardApiTest {
         // An act with no record named still gets a link, for the act.
         assertTrue(acts.getJSONObject(1).isNull("album"))
         assertTrue(acts.getJSONObject(1).getString("url").contains("Slint"))
+    }
+
+    /**
+     * Which service a suggestion links to is the page's choice, held on the
+     * device, and named on the request. The URL is still built here.
+     */
+    @Test
+    fun `the suggestion link follows the service the page asked for`() {
+        val api = apiWith(similar = Similar(metadataHttpClient(), "test", store = shelfWith(
+            Normalize.text("Talk Talk") to JSONArray()
+                .put(JSONObject().put("n", "Bark Psychosis").put("a", "Hex").put("y", 1994))
+                .toString()
+        )))
+
+        fun urlFor(service: String?): String {
+            val query = mutableMapOf("artist" to "Talk Talk", "fast" to "1")
+            if (service != null) query["service"] = service
+            val body = JSONObject(
+                String(api.handle(get("/api/similar", query)).body, Charsets.UTF_8)
+            )
+            return body.getJSONArray("acts").getJSONObject(0).getString("url")
+        }
+
+        assertTrue(urlFor("tidal").startsWith("https://tidal.com/search?q="))
+        assertTrue(urlFor("bandcamp").startsWith("https://bandcamp.com/search?q="))
+        assertTrue(urlFor("apple").startsWith("https://music.apple.com/search?term="))
+        // Qobuz is the default, and it keeps its storefront segment — without
+        // one that search is a 404, which is the whole reason this is built
+        // here rather than in the page.
+        assertTrue(urlFor(null).contains("/search/?q="))
+        assertTrue(urlFor(null).startsWith("https://www.qobuz.com/"))
+        // A service nobody offers falls back rather than failing: a link to
+        // the wrong shop beats a 500 on a row of suggestions.
+        assertTrue(urlFor("napster").startsWith("https://www.qobuz.com/"))
+
+        // Whichever service it is, the record is what gets searched for.
+        for (service in listOf("tidal", "spotify", "deezer")) {
+            assertTrue(urlFor(service).contains("Bark%20Psychosis%20Hex"))
+        }
     }
 
     @Test
