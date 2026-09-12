@@ -103,9 +103,7 @@ class Pitchfork(
         if (artistSlug.isEmpty() || albumSlug.isEmpty()) return null
         val url = "$host/reviews/albums/$artistSlug-$albumSlug/"
         val html = gate.run { text(url) } ?: run { note("$url -> not found"); return null }
-        val review = reviewFromPage(html, url, title, artist)
-        note(if (review != null) "$url -> ${review.score}" else "$url -> not this artist")
-        return review
+        return record(url, readPage(html, url, title, artist), "")
     }
 
     /**
@@ -131,10 +129,7 @@ class Pitchfork(
             return null
         }
         val html = gate.run { text(hit.url) } ?: run { note("${hit.url} -> unreadable"); return null }
-        val review = reviewFromPage(html, hit.url, hit.album, artist)
-        note(if (review != null) "${hit.url} -> ${review.score} (from the feed)"
-        else "${hit.url} -> the feed's match is not this artist")
-        return review
+        return record(hit.url, readPage(html, hit.url, hit.album, artist), " (from the feed)")
     }
 
     /**
@@ -226,6 +221,22 @@ class Pitchfork(
         return out
     }
 
+    /** One line of diagnostics per page read, saying exactly what it was. */
+    private fun record(url: String, outcome: Outcome, where: String): Review? = when (outcome) {
+        is Outcome.Found -> {
+            note("$url -> ${outcome.review.score}$where")
+            outcome.review
+        }
+        is Outcome.NoScore -> {
+            note("$url -> page read, NO SCORE IN IT$where")
+            null
+        }
+        is Outcome.WrongArtist -> {
+            note("$url -> that is ${outcome.onPage.ifEmpty { "somebody else" }}, not this artist$where")
+            null
+        }
+    }
+
     /** The last few lookups, for /api/debug. A miss is invisible otherwise. */
     fun attempts(): List<String> = synchronized(notes) { notes.toList() }
 
@@ -257,24 +268,70 @@ class Pitchfork(
      * Split out from the fetch so the parsing is testable without a network:
      * the shape of Pitchfork's markup is the part that can silently change.
      */
-    internal fun reviewFromPage(html: String, url: String, title: String, artist: String): Review? {
-        val score = jsonLdRating(html) ?: return null
+    /**
+     * What a review page turned out to be. THE DISTINCTION IS THE POINT: this
+     * used to be a nullable Review, and the one line of diagnostics said "not
+     * this artist" for both answers — so a page that was the right review but
+     * would not give up its score was reported as the wrong record, and the
+     * real fault went looking for it in the wrong place for two releases.
+     */
+    internal sealed class Outcome {
+        data class Found(val review: Review) : Outcome()
+        object NoScore : Outcome()
+        data class WrongArtist(val onPage: String) : Outcome()
+    }
+
+    internal fun readPage(html: String, url: String, title: String, artist: String): Outcome {
+        val rating = rating(html) ?: return Outcome.NoScore
         // A URL can resolve to a different act's record of the same name —
         // whether it was constructed here or came out of the feed. The slug has
         // to name the artist we asked about.
-        val onPage = artistFromReviewUrl(url, title) ?: return null
+        val onPage = artistFromReviewUrl(url, title) ?: return Outcome.WrongArtist("")
         if (!Normalize.text(onPage).equals(Normalize.text(artist), ignoreCase = true) &&
             !Normalize.sortKey(Normalize.text(onPage))
                 .contains(Normalize.sortKey(Normalize.text(artist)))
         ) {
-            return null
+            return Outcome.WrongArtist(onPage)
         }
-        return Review(url = url, score = score, isBestNewMusic = BNM.containsMatchIn(html))
+        return Outcome.Found(
+            Review(url = url, score = rating.first, isBestNewMusic = rating.second)
+        )
     }
 
-    /** `"ratingValue": 8.7` inside any of the page's JSON-LD blocks. */
-    private fun jsonLdRating(html: String): Double? =
-        RATING.find(html)?.groupValues?.get(1)?.toDoubleOrNull()?.takeIf { it in 0.0..10.0 }
+    internal fun reviewFromPage(html: String, url: String, title: String, artist: String): Review? =
+        (readPage(html, url, title, artist) as? Outcome.Found)?.review
+
+    /**
+     * The score and the Best New Music flag, out of whichever shape the page is
+     * using.
+     *
+     * PITCHFORK'S `ratingValue` IS AN OBJECT, NOT A NUMBER, and that one fact
+     * is why a correctly-found review page produced no score:
+     *
+     *     "ratingValue": { "score": "8.5", "isBestNewMusic": true, … }
+     *
+     * A regex looking for `"ratingValue": 8.5` cannot match that — after the
+     * colon comes a brace. The app this was ported from reads exactly this
+     * object out of the listing page and has done all along; only the
+     * review-page reader was still looking for the older scalar. Both are
+     * accepted now, the object first.
+     *
+     * THE FLAG COMES FROM THE SAME OBJECT when it is there. Scanning the page
+     * for the words "Best New Music" finds Pitchfork's own navigation on every
+     * review ever published, so it is the last resort and not the first.
+     */
+    internal fun rating(html: String): Pair<Double, Boolean>? {
+        for (m in RATING_OBJECT.findAll(html)) {
+            val body = m.groupValues[1]
+            val score = SCORE_IN.find(body)?.groupValues?.get(1)?.toDoubleOrNull()
+                ?.takeIf { it in 0.0..10.0 } ?: continue
+            return score to BNM_FLAG.containsMatchIn(body)
+        }
+        RATING_SCALAR.find(html)?.groupValues?.get(1)?.toDoubleOrNull()
+            ?.takeIf { it in 0.0..10.0 }
+            ?.let { return it to BNM_TEXT.containsMatchIn(html) }
+        return null
+    }
 
     /**
      * The artist half of a review slug. The slug is "<artist>-<album>", so the
@@ -337,13 +394,26 @@ class Pitchfork(
         private const val TAG = "Pitchfork"
         const val HOST = "https://pitchfork.com"
 
-        /** The rating in a review page's JSON-LD. */
-        val RATING = Regex("\"ratingValue\"\\s*:\\s*\"?([0-9]+(?:\\.[0-9])?)\"?")
+        /**
+         * `"ratingValue": { "score": "8.5", "isBestNewMusic": true }` — the
+         * shape Pitchfork actually publishes. Bounded so a runaway match
+         * cannot swallow the page.
+         */
+        val RATING_OBJECT = Regex("\"ratingValue\"\\s*:\\s*\\{([^{}]{0,600})}")
+        val SCORE_IN = Regex("\"score\"\\s*:\\s*\"?([0-9]{1,2}(?:\\.[0-9])?)\"?")
+        val BNM_FLAG = Regex("\"isBestNew(?:Music|Reissue)\"\\s*:\\s*true")
+
+        /** The older scalar form, still on some pages. */
+        val RATING_SCALAR = Regex("\"ratingValue\"\\s*:\\s*\"?([0-9]{1,2}(?:\\.[0-9])?)\"?")
 
         val APOSTROPHE = Regex("['‘’]")
 
-        /** Best New Music is a page-level flag, not part of the rating object. */
-        val BNM = Regex("best[ -]?new[ -]?music", RegexOption.IGNORE_CASE)
+        /**
+         * Last resort only. Every Pitchfork page carries "Best New Music" in
+         * its own navigation, so this is right only for a page that has no
+         * structured flag at all.
+         */
+        val BNM_TEXT = Regex("best[ -]?new[ -]?music", RegexOption.IGNORE_CASE)
 
         /**
          * A review is written once and its score does not move, so this could

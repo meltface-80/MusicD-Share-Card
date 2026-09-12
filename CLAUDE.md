@@ -248,6 +248,28 @@ was simply not there, however carefully the DIDL was parsed.
   answering on port 1400, every one of them "would not describe the household".
   Nothing here reads a namespace URI; every lookup goes through `Xml.localName`,
   which strips the prefix off the tag name.
+- **Pitchfork's `ratingValue` is an OBJECT, not a number.**
+  `"ratingValue": { "score": "8.5", "isBestNewMusic": true, … }` — a pattern
+  looking for `"ratingValue": 8.5` cannot match it, because after the colon
+  comes a brace. The right review page was being fetched and thrown away for
+  two releases because of it. MusicD Remote Lite reads exactly this object out
+  of its listing page and always has; only the review-page reader here was left
+  on the older scalar. Both shapes are accepted, the object first.
+- **Best New Music comes from the flag beside the score, not from the page
+  text.** Every Pitchfork page carries "Best New Music" in its own navigation,
+  so scanning the HTML for those words marks every record ever reviewed. The
+  text scan is the last resort, for a page with no structured flag at all.
+- **A diagnostic that cannot tell two failures apart is worse than none.** The
+  Pitchfork note said "not this artist" for both a wrong record AND a page with
+  no score in it, so the one real dump this app produced pointed at the wrong
+  half and two rounds of fixes went after a cause that was never there.
+  `Pitchfork.Outcome` now names which it was. When adding a diagnostic, check
+  what ELSE reaches that line.
+- **Nothing finds an old Pitchfork review whose URL is numeric.**
+  `/reviews/albums/5450-rumours/` cannot be constructed from a name and is not
+  in the 30-item feed, so "Rumours" comes back empty and always will. Pitchfork
+  publishes no search API; MusicD Remote Lite's `search` only filters listings
+  it has already fetched. Not a bug to go hunting for.
 - **A Pitchfork lookup has THREE tries, and the constructed URL is only the
   first.** `/reviews/albums/<artist>-<album>/` is one request and the only way
   an album from 1994 is found at all, but it fails whenever the speaker's
