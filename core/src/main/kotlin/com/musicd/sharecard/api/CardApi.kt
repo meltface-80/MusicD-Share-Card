@@ -10,6 +10,7 @@ import com.musicd.sharecard.http.Response
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
 import com.musicd.sharecard.meta.QobuzAlbum
+import com.musicd.sharecard.meta.Similar
 import com.musicd.sharecard.meta.StreamingLinks
 import com.musicd.sharecard.meta.Updater
 import com.musicd.sharecard.source.Playing
@@ -44,7 +45,9 @@ class CardApi(
     private val discord: DiscordPoster = DiscordPoster(),
     /** Null where this host cannot install an APK — see [ShareCardApp]. */
     private val updater: Updater? = null,
-    private val qobuz: QobuzAlbum? = null
+    private val qobuz: QobuzAlbum? = null,
+    /** Null where suggestions are switched off; the row simply never appears. */
+    private val similar: Similar? = null
 ) : HttpServer.Handler {
 
     private val access = Access { webhooks.pin() }
@@ -128,8 +131,14 @@ class CardApi(
         "/api/now-playing" -> nowPlaying(request)
         "/api/extras" -> extras(request)
         "/api/qobuz" -> qobuzLink(request)
+        "/api/similar" -> similarActs(request)
         "/api/art" -> artwork(request)
-        "/api/debug" -> Json.obj(Diagnostics(sources, hostNotes, pitchfork::attempts).run())
+        "/api/debug" -> Json.obj(
+            Diagnostics(
+                sources, hostNotes, pitchfork::attempts,
+                { similar?.attempts().orEmpty() }
+            ).run()
+        )
         else -> static(request.path)
     }
 
@@ -484,6 +493,60 @@ class CardApi(
         val url = if (request.param("fast") == "1") q.cachedDeepLink(artist, album)
         else q.deepLink(artist, album)
         return Json.obj(JSONObject().putOrNull("url", url))
+    }
+
+    /**
+     * Acts worth hearing next, given the one playing.
+     *
+     * ITS OWN ROUTE, LIKE THE QOBUZ ID AND FOR THE SAME REASON. This is up to
+     * six requests to two outside hosts behind rate gates; folding it into
+     * /api/extras would hold the whole card back for a row the card does not
+     * contain. The page asks for it after the card is already drawn.
+     *
+     * The ARTIST is what this is about, but the ALBUM is taken too: the
+     * MusicBrainz id the lookup wants is a by-product of the metadata search
+     * for that record, so naming the album is the difference between a free id
+     * and a search of its own. `fast=1` answers from the shelf and opens no
+     * socket.
+     */
+    private fun similarActs(request: Request): Response {
+        val artist = request.param("artist").orEmpty()
+        val album = request.param("album").orEmpty()
+        if (artist.isEmpty()) return Json.error(400, "No artist named.")
+        val s = similar ?: return Json.obj(JSONObject().put("acts", JSONArray()))
+
+        val fast = request.param("fast") == "1"
+        val acts = if (fast) s.cachedForArtist(artist)
+        else s.forArtist(artist, metadata.extras(album, artist).artistMbid)
+
+        return Json.obj(
+            JSONObject()
+                .put("cached", fast)
+                .put(
+                    "acts",
+                    JSONArray(
+                        acts.orEmpty().map {
+                            JSONObject()
+                                .put("name", it.name)
+                                .putOrNull("album", it.album)
+                                .put("year", it.year ?: JSONObject.NULL)
+                                // BUILT HERE, NOT BY THE PAGE. Qobuz's search
+                                // needs a storefront segment or it 404s, the
+                                // query rides in the path so a space must be
+                                // %20, and a slash has to be spent rather than
+                                // encoded. Those rules live in StreamingLinks
+                                // with a test each; a second copy in app.js is
+                                // how they drift. One chip, so one service —
+                                // the first, which is the storefront-aware one.
+                                .putOrNull(
+                                    "url",
+                                    StreamingLinks.forAlbum(it.name, it.album ?: it.name)
+                                        .firstOrNull()?.url
+                                )
+                        }
+                    )
+                )
+        )
     }
 
     /**

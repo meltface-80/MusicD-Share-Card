@@ -89,6 +89,12 @@
     phone screen. Hidden until there is a record to link to.
   -->
   <nav class="links hidden" id="links" aria-label="Find this album"></nav>
+  <!--
+    Acts to hear next. Below the links and never on the card: the card is the
+    whole message and what it says is what is playing. Empty and hidden until
+    the lookup answers, because it is asked for after the card is drawn.
+  -->
+  <nav class="links similar hidden" id="similar" aria-label="If you like this"></nav>
   <p class="hint" id="hint"></p>
   <p class="err" id="err" role="status"></p>
 </main>

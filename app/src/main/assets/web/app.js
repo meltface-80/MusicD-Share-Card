@@ -44,6 +44,7 @@
   const zoneWrap = document.getElementById("zone-wrap");
   const updateEl = document.getElementById("update");
   const linksEl  = document.getElementById("links");
+  const simEl    = document.getElementById("similar");
   const refresh  = document.getElementById("refresh");
 
   /*
@@ -205,6 +206,8 @@
     actions.innerHTML = "";
     linksEl.innerHTML = "";
     linksEl.classList.add("hidden");
+    simEl.innerHTML = "";
+    simEl.classList.add("hidden");
     hintEl.textContent = "";
     errEl.textContent = "";
     nowEl.textContent = "";
@@ -388,8 +391,11 @@
     describe(playing);
     buildActions();
     buildLinks(extras);
-    // Not awaited: the card is finished, and this only ever improves one chip.
+    // Neither of these is awaited: the card is finished. One improves a chip,
+    // the other adds a row under it — and both are several requests to outside
+    // hosts behind rate gates, which is not something to hold a card for.
     upgradeQobuz(mine, playing);
+    buildSimilar(mine, playing);
   }
 
   /*
@@ -453,6 +459,73 @@
       linksEl.appendChild(a);
     }
     linksEl.classList.remove("hidden");
+  }
+
+  /*
+   * IF YOU LIKE THIS — acts to hear next, under the links and never on the card.
+   *
+   * AFTER THE CARD, NOT BEFORE IT. This is up to six requests to two outside
+   * hosts behind rate gates. The cached answer comes back at once; the slow one
+   * is left to arrive on its own and fills the row in when it does, the same
+   * shape as the Qobuz chip. Nothing here can delay a picture.
+   *
+   * ARTISTS, NOT ALBUMS, AND THE LABEL SAYS SO. Nothing keyless does
+   * album-to-album similarity, so what comes back is acts with one record each
+   * — see Similar.kt. "If you like this" promises what it can deliver where
+   * "You might also like" would promise a recommendation engine.
+   *
+   * AN EMPTY ROW IS NOT DRAWN AT ALL. A heading with nothing under it looks
+   * like a failure; no heading looks like a record nobody has listened to next
+   * to anything else, which is the truth. /api/debug says which it was.
+   */
+  async function buildSimilar(mine, playing) {
+    const artist = playing.artist || "";
+    if (!artist) return;
+    const params = new URLSearchParams({ artist: artist, album: playing.album || "" });
+
+    let acts = [];
+    try {
+      acts = actsOf(await getJson("/api/similar?fast=1&" + params));
+    } catch (e) { /* the shelf is empty, which is not an error */ }
+    if (mine !== token) return;
+    if (acts.length) drawSimilar(acts);
+
+    // Already drawn from the shelf means the slow path has nothing to add:
+    // both answers come out of the same cache entry.
+    if (acts.length) return;
+    try {
+      const slow = actsOf(await getJson("/api/similar?" + params));
+      if (mine !== token || !slow.length) return;
+      drawSimilar(slow);
+    } catch (e) { /* no row, which is the honest outcome */ }
+  }
+
+  function actsOf(j) {
+    return (j && Array.isArray(j.acts)) ? j.acts.filter((a) => a && a.name && a.url) : [];
+  }
+
+  function drawSimilar(acts) {
+    simEl.innerHTML = "";
+    const label = document.createElement("p");
+    label.className = "links-label";
+    label.textContent = "If you like this";
+    simEl.appendChild(label);
+
+    for (const act of acts) {
+      // The URL is the SERVER'S, not one built here. Qobuz's search needs a
+      // storefront segment or it 404s, a space has to be %20 because the query
+      // rides in the path, and a slash has to be spent rather than encoded —
+      // three rules that already live in StreamingLinks with a test each. A
+      // second copy of them in this file is how they drift apart.
+      if (!act.url) continue;
+      simEl.appendChild(link(act.url, actLabel(act), ""));
+    }
+    simEl.classList.remove("hidden");
+  }
+
+  function actLabel(act) {
+    if (!act.album) return act.name;
+    return act.name + " \u00b7 " + act.album + (act.year ? " (" + act.year + ")" : "");
   }
 
   /*

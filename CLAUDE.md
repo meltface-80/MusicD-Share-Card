@@ -291,6 +291,47 @@ was simply not there, however carefully the DIDL was parsed.
   mistake takes next — `pageshow`, `focus`, an `onResume` in the shell — because
   no test here can open a browser and the failure mode is a card that quietly
   went away, which reads as the app working.
+- **`Normalize.namesOverlap` ANCHORS AT THE FRONT, and that was a fix.** It
+  matched the shorter name anywhere inside the longer, so "The Who" overlapped
+  "The Guess Who" — the exact pair its own comment had named as the case it
+  rejected, for as long as the function existed. The leading article is
+  stripped for matching, which leaves "who" at the END of "guess who", and a
+  run-of-words search found it: a stranger's biography on somebody's card,
+  which is the one thing the guard exists to stop. Only a test written for a
+  new caller found it. It keeps every case it is for (a name qualified on the
+  RIGHT — "Jay Z feat. Alicia Keys", "Spiderland (Slint album)") and costs a
+  name qualified on the LEFT: "Eno" no longer matches "Brian Eno". That is the
+  right way to be wrong. What it CANNOT do is tell "Eagles" from "Eagles of
+  Death Metal" — identical in shape to the Jay Z case — and `NamesOverlapTest`
+  asserts that limit rather than pretending otherwise.
+- **It lives in `Normalize`, beside `text`, for the same reason.** It was
+  private to `Metadata` while Wikipedia was the only caller; `Similar` asks it
+  of Deezer's top hit. Two copies that drift is how one lookup refuses a
+  stranger and the next accepts them.
+- **SUGGESTIONS ARE ARTISTS, NOT ALBUMS, AND THE LABEL SAYS SO.** Nothing
+  keyless does album-to-album similarity — every route without a developer
+  account answers "artists like this artist". So `Similar` finds acts and then
+  ONE record by each, and the row is headed "If you like this" rather than
+  promising a recommendation engine. Same honesty as "Find it on".
+- **`Similar` asks ListenBrainz first and Deezer second, and the ORDER is what
+  makes the first one's fragility affordable.** ListenBrainz is keyed on the
+  MusicBrainz artist id — which the metadata lookup already gets for free out
+  of the release search it was making anyway — so it costs no search of its
+  own and answers in MBIDs, keeping the album lookup inside one vocabulary.
+  But its similarity endpoint is named after the dataset behind it and those
+  names change; **the algorithm string in `Similar` is UNVERIFIED**, because
+  the network here refuses both hosts. Any answer that is not a usable list
+  falls through to Deezer, and `attempts()` records which one answered — so
+  the first real run says which, instead of an empty row saying nothing.
+- **No MusicBrainz id means ListenBrainz is not asked at all.** Resolving one
+  by searching a name is how a row of suggestions ends up being about a
+  different act that shares it. Skip and say so in the diagnostics.
+- **The suggestion row is NEVER on the card and its links are built on the
+  SERVER.** The card is the whole message and what it says is what is playing.
+  And the chip URLs go through `StreamingLinks`, because Qobuz's search 404s
+  without a storefront segment and the query rides in the path so a space must
+  be `%20` — three rules that already have tests and that a copy in `app.js`
+  would drift from.
 - **The article behind the blurb is a LINK, not just a credit.** The words on
   the card come from Wikipedia and the card says so in type too small to be
   followable, which left the one source the blurb actually came from as the

@@ -8,6 +8,7 @@ import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.CacheStore
 import com.musicd.sharecard.meta.Pitchfork
 import com.musicd.sharecard.meta.QobuzAlbum
+import com.musicd.sharecard.meta.Similar
 import com.musicd.sharecard.meta.Updater
 import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.roon.RoonClient
@@ -134,6 +135,15 @@ class ShareCardApp(
      * will do.
      */
     private val qobuz = QobuzAlbum(metaHttp, userAgent(version), cacheStore)
+
+    /**
+     * Acts to hear next. Keyless on both hosts it asks — see [Similar] for why
+     * the first of them is allowed to be the fragile one.
+     */
+    private val similar = Similar(
+        metaHttp, userAgent(version),
+        store = cacheStore
+    )
     // The art proxy is told which players exist so a LAN fetch is limited to
     // them rather than to "anything that looks local".
     private val art = ArtProxy(metaHttp) { sources.artHosts() }
@@ -158,7 +168,7 @@ class ShareCardApp(
 
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
-        webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz
+        webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz, similar
     )
 
     private val server = HttpServer(api, port, bindAddress)
