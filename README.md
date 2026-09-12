@@ -17,18 +17,22 @@ It works out what's playing by asking whoever actually knows:
   Apple Music via the Sonos app, radio)
 - **UPnP / DLNA** — any other renderer on the network
 
-## Getting the card
+## Install
 
-Sideload the APK on Android 8.0 or newer. It's meant to live on something that
-stays on — a FiiO R7, a tablet in a dock, an old phone on a charger.
+Sideload the APK on an Android device running 8.0 or newer. Open it and the card
+is there. That's the whole thing — nothing else to run, no server, no account.
 
-Then open it from any browser in the house:
+## Using it from your other devices
+
+If the Android device stays on — a FiiO R7, a tablet in a dock, an old phone on a
+charger — anything else in the house can open the same card in a browser:
 
 ```
-http://<the device's IP>:8747
+http://<the Android device's IP>:8747
 ```
 
-The app shows its own address, and so does its notification.
+The app shows that address on screen, and in its notification. Nothing extra is
+installed on the iPad or phone; it's just a web page served by the app.
 
 | | |
 | --- | --- |
@@ -36,14 +40,26 @@ The app shows its own address, and so does its notification.
 | Android | **Share…** |
 | Desktop | **Copy** or **Download** |
 
+## Roon
+
+**Roon won't report anything until you let it in.** In Roon, go to
+**Settings → Extensions** and enable **MusicD Share Card**. It only asks once —
+the approval is remembered, including across restarts.
+
+Until you do, the app will say so rather than looking broken.
+
+It asks Roon for transport only. It doesn't browse your library, and it has no
+playback controls of any kind.
+
 ## Discord
 
 Paste a webhook URL once and a button appears on the card for it. Tap it and the
 card is posted — no share sheet, no saving a file first. Add as many as you like;
 each gets its own button.
 
-You can give it your own name and picture, but Discord tags every webhook
-message **APP** and there's no way to turn that off.
+You can give it your own name and picture — pick a photo and it's uploaded to
+Discord — but Discord tags every webhook message **APP** and there's no way to
+turn that off.
 
 Get the URL from Discord: **Edit Channel → Integrations → Webhooks → Copy
 Webhook URL**.
@@ -52,21 +68,6 @@ Webhook URL**.
 
 Press **Find my speakers**. It runs the whole search and tells you what it found,
 what it didn't, and the most likely reason.
-
-For Roon, enable **MusicD Share Card** in **Roon → Settings → Extensions**. It
-only asks once.
-
-## Building it
-
-CI builds the APK on every push; `dist/` always has the latest one.
-
-```bash
-./gradlew :core:test
-```
-
-`:core` holds the protocol layer, the source selection and the API, and is a
-plain Kotlin/JVM module so all of it is testable with no emulator. See
-[CLAUDE.md](CLAUDE.md) for how to work on it.
 
 ## Licence
 
