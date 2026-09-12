@@ -27,11 +27,13 @@ class StreamingLinksTest {
     fun `every service is offered, in one order, for one record`() {
         // The page draws whatever comes back, so this list IS the feature.
         assertEquals(
-            listOf("qobuz", "tidal", "spotify", "apple", "amazon", "deezer"),
+            listOf("qobuz", "tidal", "spotify", "apple", "amazon", "deezer", "bandcamp"),
             StreamingLinks.forAlbum("TOOL", "Ænima").map { it.service }
         )
         assertEquals(
-            listOf("Qobuz", "TIDAL", "Spotify", "Apple Music", "Amazon Music", "Deezer"),
+            listOf(
+                "Qobuz", "TIDAL", "Spotify", "Apple Music", "Amazon Music", "Deezer", "Bandcamp"
+            ),
             StreamingLinks.forAlbum("TOOL", "Ænima").map { it.name }
         )
     }
@@ -49,7 +51,7 @@ class StreamingLinksTest {
     fun `a space is percent-encoded and never a plus`() {
         // THIS IS THE ONE THAT WOULD SLIP THROUGH A CASUAL READING. URLEncoder
         // writes a space as "+", which a query string decodes back to a space
-        // only by convention — and four of these six carry the query in the
+        // only by convention — and three of these seven carry the query in the
         // PATH, where "+" is a literal plus and gets searched for.
         val q = StreamingLinks.searchQuery("Sigur Rós", "Ágætis byrjun")!!
         assertFalse("a plus would be searched for literally in a path", q.contains("+"))
@@ -128,5 +130,6 @@ class StreamingLinksTest {
         assertEquals("https://music.apple.com/search?term=$q", links["apple"])
         assertEquals("https://music.amazon.com/search/$q", links["amazon"])
         assertEquals("https://www.deezer.com/search/$q", links["deezer"])
+        assertEquals("https://bandcamp.com/search?q=$q&item_type=a", links["bandcamp"])
     }
 }

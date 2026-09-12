@@ -222,11 +222,11 @@ class CardApiTest {
             mapOf("album" to "Laughing Stock", "artist" to "Talk Talk", "fast" to "1")
         )
         val links = body.getJSONArray("links")
-        assertEquals(6, links.length())
+        assertEquals(7, links.length())
 
         val services = (0 until links.length()).map { links.getJSONObject(it).getString("service") }
         assertEquals(
-            listOf("qobuz", "tidal", "spotify", "apple", "amazon", "deezer"), services
+            listOf("qobuz", "tidal", "spotify", "apple", "amazon", "deezer", "bandcamp"), services
         )
         for (i in 0 until links.length()) {
             val url = links.getJSONObject(i).getString("url")
