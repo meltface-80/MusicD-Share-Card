@@ -36,7 +36,16 @@ class Diagnostics(
      * tell "Pitchfork never reviewed it" from "the URL this app built was not
      * the one Pitchfork used". That distinction took a bug report to notice.
      */
-    private val reviewNotes: () -> List<String> = { emptyList() }
+    private val reviewNotes: () -> List<String> = { emptyList() },
+    /**
+     * The last few similar-artist lookups.
+     *
+     * An empty row has three causes that look identical from the page — no
+     * MusicBrainz id to ask with, ListenBrainz answering something unreadable,
+     * and Deezer genuinely not knowing the act — and the first of those is the
+     * only one that is not a bug. Same lesson as [reviewNotes].
+     */
+    private val similarNotes: () -> List<String> = { emptyList() }
 ) {
 
     fun run(): JSONObject {
@@ -49,6 +58,9 @@ class Diagnostics(
 
         val reviews = runCatching { reviewNotes() }.getOrDefault(emptyList())
         if (reviews.isNotEmpty()) report.put("reviews", Json.strings(reviews))
+
+        val similar = runCatching { similarNotes() }.getOrDefault(emptyList())
+        if (similar.isNotEmpty()) report.put("similar", Json.strings(similar))
 
         // 1. What this device thinks it is attached to. An empty list here is
         //    the whole answer: no network, no speakers.

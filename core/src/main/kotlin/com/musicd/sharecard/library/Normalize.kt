@@ -47,4 +47,63 @@ object Normalize {
      * articles are dropped for MATCHING only; the displayed title is untouched.
      */
     fun sortKey(normalized: String): String = LEADING_ARTICLE.replace(normalized, "")
+
+    /**
+     * Is one of these names the same act, or the same record, as the other.
+     *
+     * IT LIVES HERE FOR THE SAME REASON [text] DOES. It was a private method on
+     * Metadata while Wikipedia was the only thing that had to ask "is this
+     * really the act I named"; the similar-artist lookup asks it of Deezer's
+     * top search hit, and the answer to that question must not depend on which
+     * file is asking. A second copy that drifts is how one lookup refuses a
+     * stranger and the next one accepts them.
+     *
+     * A PREFIX, NOT ANY RUN OF WORDS, AND THAT IS A FIX. This matched the
+     * shorter name ANYWHERE inside the longer one, which meant "The Who" and
+     * "The Guess Who" overlapped — both reduce to something ending in "who".
+     * The comment above it named that exact pair as the case it rejected, for
+     * as long as the function has existed. It did not: the leading article is
+     * stripped for matching, so "who" sits at the END of "guess who" and a
+     * run-of-words search found it. That is a stranger's biography on somebody
+     * else's card, which is the one thing this guard exists to stop.
+     *
+     * Anchoring at the front keeps everything it is actually for — a name
+     * qualified on the RIGHT — and drops nothing else:
+     *
+     *   "jay z"        vs "jay z feat alicia keys"  -> true
+     *   "spiderland"   vs "spiderland (slint album)" -> true
+     *   "abbey road"   vs "abbey road (remastered)"  -> true
+     *   "the who"      vs "the guess who"            -> FALSE
+     *
+     * What it does cost is a name qualified on the LEFT: "Eno" no longer
+     * matches "Brian Eno". That is the right way to be wrong here — a missing
+     * blurb is honest, and the rule this app keeps returning to is that a
+     * confident wrong answer is worse than none.
+     */
+    fun namesOverlap(a: String, b: String): Boolean {
+        val na = sortKey(text(a))
+        val nb = sortKey(text(b))
+        if (na.isEmpty() || nb.isEmpty()) return false
+        if (na == nb) return true
+        // A wikipedia page is often "Title (album)" or "Artist (band)".
+        val strippedA = DESCRIPTOR.replace(na, "").trim()
+        val strippedB = DESCRIPTOR.replace(nb, "").trim()
+        if (strippedA == strippedB) return true
+        return startsWithWords(strippedA, strippedB) || startsWithWords(strippedB, strippedA)
+    }
+
+    /**
+     * [hay] begins with every word of [needle], in order.
+     *
+     * Word by word rather than by string prefix: "the beat" must not match
+     * "the beatles", and it would if this compared characters.
+     */
+    private fun startsWithWords(hay: String, needle: String): Boolean {
+        val h = hay.split(" ").filter(String::isNotEmpty)
+        val n = needle.split(" ").filter(String::isNotEmpty)
+        if (n.isEmpty() || n.size > h.size) return false
+        return n.indices.all { h[it] == n[it] }
+    }
+
+    private val DESCRIPTOR = Regex("\\b(album|band|musician|singer|song)\\b")
 }

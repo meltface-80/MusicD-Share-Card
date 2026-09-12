@@ -68,15 +68,30 @@ class Metadata(
         val image: String? = null
     )
 
-    data class AlbumExtras(val year: Int?, val album: Bio?, val artist: Bio?)
+    /**
+     * [artistMbid] is MusicBrainz's id for the act, and it is FREE: the release
+     * search that finds the year already answers with the artist credited on
+     * every match, and this used to read the date and throw the rest away. It
+     * is what the similar-artist lookup is keyed on, so having it here is the
+     * difference between that costing nothing and costing a search of its own.
+     */
+    data class AlbumExtras(
+        val year: Int?,
+        val album: Bio?,
+        val artist: Bio?,
+        val artistMbid: String? = null
+    )
 
     fun extras(title: String, artist: String): AlbumExtras {
         val key = cacheKey(title, artist) ?: return AlbumExtras(null, null, null)
         return cache.get(key) {
+            val release = runCatching { musicBrainzRelease(title, artist) }
+                .getOrNull() ?: Release(null, null)
             AlbumExtras(
-                year = runCatching { musicBrainzYear(title, artist) }.getOrNull(),
+                year = release.year,
                 album = runCatching { wikipediaAlbum(title, artist) }.getOrNull(),
-                artist = runCatching { wikipediaArtist(artist, title) }.getOrNull()
+                artist = runCatching { wikipediaArtist(artist, title) }.getOrNull(),
+                artistMbid = release.artistMbid
             )
         }
     }
@@ -108,28 +123,65 @@ class Metadata(
     /** MusicBrainz's Lucene syntax needs quotes escaped, not stripped. */
     private fun mbQuote(s: String): String = s.replace("\"", "\\\"")
 
-    fun musicBrainzYear(title: String, artist: String): Int? {
-        if (title.isBlank()) return null
+    /** What one MusicBrainz release search is worth, which is two things. */
+    data class Release(val year: Int?, val artistMbid: String?)
+
+    fun musicBrainzYear(title: String, artist: String): Int? =
+        musicBrainzRelease(title, artist).year
+
+    fun musicBrainzRelease(title: String, artist: String): Release {
+        if (title.isBlank()) return Release(null, null)
         val query = buildString {
             append("release:\"").append(mbQuote(title)).append('"')
             if (artist.isNotBlank()) append(" AND artist:\"").append(mbQuote(artist)).append('"')
         }
         val url = "https://musicbrainz.org/ws/2/release/?query=" +
             urlEncode(query) + "&fmt=json&limit=5"
-        val json = mbGate.run { getJson(url) } ?: return null
-        val releases = json.optJSONArray("releases") ?: return null
+        val json = mbGate.run { getJson(url) } ?: return Release(null, null)
+        return readReleases(json, artist)
+    }
+
+    /**
+     * Split out so it can be tested without MusicBrainz being up — the shape
+     * of this response is the part that can quietly change, not the fetch.
+     */
+    internal fun readReleases(json: JSONObject, artist: String): Release {
+        val releases = json.optJSONArray("releases") ?: return Release(null, null)
 
         // The earliest dated release is the release YEAR; a later reissue is a
         // different pressing of the same record, not a different album.
         var best = Int.MAX_VALUE
+        var mbid: String? = null
         for (i in 0 until releases.length()) {
             val r = releases.optJSONObject(i) ?: continue
             // Below ~70 the match is a different record that shares a word.
             if (r.optInt("score", 0) < 70) continue
-            val year = yearOf(r.str("date")) ?: continue
-            if (year < best) best = year
+            val year = yearOf(r.str("date"))
+            if (year != null && year < best) best = year
+            // The FIRST credited act on the best-scoring match whose name we
+            // recognise. Taking it off any match would hand back the featured
+            // guest on a compilation, and taking it without the name check
+            // would hand back whoever MusicBrainz scored highest for a title
+            // two records share.
+            if (mbid == null) mbid = artistMbidOf(r, artist)
         }
-        return best.takeIf { it != Int.MAX_VALUE }
+        return Release(best.takeIf { it != Int.MAX_VALUE }, mbid)
+    }
+
+    /**
+     * The credited artist's MusicBrainz id, but only when it is the artist the
+     * speaker named. A wrong id here is worse than none: it seeds a row of
+     * "similar artists" for somebody else entirely, and nothing downstream
+     * could tell.
+     */
+    private fun artistMbidOf(release: JSONObject, artist: String): String? {
+        val credits = release.optJSONArray("artist-credit") ?: return null
+        for (i in 0 until credits.length()) {
+            val act = credits.optJSONObject(i)?.optJSONObject("artist") ?: continue
+            val id = act.strOrNull("id") ?: continue
+            if (artist.isBlank() || Normalize.namesOverlap(act.str("name"), artist)) return id
+        }
+        return null
     }
 
     private fun yearOf(date: String?): Int? {
@@ -170,7 +222,7 @@ class Metadata(
         for (page in candidates) {
             // The guard that stops a review being attached to the wrong record:
             // the page title must actually mention the album.
-            if (!namesOverlap(page, title)) continue
+            if (!Normalize.namesOverlap(page, title)) continue
             val summary = wikiSummary(page) ?: continue
             return Bio(summary.extract, "Wikipedia", "https://en.wikipedia.org/wiki/" +
                 urlEncode(page.replace(' ', '_')), summary.image)
@@ -195,42 +247,13 @@ class Metadata(
                 // rejects: matching on a first token alone puts a stranger's
                 // biography on the page. Fail safe — drop the bio rather than
                 // show the wrong one.
-                if (!namesOverlap(page, artist)) continue
+                if (!Normalize.namesOverlap(page, artist)) continue
                 val summary = wikiSummary(page) ?: continue
                 return Bio(summary.extract, "Wikipedia", "https://en.wikipedia.org/wiki/" +
                     urlEncode(page.replace(' ', '_')), summary.image)
             }
         }
         return null
-    }
-
-    /**
-     * Whole-phrase overlap in either direction, tolerant of a leading article.
-     * "the who" vs "the guess who" -> false (correctly rejected);
-     * "jay z" vs "jay z feat alicia keys" -> true (correctly kept).
-     */
-    fun namesOverlap(a: String, b: String): Boolean {
-        val na = Normalize.sortKey(Normalize.text(a))
-        val nb = Normalize.sortKey(Normalize.text(b))
-        if (na.isEmpty() || nb.isEmpty()) return false
-        if (na == nb) return true
-        // A wikipedia page is often "Title (album)" or "Artist (band)".
-        val strippedA = na.replace(Regex("\\b(album|band|musician|singer|song)\\b"), "").trim()
-        val strippedB = nb.replace(Regex("\\b(album|band|musician|singer|song)\\b"), "").trim()
-        if (strippedA == strippedB) return true
-        return containsWholeWords(strippedA, strippedB) || containsWholeWords(strippedB, strippedA)
-    }
-
-    /** [needle] appears in [hay] on word boundaries, never mid-word. */
-    private fun containsWholeWords(hay: String, needle: String): Boolean {
-        if (needle.isEmpty()) return false
-        val h = hay.split(" ").filter(String::isNotEmpty)
-        val n = needle.split(" ").filter(String::isNotEmpty)
-        if (n.isEmpty() || n.size > h.size) return false
-        for (i in 0..(h.size - n.size)) {
-            if ((0 until n.size).all { h[i + it] == n[it] }) return true
-        }
-        return false
     }
 
     // ------------------------------------------------------------- plumbing
@@ -273,6 +296,7 @@ class Metadata(
         .put("bio", extras.album?.description ?: JSONObject.NULL)
         .put("src", extras.album?.source ?: JSONObject.NULL)
         .put("url", extras.album?.url ?: JSONObject.NULL)
+        .put("amb", extras.artistMbid ?: JSONObject.NULL)
         .toString()
 
     private fun decodeExtras(text: String): AlbumExtras? {
@@ -283,7 +307,12 @@ class Metadata(
             album = description?.let {
                 Bio(it, json.str("src"), json.strOrNull("url"))
             },
-            artist = null
+            artist = null,
+            // Absent from every entry written before the similar-artist
+            // lookup existed, which decodes to null and costs one search to
+            // fill again. A shelf that fails to load is the one thing a cache
+            // may never do.
+            artistMbid = json.strOrNull("amb")
         )
     }
 }

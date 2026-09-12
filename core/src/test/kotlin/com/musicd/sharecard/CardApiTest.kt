@@ -8,12 +8,14 @@ import com.musicd.sharecard.library.Normalize
 import com.musicd.sharecard.meta.CacheStore
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
+import com.musicd.sharecard.meta.Similar
 import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.sonos.Household
 import com.musicd.sharecard.sonos.SonosSource
 import com.musicd.sharecard.source.Sources
 import com.musicd.sharecard.sonos.NowPlaying
 import com.musicd.sharecard.sonos.TransportState
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -72,6 +74,26 @@ class CardApiTest {
             assets,
             "1.0.0",
             qobuz = com.musicd.sharecard.meta.QobuzAlbum(http, "test")
+        )
+    }
+
+    private fun apiWith(similar: Similar): CardApi {
+        players.values.forEach { it.topology = topology }
+        val http = metadataHttpClient()
+        val household = Household(
+            playerAt = { ip -> players.getValue(ip) },
+            seedHosts = listOf("10.0.0.1"),
+            discover = { emptyList() }
+        )
+        return CardApi(
+            Sources(listOf(SonosSource(household))),
+            Metadata(http, "test"),
+            Pitchfork(http, "test"),
+            ArtProxy(http),
+            assets,
+            "1.0.0",
+            qobuz = com.musicd.sharecard.meta.QobuzAlbum(http, "test"),
+            similar = similar
         )
     }
 
@@ -283,6 +305,78 @@ class CardApiTest {
         // And the blurb it belongs to, so a URL can never arrive on its own
         // and label a chip for words that are not on the card.
         assertTrue(body.getString("bio").isNotEmpty())
+    }
+
+    // --------------------------------------------------------------- similar
+
+    /**
+     * Acts to hear next, primed through the shelf so this opens no socket.
+     *
+     * The URL is the part worth asserting. It is built on the SERVER by
+     * StreamingLinks, because Qobuz's search 404s without a storefront segment
+     * and the query rides in the path so a space has to be %20 — three rules
+     * that already have tests, and that a copy in app.js would drift from.
+     */
+    @Test
+    fun `similar acts come back with a link the page does not have to build`() {
+        val remembered = mapOf(
+            Normalize.text("Talk Talk") to
+                System.currentTimeMillis().toString() + "|" + JSONArray()
+                    .put(
+                        JSONObject().put("n", "Bark Psychosis").put("a", "Hex").put("y", 1994)
+                    )
+                    .put(JSONObject().put("n", "Slint"))
+                    .toString()
+        )
+        val shelf = object : CacheStore {
+            override fun load(namespace: String) =
+                if (namespace == "similar") remembered else emptyMap()
+            override fun put(namespace: String, key: String, value: String) {}
+            override fun remove(namespace: String, key: String) {}
+        }
+        val http = metadataHttpClient()
+        val api = apiWith(similar = Similar(http, "test", store = shelf))
+
+        val body = JSONObject(
+            String(
+                api.handle(
+                    get("/api/similar", mapOf("artist" to "Talk Talk", "fast" to "1"))
+                ).body,
+                Charsets.UTF_8
+            )
+        )
+        val acts = body.getJSONArray("acts")
+        assertEquals(2, acts.length())
+        assertEquals("Bark Psychosis", acts.getJSONObject(0).getString("name"))
+        assertEquals("Hex", acts.getJSONObject(0).getString("album"))
+        assertEquals(1994, acts.getJSONObject(0).getInt("year"))
+
+        for (i in 0 until acts.length()) {
+            val url = acts.getJSONObject(i).getString("url")
+            assertTrue("$url is not https", url.startsWith("https://"))
+            assertTrue("$url has no Qobuz storefront and would 404", url.contains("/search/?q="))
+            assertFalse("a form-encoded space is searched for literally", url.contains("+"))
+        }
+        // An act with no record named still gets a link, for the act.
+        assertTrue(acts.getJSONObject(1).isNull("album"))
+        assertTrue(acts.getJSONObject(1).getString("url").contains("Slint"))
+    }
+
+    @Test
+    fun `similar with no artist named is a bad request, and it refuses a POST`() {
+        assertEquals(400, api().handle(get("/api/similar")).status)
+        // A read route that answers a POST is how the webhook gate was widened
+        // by accident once. Everything not named in WRITE_ROUTES is GET-only.
+        val post = Request("POST", "/api/similar", mapOf("artist" to "Slint"), emptyMap(),
+            ByteArray(0), false, "10.0.0.99")
+        assertEquals(405, api().handle(post).status)
+    }
+
+    /** With no lookup wired in, the row simply never appears. */
+    @Test
+    fun `similar answers an empty row rather than an error when it is switched off`() {
+        val body = json("/api/similar", mapOf("artist" to "Slint", "fast" to "1"))
+        assertEquals(0, body.getJSONArray("acts").length())
     }
 
     @Test
