@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MusicD Share Card for Android — download &amp; install</title>
+<meta name="description" content="MusicD Share Card — a native Android APK that turns whatever is playing into a share card. Download and sideload.">
+<link rel="icon" href="favicon.png">
+<style>
+  :root {
+    --bg:        #1b1d1f;   /* charcoal */
+    --bg-deep:   #141618;
+    --panel:     #232628;
+    --line:      #35393d;
+    --text:      #e8e6e3;
+    --muted:     #a8a49e;
+    --copper:    #c47f4a;   /* subtle copper accent */
+    --copper-hi: #d99a66;
+    --copper-dim:#8a5a35;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--copper-hi); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+
+  /* ---------- top nav ---------- */
+  nav.topnav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(20,22,24,.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  nav.topnav .wrap {
+    display: flex; align-items: center; gap: 18px;
+    height: 52px; overflow-x: auto; white-space: nowrap;
+  }
+  nav.topnav a { color: var(--muted); font-size: 14px; font-weight: 500; }
+  nav.topnav a:hover { color: var(--copper-hi); text-decoration: none; }
+  nav.topnav .brand { color: var(--text); font-weight: 700; letter-spacing: .02em; }
+  nav.topnav .brand span { color: var(--copper); }
+  nav.topnav .gh { margin-left: auto; }
+
+  /* ---------- hero ---------- */
+  header.hero {
+    text-align: center;
+    padding: 48px 20px 40px;
+    background:
+      radial-gradient(ellipse 70% 55% at 50% -10%, rgba(196,127,74,.14), transparent 65%),
+      var(--bg-deep);
+    border-bottom: 1px solid var(--line);
+  }
+  header.hero img.logo {
+    width: 132px; height: 132px;
+    border-radius: 28px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.45);
+  }
+  header.hero h1 { font-size: 30px; margin-top: 24px; font-weight: 700; }
+  header.hero h1 span { color: var(--copper); }
+  header.hero p.tag { color: var(--muted); max-width: 620px; margin: 12px auto 0; font-size: 16px; }
+  .badges { margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .badge {
+    display: inline-block; font-size: 12.5px; font-weight: 600;
+    padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--copper-dim); color: var(--copper-hi);
+    background: rgba(196,127,74,.08);
+  }
+  .badge.plain { border-color: var(--line); color: var(--muted); background: transparent; }
+
+  /* ---------- sections ---------- */
+  section { padding: 52px 0 8px; scroll-margin-top: 56px; }
+  section > .wrap > h2 {
+    font-size: 24px; font-weight: 700; margin-bottom: 6px;
+    padding-left: 14px; border-left: 3px solid var(--copper);
+  }
+  section > .wrap > p.lead { color: var(--muted); margin-bottom: 26px; max-width: 720px; }
+
+  /* ---------- feature grid ---------- */
+  .grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 18px 16px;
+  }
+  .card h3 { font-size: 15.5px; font-weight: 650; margin-bottom: 6px; }
+  .card h3 .em { margin-right: 8px; }
+  .card p { font-size: 13.5px; color: var(--muted); }
+
+  /* ---------- download ---------- */
+  .dl {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 24px; text-align: center;
+  }
+  .dl a.get {
+    display: inline-block; font-size: 16px; font-weight: 700;
+    padding: 14px 30px; border-radius: 999px;
+    color: var(--bg-deep); background: var(--copper);
+    border: 1px solid var(--copper-hi);
+  }
+  .dl a.get:hover { background: var(--copper-hi); text-decoration: none; }
+  .dl .filename { font-family: var(--mono); font-size: 13px; color: var(--muted); margin-top: 12px; }
+  .dl .sub { font-size: 13.5px; color: var(--muted); margin-top: 14px; }
+  .dl .fp {
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+    word-break: break-all;
+  }
+  .dl .fp b { color: var(--copper-hi); font-family: var(--sans); }
+
+  /* ---------- first run ---------- */
+  .firstrun {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px;
+  }
+  .firstrun ol { padding-left: 20px; font-size: 14px; display: grid; gap: 9px; color: var(--muted); }
+  .firstrun ol li::marker { color: var(--copper); font-weight: 700; }
+  .firstrun ol li b { color: var(--text); }
+  .firstrun code {
+    font-family: var(--mono); font-size: 12.5px;
+    background: var(--bg-deep); border: 1px solid var(--line);
+    border-radius: 5px; padding: 1px 5px;
+  }
+
+  @media (max-width: 600px) {
+    header.hero { padding: 32px 16px 30px; }
+    header.hero img.logo { width: 104px; height: 104px; border-radius: 22px; }
+    header.hero h1 { font-size: 24px; margin-top: 20px; }
+    section { padding: 40px 0 6px; }
+    section > .wrap > h2 { font-size: 21px; }
+  }
+
+  footer {
+    margin-top: 64px; padding: 28px 20px 40px;
+    border-top: 1px solid var(--line);
+    text-align: center; font-size: 13px; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="wrap">
+    <a class="brand" href="#top">Music<span>D</span> Share Card</a>
+    <a href="#download">Download</a>
+    <a href="#install">Install</a>
+    <a href="#features">Features</a>
+    <a class="gh" href="https://github.com/meltface-80/MusicD-Share-Card">GitHub&nbsp;&rarr;</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <!-- Drawn by tools/make-icons.py from the same numbers as the app's own
+       launcher icon, and committed here rather than hot-linked: a picture of
+       the project should not depend on somebody else's hosting. -->
+  <img class="logo" src="icon.png" alt="MusicD Share Card">
+  <h1>MusicD Share Card <span>for Android</span></h1>
+  <p class="tag">Turns whatever is playing into a card worth sending — cover, title, artist, year
+     and a few lines about the record. Share it, save it, or post it straight to Discord.</p>
+  <div class="badges">
+    <span class="badge" id="ver-badge">v0.23.0</span>
+    <span class="badge plain">Android 8.0+</span>
+    <span class="badge plain">MIT licence</span>
+    <span class="badge plain">Roon, Sonos, UPnP&nbsp;/&nbsp;DLNA</span>
+  </div>
+</header>
+
+<section id="download">
+  <div class="wrap">
+    <h2>Download</h2>
+    <div class="dl">
+      <a class="get" id="dl-link"
+         href="https://github.com/meltface-80/MusicD-Share-Card/raw/main/dist/musicd-share-card-0.23.0.apk">Download the APK</a>
+      <div class="filename" id="dl-name">musicd-share-card-0.23.0.apk</div>
+      <p class="sub">Android 8.0 (API 26) or newer. Your browser will warn you about downloading an
+         APK, and Android will ask permission to install from this source — both are normal for an
+         app that does not come from the Play Store.</p>
+      <div class="fp">
+        <b>Signing certificate (SHA-256)</b><br>
+        e37c46d366db31124f231d68755cd9856b146e3f437fc5a99ff190701be84c21
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="lead">Three steps, once.</p>
+    <div class="firstrun">
+      <ol>
+        <li><b>Download and open the APK.</b> Allow your browser to install unknown apps if
+            Android asks — you can turn that back off afterwards.</li>
+        <li><b>Open the app</b> on the same Wi-Fi as your music. It finds the players itself;
+            there is no address to type in.</li>
+        <li><b>Optional — open it on your other devices.</b> The app shows an address like
+            <code>http://192.168.0.42:8747</code>. Open that in a browser on an iPhone, iPad or
+            laptop and you get the same card. On iOS, <b>Share → Add to Home Screen</b> gives it
+            an icon and opens it without browser chrome.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2>Features</h2>
+    <div class="grid">
+      <div class="card"><h3><span class="em">🎵</span>Whatever is playing</h3>
+        <p>Roon, Sonos, or any UPnP&nbsp;/&nbsp;DLNA renderer on the network. It asks whichever one
+           actually knows what the record is.</p></div>
+      <div class="card"><h3><span class="em">🖼️</span>A card worth sending</h3>
+        <p>Cover, title, artist and release year, with a few lines about the record and a Pitchfork
+           score where there is one.</p></div>
+      <div class="card"><h3><span class="em">📤</span>Share it anywhere</h3>
+        <p>The Android share sheet, press and hold on an iPhone, or a plain download on a
+           desktop.</p></div>
+      <div class="card"><h3><span class="em">💬</span>Straight to Discord</h3>
+        <p>Paste a webhook URL once and a button appears on the card. Tap it and the card is
+           posted — under your own name and picture.</p></div>
+      <div class="card"><h3><span class="em">🔗</span>Where to hear it</h3>
+        <p>A row of links for the record: the Pitchfork review, and Qobuz, TIDAL, Spotify, Apple
+           Music, Amazon Music and Deezer.</p></div>
+      <div class="card"><h3><span class="em">🌐</span>On your other devices</h3>
+        <p>The same card opens in a browser on anything else on your Wi-Fi. Nothing to install on
+           the iPad.</p></div>
+      <div class="card"><h3><span class="em">⬆️</span>Updates itself</h3>
+        <p>It notices a newer version, downloads it and asks Android to install it. No reinstalling
+           by hand.</p></div>
+      <div class="card"><h3><span class="em">🔕</span>Never polls</h3>
+        <p>It asks a speaker what is playing when you open the page or press refresh, and at no
+           other time.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    MIT licence · <a href="https://github.com/meltface-80/MusicD-Share-Card">github.com/meltface-80/MusicD-Share-Card</a><br>
+    Album text is from Wikipedia under CC&nbsp;BY-SA.
+  </div>
+</footer>
+
+</body>
+</html>

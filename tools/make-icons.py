@@ -69,7 +69,8 @@ def draw(size):
 if __name__ == "__main__":
     import os
     here = os.path.dirname(os.path.abspath(__file__))
-    out = os.path.join(here, "..", "app", "src", "main", "assets", "web", "icons")
+    root = os.path.join(here, "..")
+    out = os.path.join(root, "app", "src", "main", "assets", "web", "icons")
     for name, size in [
         ("apple-touch-icon.png", 180),
         ("icon-192.png", 192),
@@ -78,4 +79,13 @@ if __name__ == "__main__":
     ]:
         path = os.path.join(out, name)
         draw(size).save(path)
-        print("wrote", os.path.relpath(path, os.path.join(here, "..")))
+        print("wrote", os.path.relpath(path, root))
+
+    # The project page uses the same picture, from the same numbers, for the
+    # same reason the two platforms do.
+    pages = os.path.join(root, "docs")
+    if os.path.isdir(pages):
+        for name, size in [("icon.png", 512), ("favicon.png", 32)]:
+            path = os.path.join(pages, name)
+            draw(size).save(path)
+            print("wrote", os.path.relpath(path, root))
