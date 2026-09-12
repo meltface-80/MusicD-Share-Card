@@ -131,8 +131,37 @@ There is no Copy button on iOS or in the Android app, and that is deliberate
 rather than unfinished. `ClipboardItem` with an image is not available to Safari
 at all; on Android the image reaches the clipboard as a `content://` URI that the
 pasting app has no grant to read, so the copy reports success and pastes nothing.
-Both platforms have something that genuinely works, and a button that lies is
-worse than a button that is not there.
+The Android shell removes the capability outright rather than leaving a button
+that lies — merely declining to add it was not enough, because the WebView has
+the API natively and the page's feature-detect passed. Both platforms have
+something that genuinely works instead.
+
+### Posting to Discord
+
+Add a webhook once and a button appears on the card for it. Tap it and the card
+is posted — no share sheet, no saving a file first. Several can be configured;
+each gets its own button.
+
+In Discord: **Edit Channel → Integrations → Webhooks → Copy Webhook URL**, then
+paste it into **Webhooks** on the card page.
+
+**The URL is a credential** — anyone holding it can post to that channel from
+anywhere, for as long as it exists. So it is typed once and never comes back
+out: no route returns it, the list shows only a mask, and the app itself does
+the posting so no browser ever sees it.
+
+Because of that, adding or removing a webhook is the one thing on this server
+that is not open:
+
+| Where you are | Adding / removing | Posting a card |
+| --- | --- | --- |
+| The device running the app | no PIN needed | no PIN needed |
+| Any other device | needs the PIN | no PIN needed |
+
+The PIN is shown in **Webhooks** on the device's own screen, and is served
+nowhere else — a PIN handed to the network would be decoration. Posting is
+deliberately ungated: it is the everyday action, and the worst it offers someone
+on your wifi is a picture of your own album in your own channel.
 
 ### If it finds no players
 

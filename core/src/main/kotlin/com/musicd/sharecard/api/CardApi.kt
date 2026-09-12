@@ -1,6 +1,7 @@
 package com.musicd.sharecard.api
 
 import com.musicd.sharecard.Log
+import com.musicd.sharecard.str
 import com.musicd.sharecard.api.Json.putOrNull
 import com.musicd.sharecard.http.HttpServer
 import com.musicd.sharecard.http.Request
@@ -8,6 +9,11 @@ import com.musicd.sharecard.http.Response
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
 import com.musicd.sharecard.source.Playing
+import com.musicd.sharecard.webhook.DiscordPoster
+import com.musicd.sharecard.webhook.Webhook
+import com.musicd.sharecard.webhook.WebhookRejected
+import com.musicd.sharecard.webhook.WebhookStore
+import com.musicd.sharecard.webhook.WebhookUrls
 import com.musicd.sharecard.source.Sources
 import com.musicd.sharecard.source.ZoneRef
 import org.json.JSONObject
@@ -28,12 +34,19 @@ class CardApi(
     private val art: ArtProxy,
     private val assets: Assets,
     private val version: String,
-    private val hostNotes: () -> List<String> = { emptyList() }
+    private val hostNotes: () -> List<String> = { emptyList() },
+    private val webhooks: WebhookStore = WebhookStore.inMemory(),
+    private val discord: DiscordPoster = DiscordPoster()
 ) : HttpServer.Handler {
 
+    private val access = Access { webhooks.pin() }
+
     override fun handle(request: Request): Response {
-        if (request.method != "GET" && request.method != "HEAD") {
-            return Json.error(405, "This server only answers GET.")
+        // Reads are open, as they have always been. The few routes that write
+        // are POST/DELETE and are gated in [route] — see [Access] for why the
+        // gate guards configuration and not the card itself.
+        if (request.method !in ALLOWED_METHODS) {
+            return Json.error(405, "That method is not used here.")
         }
         return try {
             route(request)
@@ -46,7 +59,31 @@ class CardApi(
         }
     }
 
-    private fun route(request: Request): Response = when (request.path) {
+    private fun route(request: Request): Response {
+        // The one route with a variable path segment.
+        if (request.path.startsWith("/api/webhooks/")) return webhookById(request)
+        return fixedRoute(request)
+    }
+
+    private fun fixedRoute(request: Request): Response {
+        // EVERY ROUTE BELOW IS A READ, and a POST to one must still be refused.
+        // Allowing POST at the top level so the webhook routes could use it
+        // quietly made "POST /api/now-playing" answer 200 — the method gate had
+        // become a formality rather than a rule. The write routes are named,
+        // and everything else is GET-only exactly as before.
+        if (request.method !in READ_METHODS && request.path != "/api/webhooks") {
+            return Json.error(405, "That route only answers GET.")
+        }
+        return readRoute(request)
+    }
+
+    private fun readRoute(request: Request): Response = when (request.path) {
+        "/api/webhooks" -> when (request.method) {
+            "POST" -> addWebhook(request)
+            in READ_METHODS -> listWebhooks(request)
+            else -> Json.error(405, "That method is not used here.")
+        }
+        "/api/setup" -> setup(request)
         "/api/health" -> health()
         "/api/zones" -> zones(request)
         "/api/now-playing" -> nowPlaying(request)
@@ -218,6 +255,125 @@ class CardApi(
         )
     }
 
+    // --------------------------------------------------------------- webhooks
+
+    /**
+     * The configured webhooks, MASKED.
+     *
+     * Open to read, because the page needs to draw a button per webhook and a
+     * name is not a secret. The URL never appears here — see [Webhook.masked].
+     */
+    private fun listWebhooks(request: Request): Response = Json.obj(
+        JSONObject()
+            .put(
+                "webhooks",
+                Json.array(
+                    webhooks.all().map {
+                        JSONObject()
+                            .put("id", it.id)
+                            .put("name", it.name)
+                            .put("masked", it.masked)
+                            .put("kind", it.kind)
+                    }
+                )
+            )
+            // So the page knows whether to ask for a PIN before offering to add
+            // one, rather than letting somebody type a URL and then refusing it.
+            .put("mayConfigure", access.mayConfigure(request))
+    )
+
+    /**
+     * Add one. Gated: this is where the credential enters.
+     */
+    private fun addWebhook(request: Request): Response {
+        if (!access.mayConfigure(request)) return needsPin()
+        val body = Json.body(request)
+        val name = body.str("name").trim().take(40)
+        val raw = body.str("url").trim()
+        return try {
+            val url = WebhookUrls.validate(raw)
+            val webhook = Webhook(
+                id = WebhookUrls.idFor(url),
+                name = name.ifEmpty { "Discord" },
+                url = url
+            )
+            webhooks.add(webhook)
+            Log.i(TAG, "added webhook ${webhook.name} (${webhook.masked})")
+            Json.obj(
+                JSONObject().put("ok", true).put("id", webhook.id)
+                    .put("name", webhook.name).put("masked", webhook.masked)
+            )
+        } catch (e: WebhookRejected) {
+            Json.error(400, e.message ?: "That webhook URL was refused.")
+        }
+    }
+
+    /** `/api/webhooks/<id>` — DELETE removes it, POST sends the card to it. */
+    private fun webhookById(request: Request): Response {
+        val rest = request.path.removePrefix("/api/webhooks/").trim('/')
+        val id = rest.substringBefore('/')
+        val action = rest.substringAfter('/', "")
+        val webhook = webhooks.all().firstOrNull { it.id == id }
+            ?: return Json.error(404, "No such webhook.")
+
+        return when {
+            request.method == "DELETE" -> {
+                if (!access.mayConfigure(request)) return needsPin()
+                webhooks.remove(id)
+                Json.obj(JSONObject().put("ok", true))
+            }
+            request.method == "POST" && action == "post" -> postCard(request, webhook)
+            else -> Json.error(405, "That method is not used here.")
+        }
+    }
+
+    /**
+     * Send the card the page just drew.
+     *
+     * NOT gated, deliberately. This is the everyday action — "tap the button"
+     * must not mean "find the PIN first" — and the worst it offers a stranger
+     * on the network is posting a picture of the owner's own album to the
+     * owner's own channel. Adding a webhook is where the real damage would be,
+     * and that is gated.
+     *
+     * The PNG arrives as the raw request body rather than base64 in JSON: it is
+     * around a megabyte, and base64 would make it a third larger for nothing.
+     */
+    private fun postCard(request: Request, webhook: Webhook): Response {
+        val png = request.body
+        if (png.isEmpty()) return Json.error(400, "No card was sent.")
+        val caption = request.param("caption").orEmpty()
+        val outcome = discord.post(webhook, png, caption)
+        return if (outcome.ok) {
+            Json.obj(JSONObject().put("ok", true).put("detail", outcome.detail))
+        } else {
+            // 502: this app is fine, the other end refused. A 500 would send
+            // somebody looking at the wrong thing.
+            Json.error(502, outcome.detail)
+        }
+    }
+
+    /**
+     * What a device across the house needs in order to configure anything.
+     *
+     * The PIN itself is returned ONLY to loopback — that is, to the app's own
+     * screen on the device. Serving it to the LAN would make it decoration.
+     */
+    private fun setup(request: Request): Response {
+        val onDevice = access.isLoopback(request.remoteAddress)
+        return Json.obj(
+            JSONObject()
+                .put("onDevice", onDevice)
+                .put("mayConfigure", access.mayConfigure(request))
+                .put("pin", if (onDevice) webhooks.pin() else JSONObject.NULL)
+        )
+    }
+
+    private fun needsPin(): Response = Json.error(
+        401,
+        "Enter the PIN shown on the device running Share Card to change webhooks."
+    )
+
     // ------------------------------------------------------------- the page
 
     private fun static(path: String): Response {
@@ -247,5 +403,10 @@ class CardApi(
          * nobody can see the mismatch.
          */
         val NO_STORE = mapOf("Cache-Control" to "no-store")
+
+        val ALLOWED_METHODS = setOf("GET", "HEAD", "POST", "DELETE")
+
+        /** The methods a route that changes nothing may be asked with. */
+        val READ_METHODS = setOf("GET", "HEAD")
     }
 }

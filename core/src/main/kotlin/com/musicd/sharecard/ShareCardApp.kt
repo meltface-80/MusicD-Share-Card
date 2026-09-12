@@ -17,6 +17,9 @@ import com.musicd.sharecard.sonos.SonosSource
 import com.musicd.sharecard.sonos.soapHttpClient
 import com.musicd.sharecard.source.Sources
 import com.musicd.sharecard.upnp.UpnpSource
+import com.musicd.sharecard.webhook.DiscordPoster
+import com.musicd.sharecard.webhook.WebhookStore
+import com.musicd.sharecard.webhook.webhookHttpClient
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
@@ -56,7 +59,12 @@ class ShareCardApp(
      * Roon discovery and an SSDP sweep, so a test of the HTTP layer would be a
      * test of whatever happens to be on the network running it.
      */
-    sourcesOverride: Sources? = null
+    sourcesOverride: Sources? = null,
+    /**
+     * Where Discord webhooks are kept. The URLs are credentials, so this never
+     * hands one back out — see [com.musicd.sharecard.webhook.Webhook.masked].
+     */
+    webhookStore: WebhookStore = WebhookStore.inMemory()
 ) {
 
     private val soap = SoapClient(soapHttpClient())
@@ -101,7 +109,10 @@ class ShareCardApp(
     // them rather than to "anything that looks local".
     private val art = ArtProxy(metaHttp) { sources.artHosts() }
 
-    private val api = CardApi(sources, metadata, pitchfork, art, assets, version, hostNotes)
+    private val api = CardApi(
+        sources, metadata, pitchfork, art, assets, version, hostNotes,
+        webhookStore, DiscordPoster(webhookHttpClient())
+    )
 
     private val server = HttpServer(api, port, bindAddress)
 

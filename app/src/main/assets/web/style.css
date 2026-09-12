@@ -295,3 +295,100 @@ body {
 .diag ul { margin: 0; padding-left: 18px; }
 /* Addresses and interface names, which must not be re-wrapped mid-token. */
 .diag li { margin: 2px 0; overflow-wrap: anywhere; }
+
+/* ----------------------------------------------------------- webhook panel
+ *
+ * A URL typed in here is a credential — anyone holding a Discord webhook URL
+ * can post to that channel from anywhere, for as long as it exists. It is sent
+ * once and never comes back: the list shows a mask, and there is deliberately
+ * no "reveal" control, because the page has nothing to reveal.
+ */
+.wh h3:first-child { margin-top: 0; }
+
+.wh-list {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+}
+
+.wh-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: #1e2228;
+  border: 1px solid var(--line);
+}
+
+.wh-name { color: var(--text); font-weight: 600; flex: none; }
+
+/* The mask can be long and must never force the row wider than the panel. */
+.wh-mask {
+  color: var(--text-faint);
+  font-size: 12px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wh-del {
+  flex: none;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.wh-del:active { transform: scale(.96); }
+
+.wh-note { color: var(--text-dim); margin: 8px 0; line-height: 1.55; }
+
+.wh-input {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 11px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #14171b;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.wh-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.wh-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.wh-buttons button {
+  flex: 1;
+  padding: 11px 16px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: #1e2228;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.wh-buttons .primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1000;
+}

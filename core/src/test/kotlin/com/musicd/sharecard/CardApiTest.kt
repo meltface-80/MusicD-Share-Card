@@ -75,6 +75,10 @@ class CardApiTest {
     private fun get(path: String, query: Map<String, String> = emptyMap()) =
         Request("GET", path, query, emptyMap(), ByteArray(0), false, "10.0.0.99")
 
+    /** A request from the app's own WebView, which is trusted without a PIN. */
+    private fun onDevice(path: String, query: Map<String, String> = emptyMap()) =
+        Request("GET", path, query, emptyMap(), ByteArray(0), false, "127.0.0.1")
+
     private fun json(path: String, query: Map<String, String> = emptyMap()): JSONObject {
         val response = api().handle(get(path, query))
         return JSONObject(String(response.body, Charsets.UTF_8))
@@ -189,12 +193,20 @@ class CardApiTest {
     }
 
     @Test
-    fun `nothing here answers a POST`() {
-        // Every route is a GET and none of them changes anything. That is what
-        // makes serving the whole LAN without a password defensible, so a
-        // method that could write must stay refused.
-        val post = Request("POST", "/api/now-playing", emptyMap(), emptyMap(), ByteArray(0), false)
-        assertEquals(405, api().handle(post).status)
+    fun `a read route still refuses a POST`() {
+        // Webhooks brought POST and DELETE into the app, and the top-level
+        // method gate had to widen for them. That must not quietly make every
+        // route writable: the routes that change nothing stay GET-only.
+        for (path in listOf("/api/now-playing", "/api/zones", "/api/extras", "/api/health", "/")) {
+            val post = Request("POST", path, emptyMap(), emptyMap(), ByteArray(0), false)
+            assertEquals("$path must refuse a POST", 405, api().handle(post).status)
+        }
+    }
+
+    @Test
+    fun `an unknown method is refused outright`() {
+        val put = Request("PUT", "/api/webhooks", emptyMap(), emptyMap(), ByteArray(0), false)
+        assertEquals(405, api().handle(put).status)
     }
 
     @Test
@@ -272,6 +284,161 @@ class CardApiTest {
             hostNotes = { throw RuntimeException("reading the crash log failed") }
         )
         assertEquals(200, api.handle(get("/api/debug")).status)
+    }
+
+    // --------------------------------------------------------------- webhooks
+
+    private fun apiWith(store: com.musicd.sharecard.webhook.WebhookStore) = CardApi(
+        Sources(listOf(SonosSource(Household(
+            playerAt = { ip -> players.getValue(ip) },
+            seedHosts = listOf("10.0.0.1"),
+            discover = { emptyList() },
+            scan = { com.musicd.sharecard.sonos.SonosScan.Result(emptyList(), emptyList()) }
+        )))),
+        Metadata(metadataHttpClient(), "test"),
+        Pitchfork(metadataHttpClient(), "test"),
+        ArtProxy(metadataHttpClient()),
+        assets,
+        "1.0.0",
+        webhooks = store
+    )
+
+    private fun post(path: String, body: String, from: String, query: Map<String, String> = emptyMap()) =
+        Request("POST", path, query, emptyMap(), body.toByteArray(), false, from)
+
+    private val discordUrl = "https://discord.com/api/webhooks/1234567890/abcdefghijklmnop"
+
+    /**
+     * THE PROPERTY THIS WHOLE FEATURE TURNS ON. A webhook URL is a credential:
+     * anyone holding it can post to that channel from anywhere, forever. It is
+     * typed once and must never be readable back out over the network.
+     */
+    @Test
+    fun `no route ever hands back a webhook URL`() {
+        val store = com.musicd.sharecard.webhook.WebhookStore.inMemory("123456")
+        val api = apiWith(store)
+        api.handle(post("/api/webhooks", """{"name":"Vinyl","url":"$discordUrl"}""", "127.0.0.1"))
+
+        for (path in listOf("/api/webhooks", "/api/setup", "/api/debug")) {
+            val body = String(api.handle(get(path)).body, Charsets.UTF_8)
+            assertFalse(
+                "$path leaked the webhook token: $body",
+                body.contains("abcdefghijklmnop")
+            )
+        }
+    }
+
+    @Test
+    fun `the device itself can add a webhook without a PIN`() {
+        val store = com.musicd.sharecard.webhook.WebhookStore.inMemory("123456")
+        val api = apiWith(store)
+        val response = api.handle(
+            post("/api/webhooks", """{"name":"Vinyl","url":"$discordUrl"}""", "127.0.0.1")
+        )
+        assertEquals(200, response.status)
+        assertEquals(1, store.all().size)
+        assertEquals("Vinyl", store.all()[0].name)
+    }
+
+    @Test
+    fun `another device cannot add one without the PIN`() {
+        val store = com.musicd.sharecard.webhook.WebhookStore.inMemory("123456")
+        val api = apiWith(store)
+        val refused = api.handle(
+            post("/api/webhooks", """{"name":"Vinyl","url":"$discordUrl"}""", "192.168.0.50")
+        )
+        assertEquals(401, refused.status)
+        assertTrue("nothing may have been stored", store.all().isEmpty())
+
+        val allowed = api.handle(
+            post(
+                "/api/webhooks", """{"name":"Vinyl","url":"$discordUrl"}""", "192.168.0.50",
+                mapOf("pin" to "123456")
+            )
+        )
+        assertEquals(200, allowed.status)
+        assertEquals(1, store.all().size)
+    }
+
+    @Test
+    fun `another device cannot remove one without the PIN`() {
+        val store = com.musicd.sharecard.webhook.WebhookStore.inMemory("123456")
+        val api = apiWith(store)
+        api.handle(post("/api/webhooks", """{"name":"Vinyl","url":"$discordUrl"}""", "127.0.0.1"))
+        val id = store.all()[0].id
+
+        val refused = Request("DELETE", "/api/webhooks/$id", emptyMap(), emptyMap(), ByteArray(0), false, "192.168.0.50")
+        assertEquals(401, api.handle(refused).status)
+        assertEquals(1, store.all().size)
+
+        val allowed = Request(
+            "DELETE", "/api/webhooks/$id", mapOf("pin" to "123456"), emptyMap(),
+            ByteArray(0), false, "192.168.0.50"
+        )
+        assertEquals(200, api.handle(allowed).status)
+        assertTrue(store.all().isEmpty())
+    }
+
+    @Test
+    fun `the PIN is shown to the device and to nobody else`() {
+        val store = com.musicd.sharecard.webhook.WebhookStore.inMemory("123456")
+        val api = apiWith(store)
+
+        val fromDevice = JSONObject(String(api.handle(onDevice("/api/setup")).body, Charsets.UTF_8))
+        assertEquals("123456", fromDevice.getString("pin"))
+        assertTrue(fromDevice.getBoolean("onDevice"))
+
+        val remote = Request("GET", "/api/setup", emptyMap(), emptyMap(), ByteArray(0), false, "192.168.0.50")
+        val across = JSONObject(String(api.handle(remote).body, Charsets.UTF_8))
+        assertTrue("a PIN served to the LAN is decoration", across.isNull("pin"))
+        assertFalse(across.getBoolean("mayConfigure"))
+    }
+
+    @Test
+    fun `a URL that is not a Discord webhook is refused with a reason`() {
+        val store = com.musicd.sharecard.webhook.WebhookStore.inMemory("123456")
+        val api = apiWith(store)
+        val response = api.handle(
+            post("/api/webhooks", """{"name":"x","url":"https://example.com/hook"}""", "127.0.0.1")
+        )
+        assertEquals(400, response.status)
+        assertTrue(String(response.body, Charsets.UTF_8).contains("example.com"))
+        assertTrue(store.all().isEmpty())
+    }
+
+    @Test
+    fun `the listing is masked and says whether this device may configure`() {
+        val store = com.musicd.sharecard.webhook.WebhookStore.inMemory("123456")
+        val api = apiWith(store)
+        api.handle(post("/api/webhooks", """{"name":"Vinyl","url":"$discordUrl"}""", "127.0.0.1"))
+
+        val body = JSONObject(String(api.handle(onDevice("/api/webhooks")).body, Charsets.UTF_8))
+        val first = body.getJSONArray("webhooks").getJSONObject(0)
+        assertEquals("Vinyl", first.getString("name"))
+        assertTrue(first.getString("masked").contains("1234567890"))
+        assertFalse(first.has("url"))
+        assertTrue(body.getBoolean("mayConfigure"))
+    }
+
+    @Test
+    fun `posting a card needs no PIN, because that is the everyday action`() {
+        // The worst this offers a stranger on the wifi is posting a picture of
+        // the owner's own album to the owner's own channel. Adding a webhook is
+        // where the damage would be, and that is gated.
+        val store = com.musicd.sharecard.webhook.WebhookStore.inMemory("123456")
+        val api = apiWith(store)
+        api.handle(post("/api/webhooks", """{"name":"Vinyl","url":"$discordUrl"}""", "127.0.0.1"))
+        val id = store.all()[0].id
+
+        val response = api.handle(
+            Request(
+                "POST", "/api/webhooks/$id/post", emptyMap(), emptyMap(),
+                ByteArray(0), false, "192.168.0.50"
+            )
+        )
+        // Rejected for having no card, NOT for having no PIN.
+        assertEquals(400, response.status)
+        assertTrue(String(response.body, Charsets.UTF_8).contains("No card"))
     }
 
     @Test

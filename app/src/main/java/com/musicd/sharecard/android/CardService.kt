@@ -114,6 +114,9 @@ class CardService : Service() {
                 // Roon's pairing token, so the extension is approved once and
                 // not on every restart.
                 tokenStore = RoonTokenFile(this),
+                // Discord webhooks. Private storage, and never handed back out
+                // over the network — only a mask is.
+                webhookStore = WebhookFile(this),
                 // Roon's discovery is SOOD, which is multicast — the same lock
                 // SSDP needs, and the same silent failure without it.
                 roonMulticastLock = object : RoonClient.MulticastLock {
