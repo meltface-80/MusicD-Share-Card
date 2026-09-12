@@ -28,7 +28,15 @@ import org.json.JSONObject
 class Diagnostics(
     private val sources: Sources,
     /** What the Android shell knows — chiefly the last recorded crash. */
-    private val hostNotes: () -> List<String> = { emptyList() }
+    private val hostNotes: () -> List<String> = { emptyList() },
+    /**
+     * The last few Pitchfork lookups, URL and outcome.
+     *
+     * A missing score is silent otherwise: there is no way from the card to
+     * tell "Pitchfork never reviewed it" from "the URL this app built was not
+     * the one Pitchfork used". That distinction took a bug report to notice.
+     */
+    private val reviewNotes: () -> List<String> = { emptyList() }
 ) {
 
     fun run(): JSONObject {
@@ -38,6 +46,9 @@ class Diagnostics(
         // below it and would otherwise be scrolled past.
         val notes = runCatching { hostNotes() }.getOrDefault(emptyList())
         if (notes.isNotEmpty()) report.put("app", Json.strings(notes))
+
+        val reviews = runCatching { reviewNotes() }.getOrDefault(emptyList())
+        if (reviews.isNotEmpty()) report.put("reviews", Json.strings(reviews))
 
         // 1. What this device thinks it is attached to. An empty list here is
         //    the whole answer: no network, no speakers.

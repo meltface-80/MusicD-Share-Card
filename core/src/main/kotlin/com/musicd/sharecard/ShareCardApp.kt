@@ -6,6 +6,7 @@ import com.musicd.sharecard.api.CardApi
 import com.musicd.sharecard.http.HttpServer
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
+import com.musicd.sharecard.meta.QobuzAlbum
 import com.musicd.sharecard.meta.Updater
 import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.roon.RoonClient
@@ -116,6 +117,13 @@ class ShareCardApp(
 
     private val metadata = Metadata(metaHttp, userAgent(version))
     private val pitchfork = Pitchfork(metaHttp, userAgent(version))
+
+    /**
+     * The Qobuz album id behind the "Open in Qobuz" link. A search URL can
+     * never open that app on the record — see [QobuzAlbum] for why only an id
+     * will do.
+     */
+    private val qobuz = QobuzAlbum(metaHttp, userAgent(version))
     // The art proxy is told which players exist so a LAN fetch is limited to
     // them rather than to "anything that looks local".
     private val art = ArtProxy(metaHttp) { sources.artHosts() }
@@ -140,7 +148,7 @@ class ShareCardApp(
 
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
-        webhookStore, DiscordPoster(webhookHttpClient()), updater
+        webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz
     )
 
     private val server = HttpServer(api, port, bindAddress)

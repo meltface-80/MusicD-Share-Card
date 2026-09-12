@@ -68,7 +68,8 @@ class CardApiTest {
             Pitchfork(http, "test"),
             ArtProxy(http),
             assets,
-            "1.0.0"
+            "1.0.0",
+            qobuz = com.musicd.sharecard.meta.QobuzAlbum(http, "test")
         )
     }
 
@@ -232,6 +233,32 @@ class CardApiTest {
             assertTrue("$url is not https", url.startsWith("https://"))
             assertTrue("$url does not name the record", url.contains("Laughing%20Stock"))
         }
+    }
+
+    @Test
+    fun `the Qobuz album lookup is its own route and never blocks the card`() {
+        // fast=1 is cache-only, so this asks Qobuz nothing. An empty cache
+        // answers "no link", which is the same shape as a record Qobuz does
+        // not carry — the page keeps its search chip either way.
+        val body = json(
+            "/api/qobuz",
+            mapOf("album" to "Mezzanine", "artist" to "Massive Attack", "fast" to "1")
+        )
+        assertTrue("a miss must be a null url, not an error", body.isNull("url"))
+
+        // And it stays off /api/extras: folding a rate-gated page fetch into
+        // the metadata would hold the whole card back for one link.
+        val extras = json(
+            "/api/extras",
+            mapOf("album" to "Mezzanine", "artist" to "Massive Attack", "fast" to "1")
+        )
+        assertFalse(extras.has("qobuzUrl"))
+    }
+
+    @Test
+    fun `the Qobuz route refuses a POST like every other read`() {
+        val post = Request("POST", "/api/qobuz", emptyMap(), emptyMap(), ByteArray(0), false)
+        assertEquals(405, api().handle(post).status)
     }
 
     @Test

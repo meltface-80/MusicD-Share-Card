@@ -24,6 +24,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.musicd.sharecard.meta.QobuzAlbum
 
 /**
  * The window: a WebView showing the same page any other device gets.
@@ -301,15 +302,42 @@ class MainActivity : Activity() {
             // Anything on our own server stays in the WebView; a link out
             // belongs to the browser.
             if (local != null && url.toString().startsWith(local)) return false
-            return try {
-                startActivity(
-                    Intent(Intent.ACTION_VIEW, url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-                true
-            } catch (e: Exception) {
-                Log.w(TAG, "nothing could open $url", e)
-                true
+            return openExternally(url)
+        }
+
+        /**
+         * Hand the link to whatever wants it — with one detour.
+         *
+         * A QOBUZ ALBUM LINK GOES TO THE APP'S OWN DOOR FIRST. The https link
+         * works, but not from cold: Android gives it to the Qobuz app (which
+         * claims every path on open.qobuz.com), the app comes up on its Home
+         * screen having dropped the album, and only a second tap — with the app
+         * now running — lands on the record. open.qobuz.com's own page skips
+         * the https route entirely on a phone and goes to qobuzapp://album/<id>,
+         * so that is the door the app is built around.
+         *
+         * The https link is still the fallback, and it is what runs on a phone
+         * with no Qobuz app installed: nothing answers the scheme, startActivity
+         * throws, and the web player opens instead. So the worst this detour can
+         * do is exactly what happened before it.
+         *
+         * [QobuzAlbum.appUri] does the deciding, in :core where it is tested. It
+         * only ever returns a scheme built from an id this app resolved itself.
+         */
+        private fun openExternally(url: Uri): Boolean {
+            QobuzAlbum.appUri(url.toString())?.let { app ->
+                if (start(Uri.parse(app))) return true
+                Log.d(TAG, "no app answered $app — falling back to the web link")
             }
+            if (!start(url)) Log.w(TAG, "nothing could open $url")
+            return true
+        }
+
+        private fun start(url: Uri): Boolean = try {
+            startActivity(Intent(Intent.ACTION_VIEW, url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 }

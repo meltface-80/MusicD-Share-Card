@@ -248,6 +248,48 @@ was simply not there, however carefully the DIDL was parsed.
   answering on port 1400, every one of them "would not describe the household".
   Nothing here reads a namespace URI; every lookup goes through `Xml.localName`,
   which strips the prefix off the tag name.
+- **A Pitchfork lookup has THREE tries, and the constructed URL is only the
+  first.** `/reviews/albums/<artist>-<album>/` is one request and the only way
+  an album from 1994 is found at all, but it fails whenever the speaker's
+  spelling is not Pitchfork's — and a just-released album that was sitting in
+  Pitchfork's own feed came back with nothing. So: the constructed URL, then the
+  same with a trailing `(Deluxe Edition)` stripped, then the RSS feed matched on
+  title. Each step only runs when the last found nothing, so an ordinary hit
+  still costs exactly one request. The feed and not the listing page: the
+  listing's reviews live in a `__PRELOADED_STATE__` blob, and RSS is a contract
+  where that is an implementation detail.
+- **`Normalize.text` is the ONE folding rule and slugs must go through it.**
+  `Pitchfork.slugify` folded by hand and dropped anything outside `[a-z0-9]`, so
+  "Björk" became "bj-rk" and no album by an artist with an accent ever resolved
+  — invisible, because a missing score looks exactly like a record nobody
+  reviewed. NFKD is not enough on its own either: a ligature or a stroked letter
+  has no decomposition, so `Normalize` expands æ, œ, ø, ß, þ and friends before
+  folding, or "Ænima" becomes "nima". There must never be a second copy of this
+  rule — one was briefly added in `meta/` and deleted in the same round.
+- **A missing score is silent, so `/api/debug` now lists what was asked.**
+  "Pitchfork never reviewed it" and "the URL this app built was not the one
+  Pitchfork used" look identical from the card. `Pitchfork.attempts()` keeps the
+  last dozen lookups with their outcome, and the page shows them under "Album
+  reviews". That distinction took a bug report to notice; it should not take a
+  second one.
+- **QOBUZ NEEDS AN ALBUM ID; A SEARCH LINK CAN NEVER OPEN THAT APP.** Shipping
+  `StreamingLinks` alone gave Qobuz the same pre-filled search as everyone else,
+  and it landed on the download store's search page — reported from the field as
+  "opened the Qobuz Download website". open.qobuz.com is the host both platforms
+  hand to the app, and its router knows five shapes, all of them ids
+  (`/album/:id`, `/artist/:id`, …). There is no search route on it or in the app
+  behind it, and play.qobuz.com is claimed by the same app so it lands in the
+  same place. `QobuzAlbum` reads the id off Qobuz's own public search page — no
+  API, no key — and the page swaps the chip when it arrives. A record Qobuz does
+  not carry never upgrades, which is right: **a wrong album is worse than a
+  search page**, so `pick` takes the exact album+artist slug wherever it appears
+  and never the first hit.
+- **The Qobuz link then goes through `qobuzapp://` first, on Android.** The
+  https link works but not from cold — the app opens on Home having dropped the
+  album, and only a second tap lands on the record. open.qobuz.com's own page
+  skips https entirely on a phone. `QobuzAlbum.appUri` builds that scheme and is
+  deliberately strict, because the string is handed to `startActivity`: our
+  host, our path, an id of letters and digits, and no query or fragment.
 - **A streaming link is an https link, never a custom scheme, and the HOST is
   the part that goes wrong.** `spotify://` opens the app and does nothing at all
   when the app is absent; an https link opens the app on a phone that has it and
@@ -262,10 +304,26 @@ was simply not there, however carefully the DIDL was parsed.
   literal plus because they carry the query in the PATH. And `%2F` is decoded
   back into a path segment by Qobuz's own redirect, so "AC/DC" 404s. Both are in
   `StreamingLinks.searchQuery` with a test each.
-- **Nothing links to Roon, deliberately.** Roon publishes no URL scheme and no
-  web player, so there is no link to build — and searching its library from here
-  would need the BROWSE service this app deliberately does not ask for. A link
-  that opened nothing would be worse than its absence.
+- **Nothing links to Roon, and that is a SCOPE decision, not a technical wall.**
+  Half of it is a wall: Roon publishes no URL scheme and no web player, so there
+  is no link to build. Checked against RoonLabs' own `node-roon-api` and
+  `node-roon-api-browse` — the whole extension API is MOO over a WebSocket, and
+  the only URL anywhere in it is `msg.props.http_port` for the image service.
+  Grepping a full Roon remote for `roon://` finds nothing either.
+
+  The other half is NOT a wall, and an earlier note here wrongly implied it was.
+  `com.roonlabs.browse:1` has a `"search"` hierarchy, and MusicD Remote Lite
+  uses it against real hardware: `browse(hierarchy="search", input=title)`, take
+  the "Albums" heading out of the grouped results, `drillActionMenu` the album,
+  `invoke` its Play Now with a `zone_or_output_id`. A "Play in Roon" BUTTON is
+  entirely buildable and would do more than the six search links do.
+
+  It is left out because it would make this app able to start music. Every route
+  here is a read, `TokenStore` is the only thing that writes, and that rule is
+  load-bearing — see [Access]. Asked directly, the answer was to leave it out.
+  Reopen that decision with the owner, not on the grounds that it cannot be
+  done. One thing still unverified if it ever is: whether adding a service to
+  the registration re-prompts for approval in Roon → Settings → Extensions.
 - **`sharecard.js` is a port, not this project's code.** It is MusicD Remote
   Lite's file, and it is the card's visual definition. A change here that is not
   also made there means the two apps stop producing the same picture — which is

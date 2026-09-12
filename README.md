@@ -19,7 +19,7 @@ It works out what's playing by asking whoever actually knows:
 
 ## Install
 
-[**Download musicd-share-card-0.15.0.apk**](dist/musicd-share-card-0.15.0.apk)
+[**Download musicd-share-card-0.17.0.apk**](dist/musicd-share-card-0.17.0.apk)
 and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 
@@ -75,7 +75,8 @@ player if you don't.
 They're searches rather than links to the album itself — that would need each
 service's own id for the record, which needs their APIs and their credentials.
 
-There's no Roon link: Roon has no web player and no link scheme to open.
+There's no Roon link: Roon has no web player and no link scheme to open, so
+there's nothing a tap could go to.
 
 ## Discord
 

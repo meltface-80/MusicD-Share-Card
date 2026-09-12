@@ -8,6 +8,7 @@ import com.musicd.sharecard.http.Request
 import com.musicd.sharecard.http.Response
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
+import com.musicd.sharecard.meta.QobuzAlbum
 import com.musicd.sharecard.meta.StreamingLinks
 import com.musicd.sharecard.meta.Updater
 import com.musicd.sharecard.source.Playing
@@ -41,7 +42,8 @@ class CardApi(
     private val webhooks: WebhookStore = WebhookStore.inMemory(),
     private val discord: DiscordPoster = DiscordPoster(),
     /** Null where this host cannot install an APK — see [ShareCardApp]. */
-    private val updater: Updater? = null
+    private val updater: Updater? = null,
+    private val qobuz: QobuzAlbum? = null
 ) : HttpServer.Handler {
 
     private val access = Access { webhooks.pin() }
@@ -117,8 +119,9 @@ class CardApi(
         "/api/zones" -> zones(request)
         "/api/now-playing" -> nowPlaying(request)
         "/api/extras" -> extras(request)
+        "/api/qobuz" -> qobuzLink(request)
         "/api/art" -> artwork(request)
-        "/api/debug" -> Json.obj(Diagnostics(sources, hostNotes).run())
+        "/api/debug" -> Json.obj(Diagnostics(sources, hostNotes, pitchfork::attempts).run())
         else -> static(request.path)
     }
 
@@ -444,6 +447,29 @@ class CardApi(
                 .put("mayConfigure", access.mayConfigure(request))
                 .put("pin", if (onDevice) webhooks.pin() else JSONObject.NULL)
         )
+    }
+
+    /**
+     * The Qobuz album id, which is the only link that opens the Qobuz APP.
+     *
+     * ITS OWN ROUTE, NOT A FIELD ON /api/extras, and that is the point. This
+     * one reads a page off www.qobuz.com and is rate-gated to one request every
+     * second and a half, so putting it beside the metadata would hold the whole
+     * card back for a link. The page paints with the search link from
+     * StreamingLinks and swaps it for this one when it lands — or never, which
+     * is the honest answer for a record Qobuz does not carry.
+     *
+     * `fast=1` answers from the cache only, so a second look at the same record
+     * costs nothing and asks nobody.
+     */
+    private fun qobuzLink(request: Request): Response {
+        val album = request.param("album").orEmpty()
+        val artist = request.param("artist").orEmpty()
+        if (album.isEmpty()) return Json.error(400, "No album named.")
+        val q = qobuz ?: return Json.obj(JSONObject().put("url", JSONObject.NULL))
+        val url = if (request.param("fast") == "1") q.cachedDeepLink(artist, album)
+        else q.deepLink(artist, album)
+        return Json.obj(JSONObject().putOrNull("url", url))
     }
 
     /**
