@@ -6,6 +6,7 @@ import com.musicd.sharecard.api.CardApi
 import com.musicd.sharecard.http.HttpServer
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
+import com.musicd.sharecard.meta.Updater
 import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.roon.RoonClient
 import com.musicd.sharecard.roon.RoonSource
@@ -20,6 +21,7 @@ import com.musicd.sharecard.upnp.UpnpSource
 import com.musicd.sharecard.webhook.DiscordPoster
 import com.musicd.sharecard.webhook.WebhookStore
 import com.musicd.sharecard.webhook.webhookHttpClient
+import java.io.File
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
@@ -64,8 +66,17 @@ class ShareCardApp(
      * Where Discord webhooks are kept. The URLs are credentials, so this never
      * hands one back out — see [com.musicd.sharecard.webhook.Webhook.masked].
      */
-    webhookStore: WebhookStore = WebhookStore.inMemory()
+    webhookStore: WebhookStore = WebhookStore.inMemory(),
+    /**
+     * How this host installs an APK, or null where it cannot — a JVM test, for
+     * one. With it null the update routes answer "not available here" rather
+     * than offering a button that could not work.
+     */
+    updateInstaller: UpdateInstaller? = null
 ) {
+
+    /** What the Android shell supplies so [updater] can finish the job. */
+    class UpdateInstaller(val downloadDir: File, val install: (File) -> Unit)
 
     private val soap = SoapClient(soapHttpClient())
     private val metaHttp = metadataHttpClient()
@@ -109,9 +120,27 @@ class ShareCardApp(
     // them rather than to "anything that looks local".
     private val art = ArtProxy(metaHttp) { sources.artHosts() }
 
+    /**
+     * The manifest CI writes beside the APK on the default branch.
+     *
+     * THE DEFAULT BRANCH AND NOT THIS ONE. Every branch build publishes its own
+     * dist/, so pointing this at whatever branch happened to build would have
+     * the app offering itself a feature branch. Updates come from main, which
+     * is also where the README's download link points.
+     */
+    val updater: Updater? = updateInstaller?.let {
+        Updater(
+            http = metaHttp,
+            currentVersion = version,
+            manifestUrl = UPDATE_MANIFEST_URL,
+            downloadDir = it.downloadDir,
+            install = it.install
+        )
+    }
+
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
-        webhookStore, DiscordPoster(webhookHttpClient())
+        webhookStore, DiscordPoster(webhookHttpClient()), updater
     )
 
     private val server = HttpServer(api, port, bindAddress)
@@ -171,6 +200,10 @@ class ShareCardApp(
          * would not start.
          */
         const val DEFAULT_PORT = 8747
+
+        /** Published by CI beside the APK it describes. */
+        const val UPDATE_MANIFEST_URL =
+            "https://raw.githubusercontent.com/meltface-80/MusicD-Share-Card/main/dist/latest.json"
 
         /**
          * MusicBrainz requires a contactable User-Agent and blocks clients that

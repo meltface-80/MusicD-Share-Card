@@ -8,6 +8,7 @@ import com.musicd.sharecard.http.Request
 import com.musicd.sharecard.http.Response
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
+import com.musicd.sharecard.meta.Updater
 import com.musicd.sharecard.source.Playing
 import com.musicd.sharecard.webhook.DiscordPoster
 import com.musicd.sharecard.webhook.Webhook
@@ -36,10 +37,23 @@ class CardApi(
     private val version: String,
     private val hostNotes: () -> List<String> = { emptyList() },
     private val webhooks: WebhookStore = WebhookStore.inMemory(),
-    private val discord: DiscordPoster = DiscordPoster()
+    private val discord: DiscordPoster = DiscordPoster(),
+    /** Null where this host cannot install an APK — see [ShareCardApp]. */
+    private val updater: Updater? = null
 ) : HttpServer.Handler {
 
     private val access = Access { webhooks.pin() }
+
+    /**
+     * One thread, for the APK download only.
+     *
+     * The request that starts it returns straight away and the page polls, so
+     * a two-megabyte download never holds an HTTP thread open — and one thread
+     * means a second tap cannot start a second download beside the first.
+     */
+    private val downloads = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "sharecard-update").apply { isDaemon = true }
+    }
 
     override fun handle(request: Request): Response {
         // Reads are open, as they have always been. The few routes that write
@@ -71,7 +85,7 @@ class CardApi(
         // quietly made "POST /api/now-playing" answer 200 — the method gate had
         // become a formality rather than a rule. The write routes are named,
         // and everything else is GET-only exactly as before.
-        if (request.method !in READ_METHODS && request.path != "/api/webhooks") {
+        if (request.method !in READ_METHODS && request.path !in WRITE_ROUTES) {
             return Json.error(405, "That route only answers GET.")
         }
         return readRoute(request)
@@ -84,6 +98,19 @@ class CardApi(
             else -> Json.error(405, "That method is not used here.")
         }
         "/api/setup" -> setup(request)
+        // Reading what version is out there changes nothing. Fetching an APK
+        // and pointing Android's installer at it changes everything on the
+        // device, so both of those are gated exactly like adding a webhook.
+        "/api/update/status" -> updateRoute(request) { Json.obj(it.status()) }
+        // POST, not GET, even though the gate would hold either way: a GET that
+        // installs software is one a link prefetch or a browser's speculative
+        // fetch can fire on its own.
+        "/api/update/check" -> updateRoute(request, gated = true, post = true) {
+            Json.obj(it.check())
+        }
+        "/api/update/apply" -> updateRoute(request, gated = true, post = true) { u ->
+            Json.obj(u.apply { runnable -> downloads.execute(runnable) })
+        }
         "/api/health" -> health()
         "/api/zones" -> zones(request)
         "/api/now-playing" -> nowPlaying(request)
@@ -398,6 +425,33 @@ class CardApi(
         )
     }
 
+    /**
+     * The three update routes, with the two things they share.
+     *
+     * A host that cannot install an APK answers with the shape the page reads
+     * as "nothing to offer" rather than an error, so a desktop browser pointed
+     * at this app simply shows no update button — see [ShareCardApp.updater].
+     */
+    private fun updateRoute(
+        request: Request,
+        gated: Boolean = false,
+        post: Boolean = false,
+        body: (Updater) -> Response
+    ): Response {
+        val u = updater ?: return Json.obj(
+            JSONObject()
+                .put("available", false)
+                .put("current", version)
+                .put("supported", false)
+                .put("blocked", "Updates are only available in the Android app.")
+        )
+        if (post && request.method != "POST") {
+            return Json.error(405, "That route only answers POST.")
+        }
+        if (gated && !access.mayConfigure(request)) return needsPin()
+        return body(u)
+    }
+
     private fun needsPin(): Response = Json.error(
         401,
         "Enter the PIN shown on the device running Share Card to change webhooks."
@@ -434,6 +488,15 @@ class CardApi(
         val NO_STORE = mapOf("Cache-Control" to "no-store")
 
         val ALLOWED_METHODS = setOf("GET", "HEAD", "POST", "DELETE")
+
+        /**
+         * The only paths a POST or DELETE may reach.
+         *
+         * NAMED, NOT INFERRED. This gate was once "anything, so the webhook
+         * routes work", and that quietly made POST /api/now-playing answer 200.
+         * Every route not in here is GET-only.
+         */
+        val WRITE_ROUTES = setOf("/api/webhooks", "/api/update/check", "/api/update/apply")
 
         /** The methods a route that changes nothing may be asked with. */
         val READ_METHODS = setOf("GET", "HEAD")

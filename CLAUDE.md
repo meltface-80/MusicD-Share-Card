@@ -283,6 +283,27 @@ was simply not there, however carefully the DIDL was parsed.
   is normally in another room with no adb attached; without it, "it just closes"
   is the whole bug report.
 
+- **Updating in place needs ONE signing key, for ever.** Android refuses an APK
+  signed with a different certificate and says only "App not installed" — no
+  reason, nothing in a log. CI mints a fresh debug key per runner, so until
+  `SHARECARD_KEYSTORE_BASE64` exists no build can replace another. That is what
+  `latest.json`'s `signed` flag is for: `Updater` refuses to download a build it
+  knows cannot install, and says to uninstall first, rather than spending two
+  megabytes on that dialog. See `docs/signing.md`.
+- **The update manifest may not point the installer at another host.** The URL
+  in it names a file this app downloads and hands to Android, so a manifest that
+  can name anything can install anything. `Updater.parseManifest` requires https
+  AND the same host the manifest itself came from — which is why the workflow
+  writes `raw.githubusercontent.com/...` and not `github.com/.../raw/...`. The
+  app this was ported from carries a comment saying exactly this above a check
+  that only tests the scheme; that was fixed here rather than copied.
+- **`/api/update/check` and `/api/update/apply` are POST and gated.** Replacing
+  the APK on an always-on device in another room is a bigger write than adding a
+  webhook, so both go through `Access.mayConfigure` — and both refuse a GET,
+  because a GET that installs software is one a link prefetch can fire by
+  itself. `/api/update/status` is a read and stays open. `WRITE_ROUTES` names
+  every path a POST may reach; nothing infers it.
+
 ## Scope and process
 
 - Develop on the branch named in the task. Never push to another branch.

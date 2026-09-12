@@ -42,6 +42,7 @@
   const errEl    = document.getElementById("err");
   const zoneSel  = document.getElementById("zone");
   const zoneWrap = document.getElementById("zone-wrap");
+  const updateEl = document.getElementById("update");
   const refresh  = document.getElementById("refresh");
 
   /*
@@ -767,6 +768,110 @@
     setTimeout(() => { span.textContent = was; }, 1400);
   }
 
+  // --------------------------------------------------------------- updates
+
+  /*
+   * UPDATING IN PLACE.
+   *
+   * The app downloads the new APK itself and hands it to Android's installer;
+   * everything up to that point is :core, and tested there. This is only the
+   * bar that reports it.
+   *
+   * WHO CHECKS. The check is a write route — it reaches out to GitHub — so it
+   * is gated exactly like adding a webhook: the device's own WebView is trusted
+   * without a PIN, anything else on the network needs one. So the device checks
+   * when its page opens, and every other device reads what it found. An iPad
+   * with the PIN can still ask for a fresh check.
+   *
+   * THIS IS NOT A POLL. One request when somebody opens the page, in the same
+   * spirit as asking a speaker what is playing only when there is somebody
+   * there to read the answer. The one timer in here runs only while a download
+   * this page started is in flight, and stops when it lands.
+   */
+  async function checkForUpdate() {
+    if (!updateEl) return;
+    try {
+      // Ask the device to look only if this browser is allowed to. Elsewhere,
+      // read whatever the device found last.
+      if (setup.mayConfigure) {
+        await fetch("/api/update/check", { method: "POST", cache: "no-store" });
+      }
+      showUpdate(await getJson("/api/update/status"));
+    } catch (e) {
+      // An update notice that cannot be fetched is not worth a line of red on
+      // a page whose actual job is drawing a card.
+      updateEl.classList.add("hidden");
+    }
+  }
+
+  function showUpdate(state) {
+    if (!state || state.supported === false || !state.available) {
+      updateEl.classList.add("hidden");
+      updateEl.innerHTML = "";
+      return;
+    }
+    updateEl.classList.remove("hidden");
+
+    const phase = (state.phase && state.phase.name) || "idle";
+    const busyText = {
+      checking: "Checking\u2026",
+      downloading: "Downloading\u2026",
+      verifying: "Checking the download\u2026",
+      installing: "Android is asking you to confirm\u2026"
+    }[phase];
+
+    if (phase === "error" && state.phase.error) {
+      updateEl.innerHTML = '<span class="update-text">' +
+        escapeHtml(state.phase.error) + "</span>";
+      return;
+    }
+    if (busyText) {
+      updateEl.innerHTML = '<span class="update-text">' + escapeHtml(busyText) + "</span>";
+      return;
+    }
+
+    const line = "Version " + escapeHtml(String(state.latest)) + " is available.";
+    if (state.blocked) {
+      // Says why rather than offering a button that ends in Android's
+      // "App not installed" with no reason given.
+      updateEl.innerHTML = '<span class="update-text">' + line + " " +
+        escapeHtml(state.blocked) + "</span>";
+      return;
+    }
+    updateEl.innerHTML = '<span class="update-text">' + line + "</span>" +
+      '<button class="update-go" id="update-go">Update</button>';
+    const go = document.getElementById("update-go");
+    if (go) go.onclick = startUpdate;
+  }
+
+  async function startUpdate() {
+    try {
+      const state = await (await fetch(
+        "/api/update/apply", { method: "POST", cache: "no-store" }
+      )).json();
+      showUpdate(state);
+      watchUpdate();
+    } catch (e) {
+      updateEl.innerHTML = '<span class="update-text">Could not start the update.</span>';
+    }
+  }
+
+  /* Runs only while a download is in flight, and stops the moment it is not. */
+  function watchUpdate() {
+    const timer = setInterval(async () => {
+      let state;
+      try {
+        state = await getJson("/api/update/status");
+      } catch (e) {
+        clearInterval(timer);
+        return;
+      }
+      showUpdate(state);
+      const phase = (state.phase && state.phase.name) || "idle";
+      if (phase !== "downloading" && phase !== "verifying") clearInterval(timer);
+    }, 1500);
+  }
+
   // ---------------------------------------------------------------- wiring
 
   refresh.addEventListener("click", () => load(true));
@@ -801,5 +906,7 @@
     document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
   }
 
-  load(false);
+  // AFTER the first load, not beside it: whether this browser may ask the
+  // device to check comes back with the webhook list, which load() fetches.
+  load(false).then(checkForUpdate);
 })();

@@ -72,6 +72,45 @@ body {
 
 .hidden { display: none !important; }
 
+/*
+ * THE UPDATE NOTICE.
+ *
+ * Directly under the header and above the card, so it is seen without
+ * scrolling and does not push the card off a phone screen — one line, wrapping
+ * to two at most. It is hidden outright unless there is something newer, which
+ * is the normal state: a bar that is always there is a bar nobody reads.
+ */
+.update {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  padding-left: calc(16px + env(safe-area-inset-left));
+  padding-right: calc(16px + env(safe-area-inset-right));
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.update-text { flex: 1 1 12rem; min-width: 0; }
+
+.update-go {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #1a1000;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.update-go:active { transform: scale(.97); }
+
 /* ------------------------------------------------------------------ header */
 
 .bar {

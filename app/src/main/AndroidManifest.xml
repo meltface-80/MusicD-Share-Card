@@ -25,6 +25,13 @@
     -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      Updating in place. The app downloads the new APK and asks the system
+      installer to replace itself; without this the installer refuses before it
+      even shows the user anything. Android still asks for "Install unknown
+      apps" the first time, and the user can still say no.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".ShareCardApplication"

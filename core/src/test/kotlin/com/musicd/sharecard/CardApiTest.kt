@@ -197,9 +197,85 @@ class CardApiTest {
         // Webhooks brought POST and DELETE into the app, and the top-level
         // method gate had to widen for them. That must not quietly make every
         // route writable: the routes that change nothing stay GET-only.
-        for (path in listOf("/api/now-playing", "/api/zones", "/api/extras", "/api/health", "/")) {
+        for (path in listOf(
+            "/api/now-playing", "/api/zones", "/api/extras", "/api/health",
+            // Reading what version is published changes nothing either, so it
+            // belongs on this list and not on the write list beside it.
+            "/api/update/status", "/"
+        )) {
             val post = Request("POST", path, emptyMap(), emptyMap(), ByteArray(0), false)
             assertEquals("$path must refuse a POST", 405, api().handle(post).status)
+        }
+    }
+
+    // --------------------------------------------------------------- updates
+
+    /**
+     * The same API with a working updater, pointed at an address that refuses
+     * a connection immediately — these tests are about the gate and the method,
+     * not about what a manifest says.
+     */
+    private fun apiWithUpdater(): CardApi {
+        val http = metadataHttpClient()
+        val household = Household(
+            playerAt = { ip -> players.getValue(ip) },
+            seedHosts = listOf("10.0.0.1"),
+            discover = { emptyList() }
+        )
+        return CardApi(
+            Sources(listOf(SonosSource(household))),
+            Metadata(http, "test"),
+            Pitchfork(http, "test"),
+            ArtProxy(http),
+            assets,
+            "1.0.0",
+            updater = com.musicd.sharecard.meta.Updater(
+                http = http,
+                currentVersion = "1.0.0",
+                manifestUrl = "https://127.0.0.1:1/latest.json",
+                downloadDir = java.nio.file.Files.createTempDirectory("api-update").toFile(),
+                install = { throw AssertionError("no install in an API test") }
+            )
+        )
+    }
+
+    private fun post(path: String, from: String) =
+        Request("POST", path, emptyMap(), emptyMap(), ByteArray(0), false, from)
+
+    @Test
+    fun `a host that cannot install an APK says so instead of erroring`() {
+        // A desktop browser pointed at this app must not be shown an update
+        // button. The page reads "available: false" as nothing to offer, so
+        // this answers in that shape rather than with a 404 or a 501.
+        val body = json("/api/update/status")
+        assertFalse(body.getBoolean("available"))
+        assertFalse(body.getBoolean("supported"))
+    }
+
+    @Test
+    fun `installing an update needs the PIN from anywhere but the device`() {
+        // Adding a webhook is gated because a webhook URL is a credential.
+        // Replacing the APK on an always-on device in another room is a good
+        // deal more than that, and is gated the same way.
+        val api = apiWithUpdater()
+        assertEquals(401, api.handle(post("/api/update/check", "192.168.0.50")).status)
+        assertEquals(401, api.handle(post("/api/update/apply", "192.168.0.50")).status)
+
+        // From the app's own WebView there is no PIN to type.
+        assertEquals(200, api.handle(post("/api/update/check", "127.0.0.1")).status)
+    }
+
+    @Test
+    fun `an update is never started by a GET`() {
+        // The gate would hold either way, but a GET that installs software is
+        // one a link prefetch or a browser's speculative fetch can fire on its
+        // own, from the very device that is trusted without a PIN.
+        val api = apiWithUpdater()
+        for (path in listOf("/api/update/check", "/api/update/apply")) {
+            val response = api.handle(
+                Request("GET", path, emptyMap(), emptyMap(), ByteArray(0), false, "127.0.0.1")
+            )
+            assertEquals("$path must refuse a GET", 405, response.status)
         }
     }
 
