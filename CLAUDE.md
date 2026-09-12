@@ -392,6 +392,17 @@ was simply not there, however carefully the DIDL was parsed.
   that looked like it simply did nothing. `www.qobuz.com` publishes no
   assetlinks and reaches the browser. Check `.well-known/assetlinks.json` and
   `.well-known/apple-app-site-association` before adding a service.
+- **The link row does NOT check whether a service carries the record, and that
+  was decided rather than overlooked.** Only four of the eight can be asked
+  without developer credentials — Pitchfork and Qobuz already resolve, and Apple
+  Music (the keyless iTunes Search API) and Deezer (its open API) could, which
+  would also turn those two into direct album links. Spotify and TIDAL need
+  OAuth, Amazon Music has no public API, and Bandcamp would need page-scraping.
+  So the row would end up half verified and half blind either way, and hiding a
+  chip and greying it out need exactly the same lookup — the only difference is
+  whether the row changes shape between albums. Put to the owner with that laid
+  out, the answer was to leave it alone. Reopen it as a product question, not as
+  something nobody thought of.
 - **The search query is percent-encoded, and a slash is spent as a space.**
   `URLEncoder` writes a space as `+`, which four of the six services take as a
   literal plus because they carry the query in the PATH. And `%2F` is decoded
