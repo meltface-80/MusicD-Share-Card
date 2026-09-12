@@ -43,6 +43,7 @@
   const zoneSel  = document.getElementById("zone");
   const zoneWrap = document.getElementById("zone-wrap");
   const updateEl = document.getElementById("update");
+  const linksEl  = document.getElementById("links");
   const refresh  = document.getElementById("refresh");
 
   /*
@@ -194,6 +195,8 @@
     const mine = ++token;
     current = null;
     actions.innerHTML = "";
+    linksEl.innerHTML = "";
+    linksEl.classList.add("hidden");
     hintEl.textContent = "";
     errEl.textContent = "";
     nowEl.textContent = "";
@@ -305,7 +308,10 @@
     }
   }
 
-  const EMPTY = { release: "", bio: "", bioSource: "", score: null, isBestNewMusic: false };
+  const EMPTY = {
+    release: "", bio: "", bioSource: "", score: null, isBestNewMusic: false,
+    reviewUrl: "", links: []
+  };
 
   function extrasOf(j) {
     return {
@@ -313,7 +319,9 @@
       bio: (j && j.bio) || "",
       bioSource: (j && j.bioSource) || "",
       score: j && typeof j.score === "number" ? j.score : null,
-      isBestNewMusic: !!(j && j.isBestNewMusic)
+      isBestNewMusic: !!(j && j.isBestNewMusic),
+      reviewUrl: (j && j.reviewUrl) || "",
+      links: (j && Array.isArray(j.links)) ? j.links : []
     };
   }
 
@@ -323,7 +331,11 @@
       bio: b.bio || a.bio,
       bioSource: b.bioSource || a.bioSource,
       score: b.score != null ? b.score : a.score,
-      isBestNewMusic: b.isBestNewMusic || a.isBestNewMusic
+      isBestNewMusic: b.isBestNewMusic || a.isBestNewMusic,
+      reviewUrl: b.reviewUrl || a.reviewUrl,
+      // The fast path already carries these — they need no lookup — so a slow
+      // answer that came back empty must not wipe them.
+      links: (b.links && b.links.length) ? b.links : a.links
     };
   }
 
@@ -357,6 +369,60 @@
     current = { blob: blob, album: album, artist: artist };
     describe(playing);
     buildActions();
+    buildLinks(extras);
+  }
+
+  /*
+   * WHERE TO HEAR IT, and the review the score came from.
+   *
+   * PLAIN LINKS, NO target="_blank". On Android the shell's WebViewClient
+   * sends anything that is not this server through ACTION_VIEW, so the link
+   * opens whichever app claims that domain and the card page is still sitting
+   * there behind it. A target="_blank" would need onCreateWindow handled in
+   * the chrome client and would otherwise do nothing at all — silently, which
+   * is the worst kind.
+   *
+   * On iOS the same https link is a Universal Link: it hands off to the app
+   * without moving Safari off this page, and falls through to the web player
+   * when the app is not installed. That fallback is the reason none of these
+   * is a spotify:// or qobuz:// custom scheme.
+   *
+   * "FIND ON", NOT "OPEN IN". Every one of these is a pre-filled search, not
+   * the album's own page, because that would need each service's own id for
+   * it. The label says so rather than implying more than it does. Pitchfork is
+   * the exception and is set apart: that link is the review itself.
+   */
+  function buildLinks(extras) {
+    linksEl.innerHTML = "";
+    const services = (extras && extras.links) || [];
+    const review = extras && extras.reviewUrl;
+    if (!services.length && !review) {
+      linksEl.classList.add("hidden");
+      return;
+    }
+
+    const label = document.createElement("p");
+    label.className = "links-label";
+    label.textContent = review ? "Read about it, or find it on" : "Find it on";
+    linksEl.appendChild(label);
+
+    if (review) {
+      linksEl.appendChild(link(review, "Pitchfork review", "links-review"));
+    }
+    for (const svc of services) {
+      if (!svc || !svc.url || !svc.name) continue;
+      linksEl.appendChild(link(svc.url, svc.name, ""));
+    }
+    linksEl.classList.remove("hidden");
+  }
+
+  function link(href, text, className) {
+    const a = document.createElement("a");
+    a.href = href;
+    a.rel = "noreferrer";
+    a.className = className;
+    a.textContent = text;
+    return a;
   }
 
   function describe(playing) {
@@ -533,6 +599,9 @@
     }
     hintEl.innerHTML = "";
     nowEl.innerHTML = "";
+    // The links belonged to a card that is no longer on screen.
+    linksEl.innerHTML = "";
+    linksEl.classList.add("hidden");
     show("<div class=\"diag\">" + rows.join("") + "</div>");
   }
 

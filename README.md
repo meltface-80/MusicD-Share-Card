@@ -65,6 +65,18 @@ Until you do, the app will say so rather than looking broken.
 It asks Roon for transport only. It doesn't browse your library, and it has no
 playback controls of any kind.
 
+## Finding the record elsewhere
+
+Under the card is a row of links for whatever is playing: the Pitchfork review
+the score came from, and a pre-filled search on Qobuz, TIDAL, Spotify, Apple
+Music, Amazon Music and Deezer. They open the app if you have it and the web
+player if you don't.
+
+They're searches rather than links to the album itself — that would need each
+service's own id for the record, which needs their APIs and their credentials.
+
+There's no Roon link: Roon has no web player and no link scheme to open.
+
 ## Discord
 
 Paste a webhook URL once and a button appears on the card for it. Tap it and the

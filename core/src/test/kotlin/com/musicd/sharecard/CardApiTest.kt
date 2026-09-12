@@ -208,6 +208,38 @@ class CardApiTest {
         }
     }
 
+    // ----------------------------------------------------------------- links
+
+    @Test
+    fun `extras carries somewhere to hear the record`() {
+        // fast=1 is the cache-only path, so this asks nothing of the network —
+        // which is the point: the links are a function of the album and the
+        // artist, so they are on screen with the first paint rather than after
+        // a metadata lookup that may never come back.
+        val body = json(
+            "/api/extras",
+            mapOf("album" to "Laughing Stock", "artist" to "Talk Talk", "fast" to "1")
+        )
+        val links = body.getJSONArray("links")
+        assertEquals(6, links.length())
+
+        val services = (0 until links.length()).map { links.getJSONObject(it).getString("service") }
+        assertEquals(
+            listOf("qobuz", "tidal", "spotify", "apple", "amazon", "deezer"), services
+        )
+        for (i in 0 until links.length()) {
+            val url = links.getJSONObject(i).getString("url")
+            assertTrue("$url is not https", url.startsWith("https://"))
+            assertTrue("$url does not name the record", url.contains("Laughing%20Stock"))
+        }
+    }
+
+    @Test
+    fun `an album with no name is linked nowhere`() {
+        val response = api().handle(get("/api/extras", mapOf("album" to "", "fast" to "1")))
+        assertEquals(400, response.status)
+    }
+
     // --------------------------------------------------------------- updates
 
     /**
