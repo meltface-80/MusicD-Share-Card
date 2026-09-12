@@ -68,30 +68,77 @@ class Sources(private val sources: List<Source>) {
     /** True when at least one source can see something. */
     fun anyZones(): Boolean = zones().isNotEmpty()
 
-    fun nowPlaying(preferId: String? = preferredZoneId): Playing? {
-        // The chosen zone first, so the common case — one room, picked,
-        // playing — costs one question to one source.
-        val chosen = preferId?.let { ask(it) }
-        if (chosen != null && chosen.state.isPlaying) return chosen
+    /**
+     * How much of a record an answer actually describes.
+     *
+     * THIS IS WHAT "ASK WHOEVER KNOWS" ACTUALLY MEANS, and the ordering of
+     * sources alone was not enough to deliver it. When Roon plays to a Sonos
+     * speaker BOTH sources see that room and both say "playing" — so a rule
+     * that returned the first playing answer returned whichever was asked
+     * first, and if the user had picked the Sonos zone that was a card headed
+     * with a session id while Roon sat there knowing the album.
+     *
+     * Ranking on the answer rather than on the source also means this does not
+     * depend on recognising a hash. `Didl.looksLikeStreamId` catches the shapes
+     * it knows; a source that reports some other kind of rubbish still loses to
+     * one that reports an album and an artist.
+     */
+    internal fun quality(playing: Playing): Int = when {
+        playing.album.isNotEmpty() && playing.artist.isNotEmpty() -> 3
+        playing.artist.isNotEmpty() -> 2
+        playing.album.isNotEmpty() -> 1
+        playing.track.isNotEmpty() -> 0
+        else -> -1
+    }
 
+    fun nowPlaying(preferId: String? = preferredZoneId): Playing? {
+        val chosen = preferId?.let { ask(it) }
+
+        // THE FAST PATH, and it is narrow on purpose: the chosen room is
+        // playing AND it told us both the album and the artist. There is
+        // nothing a second source could add, so nothing else is disturbed.
+        if (chosen != null && chosen.state.isPlaying && quality(chosen) == FULL) return chosen
+
+        // Otherwise every source gets a say, and the best answer wins rather
+        // than the first one.
+        val candidates = ArrayList<Playing>()
+        chosen?.let { candidates += it }
         for (source in sources) {
             val playing = runCatching { source.nowPlaying(null) }
                 .onFailure { Log.w(TAG, "${source.name} would not answer: ${it.message}") }
                 .getOrNull() ?: continue
-            // Do not re-report the chosen zone as though it were a second
-            // opinion; it was already asked and was not playing.
-            if (playing.state.isPlaying && playing.zoneId != chosen?.zoneId) return playing
+            if (candidates.none { it.zoneId == playing.zoneId && it.source == playing.source }) {
+                candidates += playing
+            }
         }
+        if (candidates.isEmpty()) return null
 
-        if (chosen != null && !chosen.isEmpty) return chosen
-
-        // Nothing is playing anywhere. A paused room with a record still on its
-        // transport is a better card than an empty screen.
-        for (source in sources) {
-            val playing = runCatching { source.nowPlaying(null) }.getOrNull() ?: continue
-            if (!playing.isEmpty) return playing
+        // Playing beats paused; a fuller answer beats a thinner one; and on a
+        // tie the source order decides, which is why Roon is listed first.
+        val best = candidates
+            .filter { quality(it) >= 0 }
+            .minWithOrNull(
+                compareBy(
+                    { if (it.state.isPlaying) 0 else 1 },
+                    { -quality(it) },
+                    { sources.indexOfFirst { s -> s.name == it.source }.let { i -> if (i < 0) 99 else i } }
+                )
+            )
+        if (best == null) {
+            // Every answer described nothing — a transport that is "playing"
+            // with no album, no artist and no title. Returning one of those
+            // would draw a blank card that looks like the app working. The
+            // page says nothing is playing, which is the truth.
+            Log.i(TAG, "${candidates.size} answer(s), none of them describing a record")
+            return null
         }
-        return chosen
+        if (chosen != null && best.source != chosen.source) {
+            Log.i(
+                TAG,
+                "${best.source} describes ${best.zoneName} better than ${chosen.source} did"
+            )
+        }
+        return best
     }
 
     /** Ask whichever source owns this prefixed id. */
@@ -105,5 +152,8 @@ class Sources(private val sources: List<Source>) {
 
     private companion object {
         const val TAG = "Sources"
+
+        /** Both the album and the artist — nothing more is wanted. */
+        const val FULL = 3
     }
 }

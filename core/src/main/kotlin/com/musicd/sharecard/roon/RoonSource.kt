@@ -76,11 +76,24 @@ class RoonSource(private val client: RoonClient) : Source {
         )
     }
 
+    /**
+     * What the user has to do about Roon, in one sentence, or nothing.
+     *
+     * EVERY stage that is not PAIRED gets a line. Only AWAITING_APPROVAL did at
+     * first, which meant a Core that was never found, or one that refused the
+     * registration, said nothing at all — and "Roon is not working" with no
+     * explanation is exactly the position this app kept putting people in.
+     */
     override fun notice(): String? = when (client.status.stage) {
         RoonStage.AWAITING_APPROVAL ->
             "Roon found. Enable \u201CMusicD Share Card\u201D in Roon \u2192 Settings \u2192 " +
-                "Extensions to let it read what is playing."
-        else -> null
+                "Extensions, then press refresh."
+        RoonStage.DISCOVERING -> "Looking for your Roon Core\u2026"
+        RoonStage.CONNECTING -> "Connecting to Roon\u2026"
+        RoonStage.ERROR ->
+            "Roon: " + (client.status.detail ?: "not connected") + "."
+        RoonStage.IDLE -> "Roon has not started looking yet."
+        RoonStage.PAIRED -> null
     }
 
     /**

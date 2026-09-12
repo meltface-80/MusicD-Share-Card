@@ -72,8 +72,22 @@ was simply not there, however carefully the DIDL was parsed.
   `SonosSource` is right for what the speakers stream themselves — Spotify
   Connect, Apple Music via the Sonos app, radio. `UpnpSource` is the same
   conversation with any DLNA renderer.
-- **Roon is asked FIRST, and that ordering is load-bearing.** Both it and Sonos
-  can see a room Roon is playing to; only one of them knows the record.
+- **The BEST answer wins, not the first — see `Sources.quality`.** Source order
+  alone was never enough: when Roon plays to a Sonos speaker both sources see
+  that room and both say "playing", and the chosen zone was asked before any
+  ordering applied. With the Sonos zone picked, that shipped a card headed with
+  a session id while Roon sat there knowing the album. Answers are ranked
+  album+artist > artist > album > title > nothing, playing beats paused, and the
+  source order is only the tie-break. Ranking the ANSWER also means this does
+  not depend on `looksLikeStreamId` recognising every shape of rubbish.
+- **An answer describing nothing is never drawn.** A blank card looks like the
+  app working; "nothing is playing" is the truth.
+- **`buildActions` must not clear `hintEl` unconditionally.** It did, which wiped
+  a source's notice a moment after it was set — so on Android a Roon Core
+  waiting to be approved said nothing at all, and Roon looked simply ignored.
+- **`Source.notice()` covers EVERY stage that is not paired**, not just
+  AWAITING_APPROVAL. A Core that was never found or that refused registration
+  used to say nothing, which is the same dead end as before.
 - **Zone ids are prefixed with their source** (`roon:…`, `sonos:…`) so two
   sources cannot collide on one room, and the picker says which is which.
 - **Roon's first run needs a human.** The Core does not answer `register` until
