@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The card itself: a sleeve on the left, three lines of text on the right.
+  The card itself: a sleeve on the left, a music note on the right.
+
+  It was three lines of text, standing for the title, the artist and the blurb.
+  Nobody read them as anything — at launcher size they are three grey dashes —
+  so the note says "music" where they said nothing.
 
   A vector rather than the usual stack of five PNG densities, because it is a
   shape made of rectangles and there is nothing a rasteriser would do better.
@@ -25,14 +29,21 @@
         android:fillColor="#16191D"
         android:pathData="M42,50 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
 
-    <!-- The three lines of text: title, artist, blurb -->
+    <!--
+      The note. THESE NUMBERS ARE tools/make-icons.py's NUMBERS: that script
+      draws the PNGs iOS needs from the same geometry, and the two only stay
+      one icon for as long as both are changed together.
+    -->
+    <!-- Head -->
     <path
         android:fillColor="#E8EDF2"
-        android:pathData="M64,42 L81,42 A2,2 0 0 1 81,46 L64,46 A2,2 0 0 1 64,42 Z" />
+        android:pathData="M66.5,64.5 m-6.5,0 a6.5,5.2 0 1,0 13,0 a6.5,5.2 0 1,0 -13,0" />
+    <!-- Stem -->
     <path
-        android:fillColor="#9AA2AB"
-        android:pathData="M64,52 L77,52 A2,2 0 0 1 77,56 L64,56 A2,2 0 0 1 64,52 Z" />
+        android:fillColor="#E8EDF2"
+        android:pathData="M71,40.75 A1.75,1.75 0 0 1 74.5,40.75 L74.5,63.25 A1.75,1.75 0 0 1 71,63.25 Z" />
+    <!-- Flag -->
     <path
-        android:fillColor="#9AA2AB"
-        android:pathData="M64,62 L81,62 A2,2 0 0 1 81,66 L64,66 A2,2 0 0 1 64,62 Z" />
+        android:fillColor="#E8EDF2"
+        android:pathData="M74.5,39 C79.5,42 81,47.5 78.5,53 C80,47.5 78,44.5 74.5,45.5 Z" />
 </vector>

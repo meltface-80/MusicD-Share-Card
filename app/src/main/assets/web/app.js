@@ -92,7 +92,15 @@
       download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
       search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
       send: '<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>',
-      cog: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>'
+      /*
+       * Feather's settings icon, verbatim.
+       *
+       * What was here was a hand-shortened copy of it — 1.6 where the
+       * arcs need 1.65, .1 where they need .06 — and those arcs are
+       * large-arc sweeps, so rounding them turned the teeth into loops.
+       * It drew a flower. Do not retype this path; copy it.
+       */
+      cog: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>'
     };
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]}</svg>`;
@@ -393,10 +401,12 @@
    * when the app is not installed. That fallback is the reason none of these
    * is a spotify:// or qobuz:// custom scheme.
    *
-   * "FIND ON", NOT "OPEN IN". Every one of these is a pre-filled search, not
-   * the album's own page, because that would need each service's own id for
-   * it. The label says so rather than implying more than it does. Pitchfork is
-   * the exception and is set apart: that link is the review itself.
+   * A PRE-FILLED SEARCH, mostly. Five of the six go to the service's own
+   * search rather than the album's page, because that would need each
+   * service's own id for it — so the row is headed "Find it on" rather than
+   * promising more than it delivers. Qobuz is the exception once its id
+   * arrives (see upgradeQobuz) and Pitchfork is set apart entirely: that link
+   * is the review itself.
    */
   function buildLinks(extras) {
     linksEl.innerHTML = "";
@@ -432,9 +442,9 @@
    * The search link lands on the Qobuz download store's search page and never
    * opens the app, because there IS no search route on the host the app claims
    * — only /album/<id>. So the id is fetched separately, off Qobuz's own public
-   * search page, and the chip is swapped for an open.qobuz.com link when it
-   * arrives. It says "Qobuz ↗" until then and "Open in Qobuz" after, because a
-   * search and the record itself are not the same promise.
+   * search page, and the chip's href is swapped for an open.qobuz.com link
+   * when it arrives. The LABEL does not change: the tap lands on the record
+   * either way, and on the search only when Qobuz has never heard of it.
    *
    * SEPARATE FROM THE CARD, DELIBERATELY. That lookup is rate-gated to one
    * request every second and a half; folding it into /api/extras would hold the
@@ -454,8 +464,12 @@
       // The chip may have been rebuilt while that was in flight.
       const now = linksEl.querySelector('[data-service="qobuz"]');
       if (!now) return;
+      // The href changes and the label does not. It said "Open in Qobuz"
+      // here, which made one chip in the row shout while the other five did
+      // not, for a difference nobody has to care about: the tap lands on the
+      // record either way, and on the search only when Qobuz has never heard
+      // of it.
       now.href = data.url;
-      now.textContent = "Open in Qobuz";
     } catch (e) {
       // No upgrade is a fine outcome: the search link is still there.
     }
