@@ -195,10 +195,17 @@ was simply not there, however carefully the DIDL was parsed.
   version put Save below the fold behind three paragraphs of prose, and a
   settings screen you have to scroll to finish is one people abandon half done.
   Short fields pair across the width; every explanation is one line.
-- **iOS needs a real PNG icon.** `apple-touch-icon` will not take an SVG or an
-  adaptive icon, and without one the Home Screen shows a screenshot or a bare
-  letter. `app/src/main/assets/web/icons/` is generated from the same geometry
-  as `ic_launcher_foreground.xml`, so the two platforms show one icon.
+- **iOS needs a real PNG icon, and `tools/make-icons.py` draws it.**
+  `apple-touch-icon` will not take an SVG or an adaptive icon, and without one
+  the Home Screen shows a screenshot or a bare letter. The PNGs in
+  `app/src/main/assets/web/icons/` are GENERATED from the same numbers as
+  `ic_launcher_foreground.xml` — run the script after changing either, and
+  change both, or the two platforms quietly stop showing one icon.
+- **Do not retype an SVG path; copy it.** The settings cog was a hand-shortened
+  Feather icon — `1.6` where its arcs need `1.65`, `.1` where they need `.06` —
+  and those are large-arc sweeps, so rounding them turned the teeth into loops.
+  It drew a flower on every card for six releases and no test noticed, because
+  nothing here renders an icon.
 - **A webhook can choose its display name and avatar; it CANNOT drop the APP
   tag.** Discord marks every webhook message that way on purpose, so a reader
   can tell a person from an integration, and no field turns it off. Posting as
