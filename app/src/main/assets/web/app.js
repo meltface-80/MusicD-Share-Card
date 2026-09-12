@@ -71,7 +71,17 @@
 
   // --------------------------------------------------------------- helpers
 
-  function show(html) { stage.innerHTML = html; }
+  /*
+   * The page does not scroll — see the body rule in style.css — and the
+   * diagnostics are the single exception. They are a wall of facts meant to be
+   * read off the screen of a device in another room and typed out, so clipping
+   * them would be worse than the scrolling they replace. Decided here, from
+   * what actually went into the stage, rather than by a caller remembering to.
+   */
+  function show(html) {
+    stage.innerHTML = html;
+    stage.classList.toggle("scrolls", !!stage.querySelector(".diag"));
+  }
 
   function busy(on) {
     refresh.classList.toggle("spinning", on);
@@ -633,7 +643,7 @@
     simEl.innerHTML = "";
     const label = document.createElement("p");
     label.className = "links-label";
-    label.textContent = "If you like this";
+    label.textContent = "If you like this, try these";
     simEl.appendChild(label);
 
     for (const act of acts) {
@@ -646,6 +656,61 @@
       simEl.appendChild(link(act.url, actLabel(act), ""));
     }
     simEl.classList.remove("hidden");
+    fitSuggestions();
+    // Manrope is a webfont, and a width measured in the fallback face is the
+    // wrong width. The card's own render waits for it, so by here it is
+    // normally in — this is for the run where it is not.
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(fitSuggestions).catch(() => { /* fallback face it is */ });
+    }
+  }
+
+  /*
+   * SIZE THE TYPE SO THE LONGEST SUGGESTION FILLS ITS CHIP.
+   *
+   * The three chips are full width, and at one fixed size the longest of them
+   * wraps or clips while the shortest floats in a sea of nothing. What is
+   * wanted is the size at which the longest exactly fits — and CSS has no way
+   * to ask for that, so it is measured.
+   *
+   * MEASURED ON A CANVAS, NOT BY LAYING TEXT OUT AND READING IT BACK. A canvas
+   * gives the width of a string in one call, without touching the DOM, so
+   * there is no write-read-write cycle and nothing reflows twice. Measure once
+   * at a big size and scale: text width is linear in font size for the same
+   * string and family.
+   *
+   * The size is set on the ROW and inherited by all three, which is the whole
+   * point — sizing each chip to its own text would make "Moby · Disco Lies"
+   * enormous next to "The Chemical Brothers · Live in Leicester 1995".
+   */
+  const FIT_MIN = 9.5;
+  const FIT_MAX = 16;
+  const FIT_PROBE = 100;
+  let fitCanvas = null;
+
+  function fitSuggestions() {
+    const chips = simEl.querySelectorAll("a");
+    if (!chips.length) return;
+
+    // Inner width of a chip: the row's width less this chip's own padding and
+    // border. Taken from a real chip so the CSS stays the one source of it.
+    const style = getComputedStyle(chips[0]);
+    const chrome = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) +
+      parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+    const room = simEl.clientWidth - chrome;
+    if (!(room > 0)) return;
+
+    fitCanvas = fitCanvas || document.createElement("canvas");
+    const ctx = fitCanvas.getContext("2d");
+    if (!ctx) return;
+    ctx.font = style.fontWeight + " " + FIT_PROBE + "px " + style.fontFamily;
+
+    let widest = 0;
+    for (const chip of chips) widest = Math.max(widest, ctx.measureText(chip.textContent).width);
+    if (!(widest > 0)) return;
+
+    const size = Math.min(FIT_MAX, Math.max(FIT_MIN, FIT_PROBE * room / widest));
+    simEl.style.fontSize = size.toFixed(2) + "px";
   }
 
   function actLabel(act) {
@@ -1280,6 +1345,19 @@
   for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
     document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
   }
+
+  /*
+   * Rotating the phone changes the width the suggestions were fitted to, so
+   * the size is recomputed. This redraws NOTHING and asks the network for
+   * NOTHING — it reads three strings and sets one font size. It is not the
+   * banned kind of listener: those reload the card when the app comes back,
+   * and this one cannot, because it does not know what is playing.
+   */
+  let refit = null;
+  window.addEventListener("resize", () => {
+    if (refit) clearTimeout(refit);
+    refit = setTimeout(fitSuggestions, 120);
+  });
 
   // AFTER the first load, not beside it: whether this browser may ask the
   // device to check comes back with the webhook list, which load() fetches.

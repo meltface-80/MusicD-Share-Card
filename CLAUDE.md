@@ -302,6 +302,30 @@ was simply not there, however carefully the DIDL was parsed.
   not clip. The old `@media (max-width: 420px)` rule that gave each button
   `flex: 1 1 100%` is gone; it was what put them one per row on every phone
   this runs on.
+- **THE PAGE DOES NOT SCROLL, AND THE CARD IS WHAT GIVES WAY.** `body` is a
+  fixed `100dvh` with `overflow: hidden` and `overscroll-behavior: none` —
+  the second stops iOS rubber-banding a page that has nowhere to go. That is
+  only safe because `.stage` is `flex: 0 1 auto` with `min-height: 90px`: the
+  card is the one thing here that can be smaller without anything being lost,
+  so on a short screen it shrinks (letterboxed by `object-fit: contain`) rather
+  than the links and suggestions being cut off. Verified by rendering at
+  360x620, where the card comes down to 96px and every row is still there.
+- **`100dvh`, NEVER `100vh`, ON iOS.** `100vh` is the height with the browser
+  bars retracted — taller than what can actually be seen — so a page cut to it
+  hides its own last row behind the toolbar. `dvh` is the live value.
+- **THE DIAGNOSTICS ARE THE ONE THING ALLOWED TO SCROLL.** They are a wall of
+  facts meant to be read off the screen of a device in another room and typed
+  out, so clipping them is worse than the scrolling they replace. `show()`
+  decides it from what actually went into the stage — `stage.classList.toggle
+  ("scrolls", …)` — rather than trusting a caller to remember.
+- **THE SUGGESTION TYPE IS MEASURED, NOT CHOSEN.** The three chips span the
+  full width, and at any one fixed size the longest clips while the shortest
+  floats in nothing. `fitSuggestions()` measures the longest label ON A CANVAS
+  — one call, no DOM write-read-write — and sets the size on the ROW so all
+  three inherit it. Sizing each chip to its own text would make "Moby · Disco
+  Lies" enormous beside "The Chemical Brothers · Live in Leicester 1995". It is
+  re-run on resize and again on `document.fonts.ready`, because a width
+  measured in the fallback face is the wrong width.
 - **THE ACTION ROW IS UNIFORM ON BOTH PLATFORMS, and the filled Share button
   was the last thing making them differ.** iOS has no Share button at all —
   its share sheet is reached by holding the card — so it draws Download, the
