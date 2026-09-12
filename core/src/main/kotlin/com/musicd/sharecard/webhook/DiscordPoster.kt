@@ -95,6 +95,62 @@ class DiscordPoster(private val http: OkHttpClient = webhookHttpClient()) {
     }
 
     /**
+     * Give the webhook a picture, from a photo rather than a URL.
+     *
+     * WHY THIS IS A PATCH AND NOT `avatar_url`. Discord fetches `avatar_url`
+     * from ITS OWN servers, so a picture this app is hosting on somebody's home
+     * network is invisible to it — it would silently fall back to the default
+     * avatar, which is exactly the kind of failure that looks like a bug in
+     * this app. And a photo on a phone has no public URL at all, so that route
+     * cannot work for the thing people actually want to use.
+     *
+     * Editing the webhook instead hands Discord the bytes. It stores them on
+     * its own CDN and uses them for every message afterwards, so nothing has to
+     * stay reachable and nothing has to be re-sent.
+     *
+     * [dataUri] must be a `data:image/...;base64,` string — the form Discord
+     * documents for this field. The page produces it from a chosen photo, and
+     * scales it down on the way: 128px is what Discord wants, and a phone
+     * camera produces something several thousand pixels wide.
+     */
+    fun setAvatar(webhook: Webhook, dataUri: String, name: String = ""): Outcome {
+        if (!dataUri.startsWith("data:image/")) {
+            return Outcome(false, 0, "That is not an image.")
+        }
+        if (dataUri.length > MAX_AVATAR_CHARS) {
+            return Outcome(false, 0, "That picture is too large — choose a smaller one.")
+        }
+
+        val payload = buildString {
+            append('{')
+            append("\"avatar\":").append(quote(dataUri))
+            if (name.isNotEmpty()) append(",\"name\":").append(quote(name))
+            append('}')
+        }
+
+        val request = Request.Builder()
+            .url(webhook.url)
+            .header("User-Agent", USER_AGENT)
+            .patch(payload.toRequestBody(JSON))
+            .build()
+
+        return try {
+            http.newCall(request).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                if (response.isSuccessful) {
+                    Log.i(TAG, "set the picture on ${webhook.name}")
+                    Outcome(true, response.code, "Picture updated.")
+                } else {
+                    Log.w(TAG, "avatar on ${webhook.name} -> ${response.code}: ${text.take(200)}")
+                    Outcome(false, response.code, explain(response.code, text))
+                }
+            }
+        } catch (e: Exception) {
+            Outcome(false, 0, "Could not reach Discord: ${e.message}")
+        }
+    }
+
+    /**
      * Turn Discord's status into something worth reading.
      *
      * A raw "404" tells somebody nothing; "that webhook has been deleted" tells
@@ -129,12 +185,21 @@ class DiscordPoster(private val http: OkHttpClient = webhookHttpClient()) {
     private companion object {
         const val TAG = "Discord"
         val PNG = "image/png".toMediaType()
+        val JSON = "application/json".toMediaType()
         const val USER_AGENT = "MusicDShareCard (https://github.com/meltface-80/New)"
 
         /** Discord's own limit for a webhook attachment on a free server. */
         const val MAX_BYTES = 8 * 1024 * 1024
 
         const val MAX_CONTENT = 1800
+
+        /**
+         * A 128px avatar is a few tens of kilobytes once base64'd. Generous for
+         * that and far below anything Discord would refuse, so a phone photo
+         * that was never scaled down is caught here rather than as an opaque
+         * 400 from Discord.
+         */
+        const val MAX_AVATAR_CHARS = 400_000
     }
 }
 

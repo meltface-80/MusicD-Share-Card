@@ -329,6 +329,7 @@ class CardApi(
                 Json.obj(JSONObject().put("ok", true))
             }
             request.method == "POST" && action == "post" -> postCard(request, webhook)
+            request.method == "POST" && action == "avatar" -> setAvatar(request, webhook)
             else -> Json.error(405, "That method is not used here.")
         }
     }
@@ -355,6 +356,28 @@ class CardApi(
         } else {
             // 502: this app is fine, the other end refused. A 500 would send
             // somebody looking at the wrong thing.
+            Json.error(502, outcome.detail)
+        }
+    }
+
+    /**
+     * Give a webhook a picture from an uploaded photo.
+     *
+     * Gated, like adding one: it changes the webhook on Discord's side, and
+     * that is configuration rather than an everyday tap.
+     *
+     * The body is a `data:image/...;base64,` string the page produced by
+     * scaling the chosen photo down — the scaling happens there because the
+     * page already has a canvas and this module has no image decoder at all.
+     */
+    private fun setAvatar(request: Request, webhook: Webhook): Response {
+        if (!access.mayConfigure(request)) return needsPin()
+        val dataUri = request.bodyText.trim()
+        if (dataUri.isEmpty()) return Json.error(400, "No picture was sent.")
+        val outcome = discord.setAvatar(webhook, dataUri, webhook.username)
+        return if (outcome.ok) {
+            Json.obj(JSONObject().put("ok", true).put("detail", outcome.detail))
+        } else {
             Json.error(502, outcome.detail)
         }
     }

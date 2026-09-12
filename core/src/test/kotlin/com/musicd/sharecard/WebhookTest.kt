@@ -246,6 +246,47 @@ class WebhookTest {
         assertEquals("", WebhookUrls.validateAvatar(""))
     }
 
+    /**
+     * A photo, not a URL.
+     *
+     * Discord fetches an `avatar_url` from its own servers, so a picture this
+     * app served from a home network would be invisible to it — and a photo on
+     * a phone has no URL at all. Editing the webhook hands Discord the bytes
+     * instead, and it keeps them.
+     */
+    @Test
+    fun `an uploaded picture is PATCHed onto the webhook itself`() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        val outcome = DiscordPoster(OkHttpClient())
+            .setAvatar(hook(), "data:image/png;base64,iVBORw0KGgo=", "Menzies")
+        assertTrue(outcome.detail, outcome.ok)
+
+        val sent = server.takeRequest()
+        assertEquals("editing the webhook, not posting to it", "PATCH", sent.method)
+        val body = sent.body.readUtf8()
+        assertTrue("the bytes must be sent: $body", body.contains("data:image/png;base64"))
+        assertTrue("and the name alongside them", body.contains("Menzies"))
+    }
+
+    @Test
+    fun `something that is not an image is refused before Discord sees it`() {
+        val outcome = DiscordPoster(OkHttpClient())
+            .setAvatar(hook(), "https://example.com/me.png")
+        assertFalse(outcome.ok)
+        assertEquals("nothing should have been sent", 0, server.requestCount)
+    }
+
+    @Test
+    fun `an unscaled phone photo is caught here, not as an opaque 400`() {
+        // A camera photo is several thousand pixels wide; the page scales it to
+        // 128 before sending. One that skipped that is refused with a reason.
+        val huge = "data:image/png;base64," + "A".repeat(500_000)
+        val outcome = DiscordPoster(OkHttpClient()).setAvatar(hook(), huge)
+        assertFalse(outcome.ok)
+        assertTrue(outcome.detail, outcome.detail.contains("too large"))
+        assertEquals(0, server.requestCount)
+    }
+
     @Test
     fun `a deleted webhook is reported in words, not as a status code`() {
         server.enqueue(MockResponse().setResponseCode(404).setBody("{}"))

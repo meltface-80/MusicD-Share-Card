@@ -302,16 +302,26 @@ body {
 
 /* ----------------------------------------------------------- webhook panel
  *
- * A URL typed in here is a credential — anyone holding a Discord webhook URL
- * can post to that channel from anywhere, for as long as it exists. It is sent
- * once and never comes back: the list shows a mask, and there is deliberately
- * no "reveal" control, because the page has nothing to reveal.
+ * BUILT TO FIT ON A PHONE WITHOUT SCROLLING. The first version was three
+ * paragraphs and five stacked fields, which put Save below the fold — a
+ * settings screen you have to scroll to finish is one people abandon half
+ * done. Short fields are paired across the width, every explanation is one
+ * line, and the note sits under the buttons rather than above them.
+ *
+ * A URL typed here is a credential — anyone holding a Discord webhook URL can
+ * post to that channel from anywhere. It is sent once and never comes back:
+ * the list shows a mask, and there is deliberately no "reveal" control,
+ * because the page has nothing to reveal.
  */
-.wh h3:first-child { margin-top: 0; }
+.wh {
+  padding: 16px;
+  text-align: left;
+  width: 100%;
+}
 
 .wh-list {
   list-style: none;
-  margin: 0 0 4px;
+  margin: 0 0 10px;
   padding: 0;
 }
 
@@ -319,14 +329,14 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
   border-radius: 10px;
   background: #1e2228;
   border: 1px solid var(--line);
 }
 
-.wh-name { color: var(--text); font-weight: 600; flex: none; }
+.wh-name { color: var(--text); font-weight: 600; font-size: 14px; flex: none; }
 
 /* The mask can be long and must never force the row wider than the panel. */
 .wh-mask {
@@ -340,25 +350,38 @@ body {
 
 .wh-del {
   flex: none;
+  width: 28px;
+  height: 28px;
   background: none;
   border: 1px solid var(--line);
   color: var(--text-dim);
   border-radius: 8px;
-  padding: 6px 10px;
   font: inherit;
-  font-size: 12px;
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
 }
 
-.wh-del:active { transform: scale(.96); }
+/* Two short fields across the width instead of two stacked rows. */
+.wh-row {
+  display: flex;
+  gap: 8px;
+}
 
-.wh-note { color: var(--text-dim); margin: 8px 0; line-height: 1.55; }
+.wh-row > * { flex: 1; min-width: 0; }
+
+.wh-note {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 10px 0 0;
+}
 
 .wh-input {
   display: block;
   width: 100%;
-  margin: 8px 0;
-  padding: 11px 12px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: #14171b;
@@ -372,10 +395,36 @@ body {
   border-color: var(--accent);
 }
 
+/*
+ * The photo picker. A styled label wrapping a hidden file input is the only
+ * way to restyle one — the input itself cannot be, and replacing it with a
+ * button plus a click() call loses the keyboard and accessibility behaviour
+ * the real control already has.
+ */
+.wh-file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  background: #14171b;
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.wh-file input { display: none; }
+
 .wh-buttons {
   display: flex;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .wh-buttons button {

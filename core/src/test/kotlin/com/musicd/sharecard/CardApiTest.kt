@@ -442,6 +442,37 @@ class CardApiTest {
     }
 
     @Test
+    fun `setting a picture is gated like every other change to a webhook`() {
+        val store = com.musicd.sharecard.webhook.WebhookStore.inMemory("123456")
+        val api = apiWith(store)
+        api.handle(post("/api/webhooks", """{"name":"Vinyl","url":"$discordUrl"}""", "127.0.0.1"))
+        val id = store.all()[0].id
+
+        val refused = Request(
+            "POST", "/api/webhooks/$id/avatar", emptyMap(), emptyMap(),
+            "data:image/png;base64,iVBORw0KGgo=".toByteArray(), false, "192.168.0.50"
+        )
+        assertEquals(401, api.handle(refused).status)
+    }
+
+    @Test
+    fun `the bundled icons are served, so iOS has one to use`() {
+        // Without an apple-touch-icon, adding the page to a Home Screen gets a
+        // screenshot or a bare letter.
+        val icons = CardApi(
+            Sources(emptyList()),
+            Metadata(metadataHttpClient(), "test"),
+            Pitchfork(metadataHttpClient(), "test"),
+            ArtProxy(metadataHttpClient()),
+            Assets { path -> if (path.startsWith("icons/")) byteArrayOf(1, 2, 3) else null },
+            "1.0.0"
+        )
+        val response = icons.handle(get("/icons/apple-touch-icon.png"))
+        assertEquals(200, response.status)
+        assertEquals("image/png", response.contentType)
+    }
+
+    @Test
     fun `extras with no album named is a bad request`() {
         assertEquals(400, api().handle(get("/api/extras")).status)
     }
