@@ -79,6 +79,13 @@
     </div>
   </div>
 
+  <!--
+    The iOS tip, and any notice a source has (a Roon Core waiting to be
+    approved). DIRECTLY UNDER THE CARD, because it is about the card: at the
+    foot of the page it sat below three rows of chips and read as a footer for
+    the whole screen rather than an instruction for the picture.
+  -->
+  <p class="hint" id="hint"></p>
   <p class="now" id="now"></p>
   <div class="actions" id="actions"></div>
 
@@ -94,8 +101,7 @@
     whole message and what it says is what is playing. Empty and hidden until
     the lookup answers, because it is asked for after the card is drawn.
   -->
-  <nav class="links similar hidden" id="similar" aria-label="If you like this"></nav>
-  <p class="hint" id="hint"></p>
+  <nav class="links similar hidden" id="similar" aria-label="If you like this, try these"></nav>
   <p class="err" id="err" role="status"></p>
 </main>
 

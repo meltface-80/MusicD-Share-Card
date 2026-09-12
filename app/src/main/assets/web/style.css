@@ -53,9 +53,29 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * ONE SCREEN, AND THE PAGE IS NOT ALLOWED TO SCROLL.
+ *
+ * Everything below the card is a fixed grid now and the whole UI fits, but
+ * "fits" was still leaving a page taller than the viewport by a few pixels on
+ * some phones, and iOS rubber-bands whatever is left. A fixed height with
+ * overflow hidden settles both, and `overscroll-behavior: none` stops the
+ * bounce on a page that genuinely has nowhere to go.
+ *
+ * 100dvh, NOT 100vh. On iOS 100vh is the height with the browser bars
+ * retracted — taller than what you can actually see — so a page cut to 100vh
+ * hides its own last row behind the toolbar. dvh is the live value.
+ *
+ * THE CARD IS WHAT GIVES WAY. .stage may shrink (see below), so on a short
+ * screen the picture gets smaller rather than the links and suggestions
+ * getting cut off. The one thing that must still scroll is the diagnostics,
+ * and it does — see .stage.scrolls.
+ */
 body {
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
   display: flex;
   flex-direction: column;
 }
@@ -195,24 +215,48 @@ body {
 
 .wrap {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   width: 100%;
   max-width: 980px;
   margin: 0 auto;
-  padding: 20px 16px 40px;
+  padding: 14px 16px 12px;
   padding-left: calc(16px + env(safe-area-inset-left));
   padding-right: calc(16px + env(safe-area-inset-right));
-  padding-bottom: calc(40px + env(safe-area-inset-bottom));
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
 }
 
+/*
+ * `flex: 0 1 auto` with `min-height: 0` is what makes the no-scroll rule safe:
+ * the card is the one thing on this page that can be smaller without anything
+ * being lost, so it is the one thing that gives way when the rows below it do
+ * not fit. A floor of 90px stops it collapsing to a line on a very short
+ * screen.
+ */
 .stage {
+  flex: 0 1 auto;
+  min-height: 90px;
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--line);
-  min-height: 220px;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/*
+ * THE EXCEPTION TO THE NO-SCROLL RULE. The diagnostics are a wall of facts
+ * that exists to be read off the screen of a device in another room and typed
+ * out; clipping it would be worse than the scrolling it replaces. Set by
+ * show() whenever what it put in the stage is a report.
+ */
+.stage.scrolls {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /*
@@ -232,6 +276,9 @@ body {
   display: block;
   width: 100%;
   height: auto;
+  /* Shrink with the stage rather than overflowing it, keeping 2:1. */
+  max-height: 100%;
+  object-fit: contain;
   /*
    * PUT BACK WHAT THE PAGE-WIDE RULE TAKES AWAY.
    *
@@ -300,6 +347,7 @@ body {
 
 .links-label {
   grid-column: 1 / -1;
+  text-align: center;
   margin: 0 0 2px;
   font-size: 12px;
   letter-spacing: .02em;
@@ -380,13 +428,26 @@ body {
  * NOT full width: these are suggestions, and a column of five screen-wide
  * buttons would shout louder than the card they sit under.
  */
+/*
+ * FULL WIDTH, AND THE LONGEST NAME SETS THE TYPE SIZE FOR ALL THREE.
+ *
+ * These were sized to their own content, so three suggestions of very
+ * different lengths left a ragged column against a full-width row of links
+ * above them. They now span the width, and the font size is computed once per
+ * row from the LONGEST label so that one exactly fills a chip — see
+ * fitSuggestions() in app.js. CSS cannot do that: there is no way to ask for
+ * "the size at which this text fits", so it is measured and set.
+ *
+ * The size is set on this element and inherited, which is what keeps all three
+ * the same: sizing each chip to its own text would make the short ones huge.
+ */
 .similar {
   display: grid;
-  grid-template-columns: max-content;
-  justify-content: center;
+  grid-template-columns: 1fr;
   align-items: stretch;
   gap: 6px;
   margin-top: 12px;
+  font-size: 12.5px;
 }
 
 .similar .links-label {
@@ -396,10 +457,15 @@ body {
 
 .similar a {
   font-weight: 500;
-  font-size: 12.5px;
+  font-size: inherit;
   color: var(--text-faint);
   white-space: nowrap;
   overflow-wrap: normal;
+  padding: 8px 10px;
+  /* A backstop only. The fit above should land exactly, but it is clamped at
+     a legible minimum, so a freakishly long pair of names must clip rather
+     than push the row wider than the screen. */
+  overflow: hidden;
 }
 
 .placeholder {
@@ -422,11 +488,18 @@ body {
   animation: spin 800ms linear infinite;
 }
 
+/*
+ * EVERY NOTE ON THIS PAGE IS CENTRED — the room caption, the two row
+ * headings, the iOS tip and the error line. Left-aligned, four short lines of
+ * grey text at different indents read as debris around the card; centred they
+ * read as captions belonging to it.
+ */
 .now {
-  margin: 14px 2px 0;
+  margin: 10px 2px 0;
   color: var(--text-dim);
   font-size: 13px;
   line-height: 1.5;
+  text-align: center;
 }
 
 .now b { color: var(--text); font-weight: 600; }
@@ -492,8 +565,26 @@ body {
 .actions button[disabled] { opacity: .5; cursor: default; }
 .actions svg { width: 17px; height: 17px; }
 
-.hint { color: var(--text-faint); font-size: 13px; margin: 12px 2px 0; line-height: 1.5; }
-.err  { color: var(--danger);     font-size: 13px; margin: 8px 2px 0; min-height: 1em; }
+.hint {
+  color: var(--text-faint);
+  font-size: 12.5px;
+  margin: 8px 2px 0;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* Nothing to say, no gap. The hint sits between the card and the room caption
+   now, and an empty paragraph there pushes them apart for no reason. */
+.hint:empty { display: none; }
+
+.err {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 8px 2px 0;
+  min-height: 0;
+  text-align: center;
+}
+.err:empty { display: none; }
 
 /*
  * There is no narrow-screen rule any more, and its absence is the point. It
