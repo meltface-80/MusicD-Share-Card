@@ -1,18 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The card itself: a sleeve on the left, a music note on the right.
+  The card itself: a sleeve on the left, a beamed pair of notes on the right.
 
   It was three lines of text, standing for the title, the artist and the blurb.
-  Nobody read them as anything — at launcher size they are three grey dashes —
-  so the note says "music" where they said nothing.
+  Nobody read them as anything — at launcher size they are three grey dashes.
+  It was then a single quaver, and its flag is a hairline curl: at the ~12dp a
+  home-screen icon gives it, the flag thinned to nothing and left a stem with a
+  blob on it. A beam is a solid bar, and two heads say "music" where one says
+  "a shape".
+
+  THESE NUMBERS ARE tools/make-icons.py's NUMBERS. That script draws the PNGs
+  iOS needs from the same geometry, and the two only stay one icon for as long
+  as both are changed together. Run it after touching this file.
 
   A vector rather than the usual stack of five PNG densities, because it is a
-  shape made of rectangles and there is nothing a rasteriser would do better.
-  It also keeps the APK free of binary assets that cannot be reviewed in a diff.
+  shape made of rectangles and ellipses and there is nothing a rasteriser would
+  do better. It also keeps the APK free of binary assets that cannot be reviewed
+  in a diff.
 
   Adaptive-icon geometry: the 108dp canvas is masked to a 72dp circle-ish shape
   by the launcher, so everything meaningful stays inside the middle 66dp — the
-  drawing below spans 27..81, which leaves the corners to be cropped.
+  drawing below spans 27..79, which leaves the corners to be cropped.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -23,27 +31,47 @@
     <!-- The sleeve -->
     <path
         android:fillColor="#D4A017"
-        android:pathData="M30,38 L54,38 A3,3 0 0 1 57,41 L57,67 A3,3 0 0 1 54,70 L30,70 A3,3 0 0 1 27,67 L27,41 A3,3 0 0 1 30,38 Z" />
+        android:pathData="M30,40 L48,40 A3,3 0 0 1 51,43 L51,65 A3,3 0 0 1 48,68 L30,68 A3,3 0 0 1 27,65 L27,43 A3,3 0 0 1 30,40 Z" />
     <!-- The label, so the sleeve reads as a record rather than a blank square -->
     <path
         android:fillColor="#16191D"
-        android:pathData="M42,50 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+        android:pathData="M39,54 m-3.9,0 a3.9,3.9 0 1,0 7.8,0 a3.9,3.9 0 1,0 -7.8,0" />
 
     <!--
-      The note. THESE NUMBERS ARE tools/make-icons.py's NUMBERS: that script
-      draws the PNGs iOS needs from the same geometry, and the two only stay
-      one icon for as long as both are changed together.
+      THE HEADS ARE TILTED, and that is the difference between this reading as
+      a note and reading as a blob with a tail. Every notehead in engraved
+      music is an ellipse leaning with its right end up; an upright one is a
+      shape nobody has seen on a stave.
+
+      android:rotation is CLOCKWISE, so this is -22 where the Python is +22.
     -->
-    <!-- Head -->
+    <group
+        android:pivotX="60.5"
+        android:pivotY="65.5"
+        android:rotation="-22">
+        <path
+            android:fillColor="#E8EDF2"
+            android:pathData="M60.5,65.5 m-5.6,0 a5.6,4.1 0 1,0 11.2,0 a5.6,4.1 0 1,0 -11.2,0" />
+    </group>
+    <group
+        android:pivotX="72.5"
+        android:pivotY="62.5"
+        android:rotation="-22">
+        <path
+            android:fillColor="#E8EDF2"
+            android:pathData="M72.5,62.5 m-5.6,0 a5.6,4.1 0 1,0 11.2,0 a5.6,4.1 0 1,0 -11.2,0" />
+    </group>
+
+    <!-- Stems, rising from the RIGHT of each head as they do below the middle line -->
     <path
         android:fillColor="#E8EDF2"
-        android:pathData="M66.5,64.5 m-6.5,0 a6.5,5.2 0 1,0 13,0 a6.5,5.2 0 1,0 -13,0" />
-    <!-- Stem -->
+        android:pathData="M64.2,41 L66.8,41 L66.8,65.5 L64.2,65.5 Z" />
     <path
         android:fillColor="#E8EDF2"
-        android:pathData="M71,40.75 A1.75,1.75 0 0 1 74.5,40.75 L74.5,63.25 A1.75,1.75 0 0 1 71,63.25 Z" />
-    <!-- Flag -->
+        android:pathData="M76.2,38 L78.8,38 L78.8,62.5 L76.2,62.5 Z" />
+
+    <!-- The beam, sloping with the two heads -->
     <path
         android:fillColor="#E8EDF2"
-        android:pathData="M74.5,39 C79.5,42 81,47.5 78.5,53 C80,47.5 78,44.5 74.5,45.5 Z" />
+        android:pathData="M64.2,41 L78.8,38 L78.8,43.5 L64.2,46.5 Z" />
 </vector>

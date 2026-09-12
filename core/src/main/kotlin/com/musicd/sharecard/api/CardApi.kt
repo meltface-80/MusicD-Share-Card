@@ -106,7 +106,14 @@ class CardApi(
         // Reading what version is out there changes nothing. Fetching an APK
         // and pointing Android's installer at it changes everything on the
         // device, so both of those are gated exactly like adding a webhook.
-        "/api/update/status" -> updateRoute(request) { Json.obj(it.status()) }
+        "/api/update/status" -> updateRoute(request) {
+            // onDevice is what the page hides the whole update bar on. The
+            // APK installs on THIS device, so a page open on an iPad across
+            // the house has nothing to offer: the button there asked for a PIN
+            // and then updated a machine in another room, which is not what
+            // anybody pressing it meant.
+            Json.obj(it.status().put("onDevice", access.isLoopback(request.remoteAddress)))
+        }
         // POST, not GET, even though the gate would hold either way: a GET that
         // installs software is one a link prefetch or a browser's speculative
         // fetch can fire on its own.

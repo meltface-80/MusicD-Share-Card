@@ -23,7 +23,11 @@ LABEL = (22, 25, 29, 255)
 NOTE = (232, 237, 242, 255)   # --text
 
 CANVAS = 108.0
-SS = 8  # supersample, then downscale: PIL has no antialiased polygon fill
+SS = 8
+
+# Counter-clockwise, which leans a notehead's right end up. The Android vector
+# writes this as android:rotation="-22", because that one is clockwise.
+HEAD_TILT = 22  # supersample, then downscale: PIL has no antialiased polygon fill
 
 
 def bezier(p0, p1, p2, p3, steps=48):
@@ -49,19 +53,35 @@ def draw(size):
         return [x0 * k, y0 * k, x1 * k, y1 * k]
 
     # The sleeve, and a label so it reads as a record rather than a square.
-    pen.rounded_rectangle(box(27, 38, 57, 70), radius=3 * k, fill=SLEEVE)
-    pen.ellipse(box(37, 45, 47, 55), fill=LABEL)
+    pen.rounded_rectangle(box(27, 40, 51, 68), radius=3 * k, fill=SLEEVE)
+    pen.ellipse(box(35.1, 50.1, 42.9, 57.9), fill=LABEL)
 
-    # The note: head, stem, flag. An eighth note rather than three lines of
-    # text, which is what this said before and what nobody read as anything.
-    pen.ellipse(box(60, 59.3, 73, 69.7), fill=NOTE)
-    pen.rounded_rectangle(box(71, 39, 74.5, 65), radius=1.75 * k, fill=NOTE)
+    # A BEAMED PAIR, not a single quaver with a flag. The flag was tried and
+    # it is a hairline curl: at the ~12px a home-screen icon gives this note it
+    # thinned to nothing and left a stem with a blob on it. A beam is a solid
+    # bar, and two heads say "music" where one says "a shape".
+    #
+    # THE HEADS ARE TILTED. Every notehead in engraved music is an ellipse
+    # leaning with its right end up; an upright one is a shape nobody has seen
+    # on a stave, and that is what made the old one look wrong without being
+    # obviously wrong.
+    for cx, cy in ((60.5, 65.5), (72.5, 62.5)):
+        head = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        ImageDraw.Draw(head).ellipse(box(cx - 5.6, cy - 4.1, cx + 5.6, cy + 4.1), fill=NOTE)
+        image.alpha_composite(head.rotate(HEAD_TILT, resample=Image.BICUBIC,
+                                          center=(cx * k, cy * k)))
+    pen = ImageDraw.Draw(image)
 
-    flag = (
-        bezier((74.5, 39), (79.5, 42), (81, 47.5), (78.5, 53)) +
-        bezier((78.5, 53), (80, 47.5), (78, 44.5), (74.5, 45.5))
+    # Stems rise from the RIGHT of each head, which is where they go on notes
+    # sitting below the middle line.
+    pen.rectangle(box(64.2, 41, 66.8, 65.5), fill=NOTE)
+    pen.rectangle(box(76.2, 38, 78.8, 62.5), fill=NOTE)
+
+    # The beam, sloping with the two heads.
+    pen.polygon(
+        [(x * k, y * k) for x, y in ((64.2, 41), (78.8, 38), (78.8, 43.5), (64.2, 46.5))],
+        fill=NOTE
     )
-    pen.polygon([(x * k, y * k) for x, y in flag], fill=NOTE)
 
     return image.resize((size, size), Image.LANCZOS)
 

@@ -311,6 +311,31 @@ class CardApiTest {
         assertFalse(body.getBoolean("supported"))
     }
 
+    /**
+     * The update bar is drawn only on the device running the app, and this is
+     * the field it hangs on.
+     *
+     * The APK installs HERE. A page open on an iPad across the house is looking
+     * at software it cannot replace — its Update button asked for a PIN and
+     * then offered to update a machine in another room, which is not what
+     * anybody pressing it meant. Reported as "shows the update button, does
+     * nothing".
+     */
+    @Test
+    fun `only the device itself is told an update is its to install`() {
+        val api = apiWithUpdater()
+
+        val onDevice = api.handle(
+            Request("GET", "/api/update/status", emptyMap(), emptyMap(), ByteArray(0), false, "127.0.0.1")
+        )
+        assertTrue(JSONObject(String(onDevice.body, Charsets.UTF_8)).getBoolean("onDevice"))
+
+        val acrossTheHouse = api.handle(
+            Request("GET", "/api/update/status", emptyMap(), emptyMap(), ByteArray(0), false, "192.168.0.50")
+        )
+        assertFalse(JSONObject(String(acrossTheHouse.body, Charsets.UTF_8)).getBoolean("onDevice"))
+    }
+
     @Test
     fun `installing an update needs the PIN from anywhere but the device`() {
         // Adding a webhook is gated because a webhook URL is a credential.
