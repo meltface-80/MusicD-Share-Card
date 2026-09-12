@@ -1,7 +1,7 @@
 {
-  "version": "0.15.0",
-  "url": "https://raw.githubusercontent.com/meltface-80/MusicD-Share-Card/claude/sonos-share-card-android-e8h9jn/dist/musicd-share-card-0.15.0.apk",
-  "sha256": "849bf214987b5a07b3f844ebfae47b1b8fedb22295e9c2a5e2b80274dd4b84c3",
+  "version": "0.16.0",
+  "url": "https://raw.githubusercontent.com/meltface-80/MusicD-Share-Card/claude/sonos-share-card-android-e8h9jn/dist/musicd-share-card-0.16.0.apk",
+  "sha256": "0dcd604fc8c101e6815d0c180db91c24a69c8bb99abe94f05dc4542c8d4b7721",
   "signed": true,
-  "notes": "Built from 4eafb56adedfc81a5892c0ccb7f3394f96483d79."
+  "notes": "Built from 6f999ae70a8b99b8a844befaaa9089cda8d9cb63."
 }
