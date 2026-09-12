@@ -1,6 +1,7 @@
 package com.musicd.sharecard.api
 
 import com.musicd.sharecard.Log
+import com.musicd.sharecard.describe
 import com.musicd.sharecard.str
 import com.musicd.sharecard.api.Json.putOrNull
 import com.musicd.sharecard.http.HttpServer
@@ -73,7 +74,7 @@ class CardApi(
             // failed to initialise is an Error, and catching only Exception let
             // one escape all the way out and end the process.
             Log.w(TAG, "${request.path} threw: $e", e)
-            Json.error(500, "${e.javaClass.simpleName}: ${e.message ?: "no message"}")
+            Json.error(500, describe(e))
         }
     }
 

@@ -147,7 +147,7 @@ class CardService : Service() {
             // Loud, and never fatal: a service that dies here takes the whole
             // app with it, and the window's message is then the only clue left.
             Log.e(TAG, "the card server could not start", e)
-            startupError = "${e.javaClass.simpleName}: ${e.message}"
+            startupError = com.musicd.sharecard.describe(e)
             update("could not start — open the app")
         }
     }

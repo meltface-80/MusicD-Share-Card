@@ -399,7 +399,7 @@ class Pitchfork(
          * shape Pitchfork actually publishes. Bounded so a runaway match
          * cannot swallow the page.
          */
-        val RATING_OBJECT = Regex("\"ratingValue\"\\s*:\\s*\\{([^{}]{0,600})}")
+        val RATING_OBJECT = Regex("\"ratingValue\"\\s*:\\s*\\{([^{}]{0,600})\\}")
         val SCORE_IN = Regex("\"score\"\\s*:\\s*\"?([0-9]{1,2}(?:\\.[0-9])?)\"?")
         val BNM_FLAG = Regex("\"isBestNew(?:Music|Reissue)\"\\s*:\\s*true")
 
@@ -437,11 +437,11 @@ class Pitchfork(
         val ITEM = Regex("<item\\b[\\s\\S]*?</item>", RegexOption.IGNORE_CASE)
         val LINK = Regex("<link>([\\s\\S]*?)</link>", RegexOption.IGNORE_CASE)
         val TITLE = Regex("<title>([\\s\\S]*?)</title>", RegexOption.IGNORE_CASE)
-        val CDATA = Regex("<!\\[CDATA\\[([\\s\\S]*?)]]>")
+        val CDATA = Regex("<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>")
         val TAGS = Regex("<[^>]+>")
 
         /** A trailing "(…)" or "[…]" — the only place an edition is ever added. */
-        val TRAILING_BRACKET = Regex("\\s*(?:\\(([^()]*)\\)|\\[([^\\[\\]]*)])\\s*$")
+        val TRAILING_BRACKET = Regex("\\s*(?:\\(([^()]*)\\)|\\[([^\\[\\]]*)\\])\\s*$")
 
         /**
          * What makes a bracketed suffix an edition rather than part of the
