@@ -206,6 +206,12 @@ was simply not there, however carefully the DIDL was parsed.
   and those are large-arc sweeps, so rounding them turned the teeth into loops.
   It drew a flower on every card for six releases and no test noticed, because
   nothing here renders an icon.
+- **The card is the whole message.** The post used to carry "**Album** by
+  Artist" in Discord's `content`, so a line of text sat above the picture saying
+  exactly what the picture says, in worse type, on top of the thing it
+  describes. There is no caption any more and no route parameter for one.
+  `allowed_mentions` stays regardless: nothing here may notify a server, and a
+  field added later must not be what discovers that guard had gone.
 - **A webhook can choose its display name and avatar; it CANNOT drop the APP
   tag.** Discord marks every webhook message that way on purpose, so a reader
   can tell a person from an integration, and no field turns it off. Posting as

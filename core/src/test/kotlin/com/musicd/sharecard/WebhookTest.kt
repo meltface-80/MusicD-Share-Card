@@ -161,11 +161,18 @@ class WebhookTest {
 
     private fun hook() = Webhook("id", "Vinyl chat", server.url("/api/webhooks/1/token").toString())
 
+    /**
+     * THE CARD AND NOTHING ELSE.
+     *
+     * This used to put "**Album** by Artist" in the message's content, so
+     * Discord drew a line of text above the picture saying exactly what the
+     * picture says, in worse type. The card is the message.
+     */
     @Test
-    fun `the card is sent as a file, with the caption and no pings`() {
+    fun `the card is sent as a file, with no text above it and no pings`() {
         server.enqueue(MockResponse().setResponseCode(204))
         val outcome = DiscordPoster(OkHttpClient())
-            .post(hook(), byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47), "**Ænima** by TOOL")
+            .post(hook(), byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47))
         assertTrue(outcome.detail, outcome.ok)
 
         val sent = server.takeRequest()
@@ -173,10 +180,13 @@ class WebhookTest {
         val body = sent.body.readUtf8()
         assertTrue("must be multipart", sent.getHeader("Content-Type")!!.startsWith("multipart/form-data"))
         assertTrue("the picture is a file part", body.contains("files[0]"))
-        assertTrue("the caption rides along", body.contains("Ænima"))
-        // An album title containing "@everyone" must not become an announcement.
+        assertFalse("nothing may be written above the card", body.contains("\"content\""))
+        // Nothing here may notify a server, with or without text to ping from.
         assertTrue("pings must be suppressed", body.contains("\"allowed_mentions\""))
         assertTrue(body.contains("\"parse\":[]"))
+        // And the payload is still valid JSON with the content field gone.
+        val payload = Regex("\\{\"[\\s\\S]*?}}").find(body)!!.value
+        assertEquals("[parse]", org.json.JSONObject(payload).getJSONObject("allowed_mentions").keySet().toString())
     }
 
     /**
@@ -196,7 +206,7 @@ class WebhookTest {
             username = "Menzies",
             avatarUrl = "https://cdn.discordapp.com/avatars/1/2.png"
         )
-        DiscordPoster(OkHttpClient()).post(hook, byteArrayOf(1), "x")
+        DiscordPoster(OkHttpClient()).post(hook, byteArrayOf(1))
         val body = server.takeRequest().body.readUtf8()
         assertTrue("the name must be sent: $body", body.contains("\"username\":\"Menzies\""))
         assertTrue(body.contains("avatar_url"))
@@ -206,7 +216,7 @@ class WebhookTest {
     @Test
     fun `neither is sent when unset, so Discord's own settings still apply`() {
         server.enqueue(MockResponse().setResponseCode(204))
-        DiscordPoster(OkHttpClient()).post(hook(), byteArrayOf(1), "x")
+        DiscordPoster(OkHttpClient()).post(hook(), byteArrayOf(1))
         val body = server.takeRequest().body.readUtf8()
         assertFalse("an empty username would blank the webhook's own name", body.contains("username"))
         assertFalse(body.contains("avatar_url"))
@@ -290,7 +300,7 @@ class WebhookTest {
     @Test
     fun `a deleted webhook is reported in words, not as a status code`() {
         server.enqueue(MockResponse().setResponseCode(404).setBody("{}"))
-        val outcome = DiscordPoster(OkHttpClient()).post(hook(), byteArrayOf(1), "")
+        val outcome = DiscordPoster(OkHttpClient()).post(hook(), byteArrayOf(1))
         assertFalse(outcome.ok)
         assertTrue(outcome.detail, outcome.detail.contains("no longer exists"))
     }
@@ -298,14 +308,14 @@ class WebhookTest {
     @Test
     fun `rate limiting says to try again rather than looking broken`() {
         server.enqueue(MockResponse().setResponseCode(429).setBody("{}"))
-        val outcome = DiscordPoster(OkHttpClient()).post(hook(), byteArrayOf(1), "")
+        val outcome = DiscordPoster(OkHttpClient()).post(hook(), byteArrayOf(1))
         assertFalse(outcome.ok)
         assertTrue(outcome.detail, outcome.detail.contains("rate-limiting"))
     }
 
     @Test
     fun `an empty card is refused before anything is sent`() {
-        val outcome = DiscordPoster(OkHttpClient()).post(hook(), ByteArray(0), "")
+        val outcome = DiscordPoster(OkHttpClient()).post(hook(), ByteArray(0))
         assertFalse(outcome.ok)
         assertEquals("nothing should have been sent", 0, server.requestCount)
     }

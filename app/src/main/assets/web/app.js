@@ -681,12 +681,8 @@
     b.disabled = true;
     if (span) span.textContent = "Posting…";
     try {
-      const caption = current.album
-        ? "**" + current.album + "**" + (current.artist ? " by " + current.artist : "")
-        : "";
       const response = await fetch(
-        "/api/webhooks/" + encodeURIComponent(hook.id) + "/post?caption=" +
-          encodeURIComponent(caption),
+        "/api/webhooks/" + encodeURIComponent(hook.id) + "/post",
         { method: "POST", body: current.blob, headers: { "Content-Type": "image/png" } }
       );
       const body = await response.json().catch(() => ({}));
