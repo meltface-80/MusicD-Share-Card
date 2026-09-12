@@ -291,6 +291,47 @@ was simply not there, however carefully the DIDL was parsed.
   mistake takes next — `pageshow`, `focus`, an `onResume` in the shell — because
   no test here can open a browser and the failure mode is a card that quietly
   went away, which reads as the app working.
+- **THE PAGE IS ONE SCREEN, AND EVERY ROW BELOW THE CARD IS A FIXED GRID NOW.**
+  The action buttons wrapped, which on a phone meant Share on its own line,
+  then the webhook, then the cog — three rows of buttons pushing the links and
+  the suggestions off the bottom. They are one flex row of equal cells, and
+  `min-width: 0` is the half that actually stops the overhang: a flex item will
+  not shrink below its content without it. The LABEL WRAPS INSIDE THE BUTTON
+  and the icon sits above it, because one of those buttons is named by the user
+  — it is their webhook — so "Discord Now Playing" cannot be shortened and must
+  not clip. The old `@media (max-width: 420px)` rule that gave each button
+  `flex: 1 1 100%` is gone; it was what put them one per row on every phone
+  this runs on.
+- **`overflow-wrap: anywhere` BREAKS WORDS MID-WORD. Use `break-word`.**
+  `anywhere` lets the browser count a break between any two letters when it
+  computes how narrow a cell may be, so it takes them at the first opportunity:
+  "Bandcam / p" and "Qobu / z" in a four-column grid on a 360px phone.
+  `break-word` breaks only when a word genuinely will not fit. Both were tried
+  here and the difference was only visible in a render.
+- **THE LINKS ARE FOUR EVEN COLUMNS, and nine chips is three rows.** Eight —
+  Wikipedia plus the seven services — is two rows of four, which is what was
+  asked for. A Pitchfork review makes nine and the ninth starts a third row
+  with an orphan. That is the honest outcome of a fixed grid; five columns is
+  too narrow for the names on a phone, and the alternative was shortening
+  services' own names or an ellipsis that hides the word telling two of them
+  apart.
+- **THE PREFERRED SERVICE IS CHOSEN BY HOLDING ITS CHIP, and it is NOT a
+  setting.** The suggestion chips have to link somewhere and that was Qobuz for
+  everybody because Qobuz is first in the list. A settings screen for a one-tap
+  preference would be worse than the default it replaced — and this page's one
+  settings screen is a credential form. So the choice is made on the thing
+  being chosen: hold a chip, it takes a tick, and the suggestions follow it.
+  `-webkit-touch-callout: none` is set on `a[data-service]` ONLY, because held,
+  an iOS link raises a preview sheet instead — and the card image must keep its
+  callout, since that menu is the one way an iPhone copies the picture.
+- **THAT PREFERENCE LIVES IN `localStorage`, AND THAT IS TWO DECISIONS.** It is
+  per-DEVICE, so the phone and the iPad across the house may reasonably differ.
+  And it keeps every route a read: only three things in this app touch disk and
+  a fourth would have to go behind `Access.mayConfigure`, which a display
+  preference does not earn. Storage can throw outright in a private window, so
+  every touch of it is guarded and the default stands. The page names the
+  service on `/api/similar`; the URL is still built by `StreamingLinks` on the
+  server, where the storefront and encoding rules already have tests.
 - **A DIAGNOSTIC THE PAGE DOES NOT DRAW IS WORSE THAN NONE.** The
   similar-artist lookup gained `attempts()` and a `"similar"` key in the
   report, and the page was never taught to draw it — correct, served, and
