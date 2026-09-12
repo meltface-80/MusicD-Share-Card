@@ -34,4 +34,24 @@ dependencies {
 
 tasks.test {
     testLogging { events("passed", "failed", "skipped") }
+
+    /*
+     * THE SCANNED FILES ARE TEST INPUTS, and without this line they are not.
+     *
+     * Five tests here read source files from outside :core and assert things
+     * about them — FilePickerContractTest, ParserHardeningTest, JsonSafeTest,
+     * PageRefreshTest, DiagnosticsDrawnTest. They exist because the failures
+     * they catch cannot be reproduced on a JVM: there is no WebView, no
+     * browser and no Android runtime here.
+     *
+     * Gradle does not know they read anything. So editing app.js or
+     * MainActivity.kt and running :core:test left the task UP-TO-DATE and the
+     * scans simply did not run — green, having checked nothing. That was found
+     * by breaking one on purpose and watching it pass, which is the only reason
+     * it is not still true.
+     */
+    inputs.files(
+        fileTree("$rootDir/app/src/main/assets/web") { include("**/*.js") },
+        fileTree("$rootDir/app/src/main/java") { include("**/*.kt") }
+    ).withPropertyName("scannedSources").withPathSensitivity(PathSensitivity.RELATIVE)
 }

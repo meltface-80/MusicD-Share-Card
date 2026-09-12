@@ -291,6 +291,22 @@ was simply not there, however carefully the DIDL was parsed.
   mistake takes next — `pageshow`, `focus`, an `onResume` in the shell — because
   no test here can open a browser and the failure mode is a card that quietly
   went away, which reads as the app working.
+- **A DIAGNOSTIC THE PAGE DOES NOT DRAW IS WORSE THAN NONE.** The
+  similar-artist lookup gained `attempts()` and a `"similar"` key in the
+  report, and the page was never taught to draw it — correct, served, and
+  invisible to the one person who needed it, whose next report would say
+  "there is nothing under Similar artists" meaning "there is no such heading".
+  The device is normally in another room with no adb attached, so `/api/debug`
+  read off its screen IS the bug report. `DiagnosticsDrawnTest` scans for every
+  top-level key `Diagnostics` can put and refuses one the page never reads.
+- **THE SOURCE-SCANNING TESTS READ FILES GRADLE DOES NOT TRACK, and that made
+  them lie.** `FilePickerContractTest`, `ParserHardeningTest`, `JsonSafeTest`,
+  `PageRefreshTest` and `DiagnosticsDrawnTest` all read from `app/` at runtime.
+  Gradle knew nothing about it, so editing `app.js` or `MainActivity.kt` and
+  running `:core:test` left the task UP-TO-DATE: green, having checked nothing.
+  Found by breaking one on purpose and watching it pass. `core/build.gradle.kts`
+  now declares those trees as test inputs — keep that list in step with the
+  scans, and when proving a scan fails, be sure the task actually re-ran.
 - **`Normalize.namesOverlap` ANCHORS AT THE FRONT, and that was a fix.** It
   matched the shorter name anywhere inside the longer, so "The Who" overlapped
   "The Guess Who" — the exact pair its own comment had named as the case it
