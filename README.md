@@ -10,7 +10,7 @@ https://meltface-80.github.io/MusicD-Share-Card/
 
 Open it and you get a card for the record that's on: cover, title, artist, year,
 a short description from Wikipedia and a Pitchfork score where there is one.
-Then share it, copy it, save it, or send it straight to Discord.
+Then share it, copy it, save it, or post it to Discord with a webhook.
 
 Everything fits one screen — card, buttons, links, suggestions — and the page
 does not scroll. The card stays put until you press **Refresh**; leaving the app
