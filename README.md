@@ -19,7 +19,7 @@ It works out what's playing by asking whoever actually knows:
 
 ## Install
 
-[**Download musicd-share-card-0.14.0.apk**](dist/musicd-share-card-0.14.0.apk)
+[**Download musicd-share-card-0.15.0.apk**](dist/musicd-share-card-0.15.0.apk)
 and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 
@@ -64,6 +64,18 @@ Until you do, the app will say so rather than looking broken.
 
 It asks Roon for transport only. It doesn't browse your library, and it has no
 playback controls of any kind.
+
+## Finding the record elsewhere
+
+Under the card is a row of links for whatever is playing: the Pitchfork review
+the score came from, and a pre-filled search on Qobuz, TIDAL, Spotify, Apple
+Music, Amazon Music and Deezer. They open the app if you have it and the web
+player if you don't.
+
+They're searches rather than links to the album itself — that would need each
+service's own id for the record, which needs their APIs and their credentials.
+
+There's no Roon link: Roon has no web player and no link scheme to open.
 
 ## Discord
 

@@ -8,6 +8,7 @@ import com.musicd.sharecard.http.Request
 import com.musicd.sharecard.http.Response
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
+import com.musicd.sharecard.meta.StreamingLinks
 import com.musicd.sharecard.meta.Updater
 import com.musicd.sharecard.source.Playing
 import com.musicd.sharecard.webhook.DiscordPoster
@@ -17,6 +18,7 @@ import com.musicd.sharecard.webhook.WebhookStore
 import com.musicd.sharecard.webhook.WebhookUrls
 import com.musicd.sharecard.source.Sources
 import com.musicd.sharecard.source.ZoneRef
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -275,6 +277,25 @@ class CardApi(
                 .putOrNull("bioSource", extras?.album?.source)
                 .put("score", review?.score ?: JSONObject.NULL)
                 .put("isBestNewMusic", review?.isBestNewMusic ?: false)
+                // The review this app just read the score off. It was already
+                // fetched; not offering it meant somebody who wanted the words
+                // behind the number had to go and search for the page the app
+                // had open a second ago.
+                .putOrNull("reviewUrl", review?.url)
+                // Where to hear it. No lookup and no network — these are a
+                // function of the album and the artist, so they come back on
+                // the fast path too and are on screen with the first paint.
+                .put(
+                    "links",
+                    JSONArray(
+                        StreamingLinks.forAlbum(artist, album).map {
+                            JSONObject()
+                                .put("service", it.service)
+                                .put("name", it.name)
+                                .put("url", it.url)
+                        }
+                    )
+                )
                 // The page shows nothing different for a cached miss than for a
                 // lookup never made, but the distinction is what tells a
                 // developer whether fast=1 is working.

@@ -261,6 +261,55 @@ body {
   user-select: text;
 }
 
+/*
+ * FIND THIS ALBUM ON — the links row.
+ *
+ * Chips rather than a list, because seven services stacked would be taller
+ * than the card. They wrap, they are quiet (this is not the thing the page is
+ * for), and the Pitchfork one is set apart because it is the only one that
+ * goes to an actual page about this record rather than a search for it.
+ */
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.links-label {
+  width: 100%;
+  margin: 0 0 2px;
+  font-size: 12px;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.links a:active { transform: scale(.97); }
+
+/* The review, which is a page about this record and not a search for it. */
+.links a.links-review {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .placeholder {
   display: flex;
   flex-direction: column;

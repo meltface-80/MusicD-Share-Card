@@ -248,6 +248,24 @@ was simply not there, however carefully the DIDL was parsed.
   answering on port 1400, every one of them "would not describe the household".
   Nothing here reads a namespace URI; every lookup goes through `Xml.localName`,
   which strips the prefix off the tag name.
+- **A streaming link is an https link, never a custom scheme, and the HOST is
+  the part that goes wrong.** `spotify://` opens the app and does nothing at all
+  when the app is absent; an https link opens the app on a phone that has it and
+  the web player on one that does not. But a host whose app claims EVERY path
+  opens on its own home screen when the path is one it has no screen for — which
+  is how MusicD Remote Lite shipped `open.qobuz.com/search?q=` and made a link
+  that looked like it simply did nothing. `www.qobuz.com` publishes no
+  assetlinks and reaches the browser. Check `.well-known/assetlinks.json` and
+  `.well-known/apple-app-site-association` before adding a service.
+- **The search query is percent-encoded, and a slash is spent as a space.**
+  `URLEncoder` writes a space as `+`, which four of the six services take as a
+  literal plus because they carry the query in the PATH. And `%2F` is decoded
+  back into a path segment by Qobuz's own redirect, so "AC/DC" 404s. Both are in
+  `StreamingLinks.searchQuery` with a test each.
+- **Nothing links to Roon, deliberately.** Roon publishes no URL scheme and no
+  web player, so there is no link to build — and searching its library from here
+  would need the BROWSE service this app deliberately does not ask for. A link
+  that opened nothing would be worse than its absence.
 - **`sharecard.js` is a port, not this project's code.** It is MusicD Remote
   Lite's file, and it is the card's visual definition. A change here that is not
   also made there means the two apps stop producing the same picture — which is
