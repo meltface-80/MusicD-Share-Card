@@ -109,7 +109,11 @@ class CardService : Service() {
                 // So a crash is visible from the phone in the next room, not
                 // only on the device that crashed.
                 hostNotes = {
-                    CrashLog.read(this)?.let { listOf("Last crash:\n$it") }.orEmpty()
+                    CrashLog.read(this)?.let { listOf("Last crash:\n$it") }.orEmpty() +
+                        // Which door each outgoing link went through. "Opens
+                        // the app but not the album" has three causes that look
+                        // the same from outside — see LinkLog.
+                        LinkLog.lines().map { "Link: $it" }
                 },
                 // Roon's pairing token, so the extension is approved once and
                 // not on every restart.

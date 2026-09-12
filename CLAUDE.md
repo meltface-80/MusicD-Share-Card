@@ -272,6 +272,17 @@ was simply not there, however carefully the DIDL was parsed.
   last dozen lookups with their outcome, and the page shows them under "Album
   reviews". That distinction took a bug report to notice; it should not take a
   second one.
+- **The same goes for a link that opens the wrong screen.** "The Qobuz button
+  opens the app but not the album" has three causes that look identical from the
+  outside: the app-scheme intent was never built, nothing answered it, or Qobuz
+  answered and landed on Home anyway. `LinkLog` records which door each outgoing
+  link went through and `/api/debug` shows it. iOS reaching the album while
+  Android did not is what narrowed it — that asymmetry proved the album id was
+  right and only the Android hand-off was wrong.
+- **The Qobuz intent names the app.** `intent://…;package=com.qobuz.music` is
+  the shape open.qobuz.com's own page emits, and `setPackage` is the difference
+  between "whoever claims this scheme" and "that app". The bare scheme is still
+  tried after it, and the https link after that.
 - **QOBUZ NEEDS AN ALBUM ID; A SEARCH LINK CAN NEVER OPEN THAT APP.** Shipping
   `StreamingLinks` alone gave Qobuz the same pre-filled search as everyone else,
   and it landed on the download store's search page — reported from the field as

@@ -192,4 +192,16 @@ class QobuzAlbumTest {
             assertNull("\"$bad\" must not become an app link", QobuzAlbum.appUri(bad))
         }
     }
+
+    /**
+     * The intent is addressed to the Qobuz app, not left to whoever claims the
+     * scheme. That is the shape open.qobuz.com's own page emits —
+     * `intent://album/<id>#Intent;scheme=qobuzapp;package=com.qobuz.music;…` —
+     * and on Android the https link without it opens the app on its Home
+     * screen with the album dropped, which is what was reported.
+     */
+    @Test
+    fun `the app the scheme is meant for is named`() {
+        assertEquals("com.qobuz.music", QobuzAlbum.APP_PACKAGE)
+    }
 }

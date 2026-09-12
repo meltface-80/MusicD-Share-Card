@@ -145,6 +145,17 @@ class QobuzAlbum(private val http: OkHttpClient, private val userAgent: String) 
         const val OPEN = "https://open.qobuz.com/album/"
 
         /**
+         * The Qobuz Android app, so the intent can be addressed to it rather
+         * than left to implicit resolution.
+         *
+         * open.qobuz.com's own page emits
+         * `intent://album/<id>#Intent;scheme=qobuzapp;package=com.qobuz.music;…`
+         * — the package is part of the shape Qobuz itself uses, and it is the
+         * difference between "whoever claims this scheme" and "that app".
+         */
+        const val APP_PACKAGE = "com.qobuz.music"
+
+        /**
          * The same album as a `qobuzapp://` link, which is the door the Qobuz
          * app's own redirector uses — or null if [url] is not one of ours.
          *

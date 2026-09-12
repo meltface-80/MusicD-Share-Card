@@ -125,7 +125,7 @@ class Pitchfork(
             note("recent reviews: nothing to search")
             return null
         }
-        val hit = feed.firstOrNull { Normalize.text(it.album) == want }
+        val hit = feed.firstOrNull { want in titleForms(it.album) }
         if (hit == null) {
             note("recent reviews (${feed.size}): no \"$title\"")
             return null
@@ -135,6 +135,29 @@ class Pitchfork(
         note(if (review != null) "${hit.url} -> ${review.score} (from the feed)"
         else "${hit.url} -> the feed's match is not this artist")
         return review
+    }
+
+    /**
+     * The ways a feed entry's title might be spelling the album.
+     *
+     * A feed `<title>` is whatever the publisher puts there, and "Artist:
+     * Album" is as common a shape as the bare album — so matching only the
+     * whole string makes the fallback miss exactly the records it exists for.
+     * The part after a colon is tried as well, and the artist is still checked
+     * against the review page afterwards, which is what actually guards
+     * against landing on the wrong record.
+     */
+    internal fun titleForms(feedTitle: String): Set<String> {
+        val whole = Normalize.text(feedTitle)
+        val forms = linkedSetOf(whole)
+        val colon = feedTitle.lastIndexOf(':')
+        if (colon in 0 until feedTitle.length - 1) {
+            Normalize.text(feedTitle.substring(colon + 1)).takeIf { it.isNotEmpty() }
+                ?.let { forms += it }
+        }
+        Normalize.text(stripEdition(feedTitle)).takeIf { it.isNotEmpty() }?.let { forms += it }
+        forms.remove("")
+        return forms
     }
 
     /** One entry of Pitchfork's album-review feed. */
