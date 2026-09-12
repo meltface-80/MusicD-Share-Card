@@ -343,4 +343,94 @@ class PitchforkTest {
         // The whole string is still a form, for a title that has a colon in it.
         assertTrue(pf.titleForms("Untitled: Unmastered").contains("untitled unmastered"))
     }
+
+    // ------------------------------------------- the score, as Pitchfork writes it
+
+    /**
+     * THE ACTUAL BUG, from a real /api/debug dump.
+     *
+     * The right review page was fetched — "This Is Lorelei", "The Singer in My
+     * Band", the slug this app built, HTTP 200 — and no score came out of it.
+     * Pitchfork's ratingValue is an OBJECT:
+     *
+     *     "ratingValue": { "score": "8.5", "isBestNewMusic": true, … }
+     *
+     * and a pattern looking for `"ratingValue": 8.5` cannot match it, because
+     * after the colon comes a brace. The app this was ported from reads exactly
+     * this object out of its listing page and always has; only the review-page
+     * reader was left looking for the older scalar form.
+     */
+    private fun modernPage(score: String, bnm: Boolean = false, extra: String = "") =
+        """<html><body>$extra<script>window.__PRELOADED_STATE__ = {"items":[{
+           "contentType":"review","url":"/reviews/albums/x/",
+           "ratingValue":{"score":"$score","isBestNewMusic":$bnm,"isBestNewReissue":false}
+           }]}</script></body></html>"""
+
+    @Test
+    fun `a score inside Pitchfork's ratingValue object is read`() {
+        val review = pf.reviewFromPage(
+            modernPage("8.5"),
+            "https://pitchfork.com/reviews/albums/this-is-lorelei-the-singer-in-my-band/",
+            "The Singer in My Band", "This Is Lorelei"
+        )
+        assertNotNull("the object form is the one Pitchfork publishes", review)
+        assertEquals(8.5, review!!.score!!, 0.001)
+        assertTrue(!review.isBestNewMusic)
+    }
+
+    @Test
+    fun `the older scalar form still works`() {
+        // Both shapes are accepted; a page that has not been migrated must not
+        // stop working to make room for one that has.
+        val review = pf.reviewFromPage(
+            page("\"10.0\""),
+            "https://pitchfork.com/reviews/albums/slint-spiderland/",
+            "Spiderland", "Slint"
+        )
+        assertEquals(10.0, review!!.score!!, 0.001)
+    }
+
+    @Test
+    fun `Best New Music comes from the flag beside the score`() {
+        val yes = pf.reviewFromPage(
+            modernPage("8.5", bnm = true),
+            "https://pitchfork.com/reviews/albums/a-b/", "B", "A"
+        )
+        assertTrue(yes!!.isBestNewMusic)
+    }
+
+    /**
+     * THE FALSE POSITIVE THIS REPLACES. Every Pitchfork page carries "Best New
+     * Music" in its own navigation, so scanning the page text for those words
+     * marks every single review as Best New Music. The structured flag beside
+     * the score is the answer whenever there is one.
+     */
+    @Test
+    fun `Pitchfork's own navigation does not make every record Best New Music`() {
+        val review = pf.reviewFromPage(
+            modernPage("6.8", bnm = false, extra = "<nav><a href=\"/best/\">Best New Music</a></nav>"),
+            "https://pitchfork.com/reviews/albums/a-b/", "B", "A"
+        )
+        assertNotNull(review)
+        assertTrue("the nav link is not this record's flag", !review!!.isBestNewMusic)
+    }
+
+    @Test
+    fun `a page with no rating at all reports no score, not a wrong artist`() {
+        // The two were indistinguishable in the diagnostics, and that is what
+        // sent two releases' worth of fixes after the wrong cause.
+        val noScore = pf.readPage(
+            "<html><body>nothing here</body></html>",
+            "https://pitchfork.com/reviews/albums/this-is-lorelei-the-singer-in-my-band/",
+            "The Singer in My Band", "This Is Lorelei"
+        )
+        assertTrue("$noScore", noScore is Pitchfork.Outcome.NoScore)
+
+        val wrongArtist = pf.readPage(
+            modernPage("8.5"),
+            "https://pitchfork.com/reviews/albums/somebody-else-the-singer-in-my-band/",
+            "The Singer in My Band", "This Is Lorelei"
+        )
+        assertTrue("$wrongArtist", wrongArtist is Pitchfork.Outcome.WrongArtist)
+    }
 }
