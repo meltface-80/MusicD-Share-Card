@@ -23,11 +23,16 @@ import org.json.JSONObject
  * request either way, but the card never draws it: this is a card about a
  * record.
  */
-class Metadata(private val http: OkHttpClient, private val userAgent: String) {
+class Metadata(
+    private val http: OkHttpClient,
+    private val userAgent: String,
+    /** Where an answer is written down so the next play does not pay for it. */
+    private val store: CacheStore = CacheStore.NONE
+) {
 
     private companion object {
         const val TAG = "Meta"
-        const val CACHE_MS = 12L * 60 * 60 * 1000
+        const val CACHE_MS = 7L * 24 * 60 * 60 * 1000
 
         /**
          * MusicBrainz asks for at most one request per second from a single
@@ -38,7 +43,17 @@ class Metadata(private val http: OkHttpClient, private val userAgent: String) {
         const val WIKI_INTERVAL_MS = 200L
     }
 
-    private val cache = TtlCache<String, AlbumExtras>(CACHE_MS, 512)
+    /**
+     * THE ONE WORTH KEEPING ACROSS A RESTART. Filling this costs five requests
+     * to two outside hosts behind a rate gate — seconds, with a spinner in
+     * front of somebody — and the answer for a record released in 1977 does not
+     * change. A miss is written down too: "MusicBrainz has never heard of it"
+     * is an answer, and re-asking for it on every play is the same seconds.
+     */
+    private val cache = TtlCache<String, AlbumExtras>(
+        CACHE_MS, 512,
+        TtlCache.Persist(store, "extras", ::encodeExtras, ::decodeExtras)
+    )
     private val mbGate = RateGate(MB_INTERVAL_MS)
     private val wikiGate = RateGate(WIKI_INTERVAL_MS)
 
@@ -242,4 +257,33 @@ class Metadata(private val http: OkHttpClient, private val userAgent: String) {
 
     private fun urlEncode(s: String): String =
         java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
+    // --------------------------------------------------------------- on disk
+
+    /**
+     * An album's extras as one line of JSON.
+     *
+     * Only what the card draws is kept — the year, the album blurb and where it
+     * came from. The artist Bio and the lead images are not written: nothing
+     * draws them here, and a cache file is not a place to accumulate things
+     * nobody reads.
+     */
+    private fun encodeExtras(extras: AlbumExtras): String = JSONObject()
+        .put("year", extras.year ?: JSONObject.NULL)
+        .put("bio", extras.album?.description ?: JSONObject.NULL)
+        .put("src", extras.album?.source ?: JSONObject.NULL)
+        .put("url", extras.album?.url ?: JSONObject.NULL)
+        .toString()
+
+    private fun decodeExtras(text: String): AlbumExtras? {
+        val json = runCatching { JSONObject(text) }.getOrNull() ?: return null
+        val description = json.strOrNull("bio")
+        return AlbumExtras(
+            year = json.optInt("year", 0).takeIf { it > 0 },
+            album = description?.let {
+                Bio(it, json.str("src"), json.strOrNull("url"))
+            },
+            artist = null
+        )
+    }
 }

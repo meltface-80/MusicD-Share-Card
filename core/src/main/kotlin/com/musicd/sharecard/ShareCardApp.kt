@@ -5,6 +5,7 @@ import com.musicd.sharecard.api.Assets
 import com.musicd.sharecard.api.CardApi
 import com.musicd.sharecard.http.HttpServer
 import com.musicd.sharecard.meta.Metadata
+import com.musicd.sharecard.meta.CacheStore
 import com.musicd.sharecard.meta.Pitchfork
 import com.musicd.sharecard.meta.QobuzAlbum
 import com.musicd.sharecard.meta.Updater
@@ -73,7 +74,16 @@ class ShareCardApp(
      * one. With it null the update routes answer "not available here" rather
      * than offering a button that could not work.
      */
-    updateInstaller: UpdateInstaller? = null
+    updateInstaller: UpdateInstaller? = null,
+    /**
+     * Where the metadata lookups are written down so they survive a restart.
+     *
+     * The device is never switched off; the SERVICE is — a reboot, an update,
+     * Android reclaiming memory — and every one of those used to throw away
+     * every album the app had ever looked up. Defaults to remembering nothing,
+     * which is what the tests and any host with no storage get.
+     */
+    cacheStore: CacheStore = CacheStore.NONE
 ) {
 
     /** What the Android shell supplies so [updater] can finish the job. */
@@ -115,15 +125,15 @@ class ShareCardApp(
         )
     )
 
-    private val metadata = Metadata(metaHttp, userAgent(version))
-    private val pitchfork = Pitchfork(metaHttp, userAgent(version))
+    private val metadata = Metadata(metaHttp, userAgent(version), cacheStore)
+    private val pitchfork = Pitchfork(metaHttp, userAgent(version), Pitchfork.HOST, cacheStore)
 
     /**
      * The Qobuz album id behind the "Open in Qobuz" link. A search URL can
      * never open that app on the record — see [QobuzAlbum] for why only an id
      * will do.
      */
-    private val qobuz = QobuzAlbum(metaHttp, userAgent(version))
+    private val qobuz = QobuzAlbum(metaHttp, userAgent(version), cacheStore)
     // The art proxy is told which players exist so a LAN fetch is limited to
     // them rather than to "anything that looks local".
     private val art = ArtProxy(metaHttp) { sources.artHosts() }

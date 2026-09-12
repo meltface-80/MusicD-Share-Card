@@ -3,6 +3,7 @@ package com.musicd.sharecard.meta
 import com.musicd.sharecard.Log
 import com.musicd.sharecard.library.Normalize
 import com.musicd.sharecard.str
+import com.musicd.sharecard.strOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -30,7 +31,9 @@ class Pitchfork(
      * answer a 404 for one URL and a review for another to prove the fallbacks
      * run in the right order. Nothing in the app passes it.
      */
-    private val host: String = HOST
+    private val host: String = HOST,
+    /** Where a score is written down so the next play does not go and look. */
+    private val store: CacheStore = CacheStore.NONE
 ) {
 
     private val feedUrl = "$host/feed/feed-album-reviews/rss"
@@ -51,7 +54,13 @@ class Pitchfork(
      * list rather than a nullable because [TtlCache] cannot tell a cached null
      * from an absent key.
      */
-    private val cache = TtlCache<String, List<Review>>(REVIEW_TTL_MS, 256)
+    private val cache = TtlCache<String, List<Review>>(
+        REVIEW_TTL_MS, 256,
+        // The misses go down too, as the empty list they already are: a record
+        // Pitchfork never reviewed costs the same three requests to find out
+        // about as one it did.
+        TtlCache.Persist(store, "reviews", ::encodeReviews, ::decodeReviews)
+    )
 
     /**
      * The score for one album, cached under the name the caller asked with —
@@ -597,10 +606,13 @@ class Pitchfork(
 
         /**
          * A review is written once and its score does not move, so this could
-         * be far longer; a day keeps a correction or a first review turning up
-         * without the app having to be restarted.
+         * be far longer still. A WEEK rather than the day it was, because the
+         * cache now survives a restart and a day means an album played on
+         * Sunday is looked up again on Monday — which is the whole thing this
+         * was meant to stop. A week still lets a correction, or a first review
+         * for a record that had none, turn up without anybody doing anything.
          */
-        const val REVIEW_TTL_MS = 24L * 60 * 60 * 1000
+        const val REVIEW_TTL_MS = 7L * 24 * 60 * 60 * 1000
 
         /** Pitchfork throttles; one request at a time, spaced out. */
         const val INTERVAL_MS = 1500L
@@ -639,5 +651,32 @@ class Pitchfork(
         )
 
         const val MAX_NOTES = 12
+    }
+
+    // --------------------------------------------------------------- on disk
+
+    private fun encodeReviews(reviews: List<Review>): String =
+        JSONArray(
+            reviews.map {
+                JSONObject()
+                    .put("url", it.url)
+                    .put("score", it.score ?: JSONObject.NULL)
+                    .put("bnm", it.isBestNewMusic)
+            }
+        ).toString()
+
+    private fun decodeReviews(text: String): List<Review>? {
+        val array = runCatching { JSONArray(text) }.getOrNull() ?: return null
+        val out = ArrayList<Review>(array.length())
+        for (i in 0 until array.length()) {
+            val o = array.optJSONObject(i) ?: continue
+            val url = o.strOrNull("url") ?: continue
+            out += Review(
+                url = url,
+                score = if (o.isNull("score")) null else o.optDouble("score").takeIf { !it.isNaN() },
+                isBestNewMusic = o.optBoolean("bnm")
+            )
+        }
+        return out
     }
 }

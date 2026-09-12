@@ -40,7 +40,12 @@ import java.util.Locale
  * taken on trust: the slug it is filed under has to match the record that was
  * asked for, or this returns null and the page keeps the search link.
  */
-class QobuzAlbum(private val http: OkHttpClient, private val userAgent: String) {
+class QobuzAlbum(
+    private val http: OkHttpClient,
+    private val userAgent: String,
+    /** Where an album id is written down; Qobuz's catalogue does not move. */
+    private val store: CacheStore = CacheStore.NONE
+) {
 
     /**
      * `https://open.qobuz.com/album/<id>` for [album] by [artist], or null when
@@ -136,7 +141,11 @@ class QobuzAlbum(private val http: OkHttpClient, private val userAgent: String) 
     }
 
     private val gate = RateGate(INTERVAL_MS)
-    private val cache = TtlCache<String, String>(TTL_MS, 200)
+    // The id is already a string and the miss is already the empty one, so
+    // this needs no encoding at all.
+    private val cache = TtlCache<String, String>(
+        TTL_MS, 200, TtlCache.Persist(store, "qobuz", { it }, { it })
+    )
 
     companion object {
         private const val TAG = "QobuzAlbum"
@@ -192,8 +201,8 @@ class QobuzAlbum(private val http: OkHttpClient, private val userAgent: String) 
         private val HREF =
             Regex("href=\"/([a-z]{2}-[a-z]{2})/album/([a-z0-9-]+)/([A-Za-z0-9]+)\"")
 
-        /** A catalogue does move, but not in an afternoon. */
-        private const val TTL_MS = 24L * 60 * 60 * 1000
+        /** A catalogue does move, but not in a week. */
+        private const val TTL_MS = 7L * 24 * 60 * 60 * 1000
 
         /** One request at a time, spaced out — somebody else's server. */
         private const val INTERVAL_MS = 1500L

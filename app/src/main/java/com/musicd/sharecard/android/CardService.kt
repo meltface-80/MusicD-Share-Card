@@ -47,6 +47,16 @@ class CardService : Service() {
      */
     private var multicastLock: WifiManager.MulticastLock? = null
 
+    /**
+     * What the metadata lookups already know, kept across restarts.
+     *
+     * Built here rather than inside ShareCardApp so onDestroy can flush it —
+     * and lazily, because startForeground() has about five seconds and this
+     * must not read a file inside that window. Nothing is read until the first
+     * lookup asks, which is well after the notification is up.
+     */
+    private val cache by lazy { CacheFile(this) }
+
     override fun onCreate() {
         super.onCreate()
         Log.sink = LogcatSink()
@@ -137,7 +147,11 @@ class CardService : Service() {
                 updateInstaller = ShareCardApp.UpdateInstaller(
                     downloadDir = ApkInstaller.downloadDir(this),
                     install = { apk -> ApkInstaller.install(this, apk) }
-                )
+                ),
+                // What MusicBrainz, Wikipedia, Pitchfork and Qobuz said, kept
+                // across restarts. Playing a record a second time should not
+                // pay for all four again.
+                cacheStore = cache
             ).also { it.start() }
 
             app = started
@@ -167,6 +181,9 @@ class CardService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        // Before the app goes: anything looked up in the last few seconds is
+        // still only in memory, and this is the last chance to keep it.
+        runCatching { cache.flush() }
         app?.stop()
         app = null
         runCatching { multicastLock?.release() }
