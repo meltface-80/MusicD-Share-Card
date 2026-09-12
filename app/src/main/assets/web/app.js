@@ -746,7 +746,20 @@
     } catch (e) { canShare = false; }
 
     if (canShare) {
-      const b = button("primary", "Share…", "share");
+      /*
+       * NOT "primary", and that is a deliberate match rather than an
+       * oversight. iOS has no Share button here — its share sheet is reached
+       * by holding the card — so what it draws is Download, the webhook and
+       * the cog, three identical plain buttons. Android drew a filled yellow
+       * Share beside two plain ones, which made the same page look like two
+       * different apps depending on the phone it was opened on. The row is
+       * uniform on both now.
+       *
+       * The class still exists and "Find my speakers" still uses it: that one
+       * is drawn only when discovery has failed, it is the single thing worth
+       * doing at that moment, and it is alone in the row.
+       */
+      const b = button("", "Share…", "share");
       b.onclick = async () => {
         errEl.textContent = "";
         try {
