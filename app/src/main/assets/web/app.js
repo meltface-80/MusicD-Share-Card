@@ -597,54 +597,111 @@
     const rows = webhooks.map((h) =>
       '<li><span class="wh-name">' + escapeHtml(h.name) + "</span>" +
       '<span class="wh-mask">' +
-      escapeHtml(h.username ? "posts as " + h.username : h.masked) + "</span>" +
-      '<button class="wh-del" data-id="' + escapeHtml(h.id) + '">Remove</button></li>'
+      escapeHtml(h.username ? "as " + h.username : h.masked) + "</span>" +
+      '<button class="wh-del" data-id="' + escapeHtml(h.id) + '">\u00D7</button></li>'
     ).join("");
 
-    const gate = setup.mayConfigure ? "" :
-      '<p class="wh-note">To add or remove a webhook from this device, enter the ' +
-      "PIN shown in the Share Card app on the device it is running on.</p>" +
-      '<input class="wh-input" id="wh-pin" inputmode="numeric" placeholder="PIN">';
+    // COMPACT ON PURPOSE. The first version was three paragraphs of prose and
+    // five stacked fields, and on a phone the Save button was below the fold —
+    // a settings screen you have to scroll to finish is one people abandon
+    // half-done. Every explanation here is one line, and the fields are paired
+    // across the width where they are short enough to be.
+    const pinField = setup.mayConfigure ? "" :
+      '<input class="wh-input" id="wh-pin" inputmode="numeric" placeholder="PIN from the device">';
 
     const pinLine = setup.onDevice && setup.pin
       ? '<p class="wh-note">PIN for other devices: <b>' + escapeHtml(setup.pin) + "</b></p>"
       : "";
 
     show(
-      '<div class="diag wh">' +
-      "<h3>Discord webhooks</h3>" +
-      (rows ? '<ul class="wh-list">' + rows + "</ul>"
-            : '<p class="wh-note">None yet.</p>') +
-      pinLine +
-      "<h3>Add one</h3>" +
-      '<p class="wh-note">In Discord: Edit Channel \u2192 Integrations \u2192 Webhooks ' +
-      "\u2192 Copy Webhook URL.</p>" +
-      '<input class="wh-input" id="wh-name" placeholder="Name (e.g. Vinyl chat)">' +
-      '<input class="wh-input" id="wh-url" placeholder="https://discord.com/api/webhooks/…">' +
-      "<h3>Post as</h3>" +
-      // The honest limit, said once and up front rather than discovered in the
-      // channel: Discord tags every webhook message APP and no field turns
-      // that off. Name and picture are as close as it goes.
-      '<p class="wh-note">Discord shows this name and picture on the message. It will ' +
-      "still carry the <b>APP</b> tag beside it \u2014 Discord marks every webhook that " +
-      "way so a reader can tell a person from an integration, and there is no setting " +
-      "that removes it. Leave blank to use the webhook\u2019s own name from Discord.</p>" +
-      '<input class="wh-input" id="wh-username" placeholder="Display name (e.g. Menzies)">' +
-      '<input class="wh-input" id="wh-avatar" placeholder="Avatar image URL (https://…)">' +
-      gate +
+      '<div class="wh">' +
+      (rows ? '<ul class="wh-list">' + rows + "</ul>" : "") +
+      '<div class="wh-row">' +
+      '<input class="wh-input" id="wh-name" placeholder="Channel name">' +
+      '<input class="wh-input" id="wh-username" placeholder="Post as (e.g. Menzies)">' +
+      "</div>" +
+      '<input class="wh-input" id="wh-url" placeholder="Discord webhook URL">' +
+      '<div class="wh-row">' +
+      '<label class="wh-file" id="wh-pick"><span id="wh-pick-label">Choose a picture</span>' +
+      '<input type="file" accept="image/*" id="wh-avatar"></label>' +
+      pinField +
+      "</div>" +
       '<div class="wh-buttons">' +
       '<button class="primary" id="wh-add">Save</button>' +
-      '<button id="wh-back">Back to the card</button>' +
-      "</div></div>"
+      '<button id="wh-back">Back</button>' +
+      "</div>" +
+      '<p class="wh-note">Discord tags every webhook <b>APP</b>; that cannot be turned off. ' +
+      "Edit Channel \u2192 Integrations \u2192 Webhooks \u2192 Copy Webhook URL.</p>" +
+      pinLine +
+      "</div>"
     );
     actions.innerHTML = "";
     hintEl.textContent = "";
+    nowEl.innerHTML = "";
 
     document.getElementById("wh-back").onclick = () => load(false);
     document.getElementById("wh-add").onclick = addWebhook;
+    document.getElementById("wh-avatar").onchange = onAvatarChosen;
     for (const b of document.querySelectorAll(".wh-del")) {
       b.onclick = () => removeWebhook(b.getAttribute("data-id"));
     }
+  }
+
+  /** The chosen photo, already scaled, waiting for Save. */
+  let pendingAvatar = "";
+
+  /*
+   * A PHOTO, NOT A URL.
+   *
+   * Discord fetches an avatar_url from its own servers, so a picture this app
+   * served from a home network would be invisible to it — and a photo on a
+   * phone has no URL at all. So the file is read here, scaled to 128px, and
+   * sent to Discord as bytes, which it stores on its own CDN.
+   *
+   * Scaling happens in the browser because the page already has a canvas and
+   * the server has no image decoder. A phone camera produces something several
+   * thousand pixels wide; Discord wants 128.
+   */
+  async function onAvatarChosen(event) {
+    const file = event.target.files && event.target.files[0];
+    const label = document.getElementById("wh-pick-label");
+    if (!file) { pendingAvatar = ""; return; }
+    errEl.textContent = "";
+    try {
+      pendingAvatar = await squareThumbnail(file, 128);
+      if (label) label.textContent = "Picture ready";
+    } catch (e) {
+      pendingAvatar = "";
+      if (label) label.textContent = "Choose a picture";
+      errEl.textContent = "Could not read that picture.";
+    }
+  }
+
+  function squareThumbnail(file, size) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error || new Error("read failed"));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("not an image"));
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          // Centre-crop to a square: an avatar is round, and letterboxing a
+          // portrait photo into it would put bars either side of a face.
+          const side = Math.min(img.width, img.height);
+          ctx.drawImage(
+            img, (img.width - side) / 2, (img.height - side) / 2, side, side,
+            0, 0, size, size
+          );
+          resolve(canvas.toDataURL("image/png"));
+        };
+        img.src = String(reader.result || "");
+      };
+      reader.readAsDataURL(file);
+    });
   }
 
   function pinParam() {
@@ -658,18 +715,30 @@
     const name = (document.getElementById("wh-name").value || "").trim();
     const url = (document.getElementById("wh-url").value || "").trim();
     const username = (document.getElementById("wh-username").value || "").trim();
-    const avatarUrl = (document.getElementById("wh-avatar").value || "").trim();
     if (!url) { errEl.textContent = "Paste the webhook URL from Discord."; return; }
     try {
       const response = await fetch("/api/webhooks" + pinParam(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name, url: url, username: username, avatarUrl: avatarUrl
-        })
+        body: JSON.stringify({ name: name, url: url, username: username })
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || ("Refused (" + response.status + ")"));
+
+      // The picture is a second call, because it edits the webhook on Discord
+      // rather than being stored here.
+      if (pendingAvatar && body.id) {
+        const avatarResponse = await fetch(
+          "/api/webhooks/" + encodeURIComponent(body.id) + "/avatar" + pinParam(),
+          { method: "POST", headers: { "Content-Type": "text/plain" }, body: pendingAvatar }
+        );
+        if (!avatarResponse.ok) {
+          const detail = await avatarResponse.json().catch(() => ({}));
+          errEl.textContent = "Saved, but the picture was refused: " +
+            (detail.error || avatarResponse.status);
+        }
+        pendingAvatar = "";
+      }
       await showWebhookSettings();
     } catch (e) {
       errEl.textContent = (e && e.message) ? e.message : String(e);

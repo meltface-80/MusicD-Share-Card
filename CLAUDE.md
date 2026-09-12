@@ -142,6 +142,21 @@ was simply not there, however carefully the DIDL was parsed.
   it offers a stranger on your wifi is a picture of your own album in your own
   channel. Any NEW route that writes goes behind `Access.mayConfigure` in the
   same change.
+- **An avatar is UPLOADED to Discord, not linked.** `avatar_url` is fetched by
+  Discord's own servers, so a picture this app serves from a home network is
+  invisible to it and falls back silently to the default — and a photo on a
+  phone has no URL at all. `DiscordPoster.setAvatar` PATCHes the webhook with a
+  base64 data URI instead and Discord keeps it on its CDN. The page scales the
+  photo to 128px on a canvas first, because :core has no image decoder and a
+  camera photo is thousands of pixels wide.
+- **The webhook panel must fit a phone screen without scrolling.** The first
+  version put Save below the fold behind three paragraphs of prose, and a
+  settings screen you have to scroll to finish is one people abandon half done.
+  Short fields pair across the width; every explanation is one line.
+- **iOS needs a real PNG icon.** `apple-touch-icon` will not take an SVG or an
+  adaptive icon, and without one the Home Screen shows a screenshot or a bare
+  letter. `app/src/main/assets/web/icons/` is generated from the same geometry
+  as `ic_launcher_foreground.xml`, so the two platforms show one icon.
 - **A webhook can choose its display name and avatar; it CANNOT drop the APP
   tag.** Discord marks every webhook message that way on purpose, so a reader
   can tell a person from an integration, and no field turns it off. Posting as
