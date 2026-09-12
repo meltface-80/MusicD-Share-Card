@@ -401,8 +401,7 @@ class CardApi(
     private fun postCard(request: Request, webhook: Webhook): Response {
         val png = request.body
         if (png.isEmpty()) return Json.error(400, "No card was sent.")
-        val caption = request.param("caption").orEmpty()
-        val outcome = discord.post(webhook, png, caption)
+        val outcome = discord.post(webhook, png)
         return if (outcome.ok) {
             Json.obj(JSONObject().put("ok", true).put("detail", outcome.detail))
         } else {

@@ -27,39 +27,41 @@ class DiscordPoster(private val http: OkHttpClient = webhookHttpClient()) {
     data class Outcome(val ok: Boolean, val status: Int, val detail: String)
 
     /**
-     * Send [png] to [webhook], with an optional line of text above it.
+     * Send [png] to [webhook].
+     *
+     * THE CARD AND NOTHING ELSE. This used to put the album and artist in the
+     * message's `content`, so Discord drew a line of text above the picture —
+     * and that line says exactly what the card says, in worse type, on top of
+     * the thing it is describing. The card is the message.
      *
      * Discord takes the picture as a multipart file part. `payload_json`
      * carries everything else, and is used rather than plain form fields
      * because it is the form Discord documents and the one that keeps working
      * when a field needs to become an object.
      */
-    fun post(webhook: Webhook, png: ByteArray, caption: String): Outcome {
+    fun post(webhook: Webhook, png: ByteArray): Outcome {
         if (png.isEmpty()) return Outcome(false, 0, "There is no card to post yet.")
         if (png.size > MAX_BYTES) {
             return Outcome(false, 0, "That card is larger than Discord will accept.")
         }
 
-        val payload = buildString {
-            append('{')
-            append("\"content\":").append(quote(caption.take(MAX_CONTENT)))
-            // The name and picture Discord shows on the message. This is as
-            // close to "posted by me" as a webhook is allowed to get: Discord
-            // still tags every webhook message APP, deliberately, so a reader
-            // can tell a person from an integration. Omitted entirely when
-            // unset, so the webhook's own settings in Discord still apply.
-            if (webhook.username.isNotEmpty()) {
-                append(",\"username\":").append(quote(webhook.username))
-            }
-            if (webhook.avatarUrl.isNotEmpty()) {
-                append(",\"avatar_url\":").append(quote(webhook.avatarUrl))
-            }
-            // Suppress @everyone and role pings outright. A card is a picture;
-            // it has no business notifying a server, and an album title that
-            // happens to contain "@everyone" must not become an announcement.
-            append(",\"allowed_mentions\":{\"parse\":[]}")
-            append('}')
+        val fields = ArrayList<String>(3)
+        // The name and picture Discord shows on the message. This is as close
+        // to "posted by me" as a webhook is allowed to get: Discord still tags
+        // every webhook message APP, deliberately, so a reader can tell a
+        // person from an integration. Omitted entirely when unset, so the
+        // webhook's own settings in Discord still apply.
+        if (webhook.username.isNotEmpty()) {
+            fields += "\"username\":" + quote(webhook.username)
         }
+        if (webhook.avatarUrl.isNotEmpty()) {
+            fields += "\"avatar_url\":" + quote(webhook.avatarUrl)
+        }
+        // Kept even with no text to ping from: nothing here may notify a
+        // server, and a field that is added later must not be the thing that
+        // discovers this was missing.
+        fields += "\"allowed_mentions\":{\"parse\":[]}"
+        val payload = fields.joinToString(",", "{", "}")
 
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -190,8 +192,6 @@ class DiscordPoster(private val http: OkHttpClient = webhookHttpClient()) {
 
         /** Discord's own limit for a webhook attachment on a free server. */
         const val MAX_BYTES = 8 * 1024 * 1024
-
-        const val MAX_CONTENT = 1800
 
         /**
          * A 128px avatar is a few tens of kilobytes once base64'd. Generous for
