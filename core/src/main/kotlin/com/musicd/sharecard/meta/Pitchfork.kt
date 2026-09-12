@@ -2,8 +2,11 @@ package com.musicd.sharecard.meta
 
 import com.musicd.sharecard.Log
 import com.musicd.sharecard.library.Normalize
+import com.musicd.sharecard.str
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * One album's Pitchfork score.
@@ -80,14 +83,63 @@ class Pitchfork(
      * hit still costs exactly one request.
      */
     private fun lookUp(title: String, artist: String): Review? {
-        fromSlug(title, artist)?.let { return it }
+        val stripped = stripEdition(title).ifEmpty { title }
 
-        val stripped = stripEdition(title)
-        if (stripped.isNotEmpty() && !stripped.equals(title, ignoreCase = true)) {
+        // 1. Pitchfork's own index, which is the ONLY place the score is.
+        fromListing(title, artist)?.let { return it }
+        if (!stripped.equals(title, ignoreCase = true)) {
+            fromListing(stripped, artist)?.let { return it }
+        }
+
+        // 2. The review page, for anything too old to be in the index.
+        fromSlug(title, artist)?.let { return it }
+        if (!stripped.equals(title, ignoreCase = true)) {
             fromSlug(stripped, artist)?.let { return it }
         }
 
-        return fromRecent(if (stripped.isEmpty()) title else stripped, artist)
+        // 3. The RSS feed, which knows a URL the slug could not build.
+        return fromRecent(stripped, artist)
+    }
+
+    /**
+     * The review straight out of Pitchfork's index — score and all.
+     *
+     * NO SECOND REQUEST. The listing already carries the score, the Best New
+     * Music flag and the URL, so there is nothing left to go and read. That is
+     * the whole difference between this working and two releases of parsing a
+     * page that does not contain the number.
+     *
+     * The artist comes from the listing too, which is a real name rather than
+     * a slug read backwards, so the check against the record we asked about is
+     * a better one than the URL could give.
+     */
+    private fun fromListing(title: String, artist: String): Review? {
+        val want = Normalize.text(title)
+        if (want.isEmpty()) return null
+        val index = listing()
+        if (index.isEmpty()) return null
+
+        val hit = index.firstOrNull { want in titleForms(it.album) } ?: return null
+        val named = hit.artist
+        if (named != null && !sameArtist(named, artist)) {
+            note("${hit.url} -> the index says that is $named, not this artist")
+            return null
+        }
+        if (hit.score == null) {
+            note("${hit.url} -> in the index with no score")
+            return null
+        }
+        note("${hit.url} -> ${hit.score} (from the index)")
+        return Review(hit.url, hit.score, hit.isBestNewMusic)
+    }
+
+    private fun sameArtist(a: String, b: String): Boolean {
+        val na = Normalize.text(a)
+        val nb = Normalize.text(b)
+        if (na == nb) return true
+        val ka = Normalize.sortKey(na)
+        val kb = Normalize.sortKey(nb)
+        return ka.contains(kb) || kb.contains(ka)
     }
 
     /**
@@ -155,8 +207,134 @@ class Pitchfork(
         return forms
     }
 
-    /** One entry of Pitchfork's album-review feed. */
-    internal data class Listed(val url: String, val album: String)
+    /**
+     * One entry of Pitchfork's own index of reviews.
+     *
+     * [score] is the whole reason this exists. It comes from the LISTING, which
+     * carries it, rather than from the review page, which does not — see
+     * [listing]. The RSS feed fills in the same shape with a null score.
+     */
+    internal data class Listed(
+        val url: String,
+        val album: String,
+        val artist: String? = null,
+        val score: Double? = null,
+        val isBestNewMusic: Boolean = false
+    )
+
+    /**
+     * Pitchfork's own index of recent reviews, WITH THE SCORES IN IT.
+     *
+     * THIS IS WHERE THE SCORE ACTUALLY LIVES. A review page served to something
+     * that is not a browser carries no rating at all — the diagnostics said
+     * "page read, NO SCORE IN IT" for a review that a human can read an 8.0 off
+     * — so no amount of parsing that page will ever work. The listing page
+     * ships its reviews in a `window.__PRELOADED_STATE__` blob, score and Best
+     * New Music flag included, and MusicD Remote Lite has read it that way all
+     * along. Its search finds this record's 8.0 for exactly that reason.
+     *
+     * One fetch, cached for an hour, shared by every album that asks.
+     */
+    internal fun listing(): List<Listed> = listingCache.get(LISTING_KEY) {
+        val html = gate.run { text("$host/reviews/albums/") } ?: return@get emptyList()
+        val state = extractPreloadedState(html) ?: run {
+            note("the reviews index has no preloaded state in it")
+            return@get emptyList()
+        }
+        val json = runCatching { JSONObject(state) }.getOrElse {
+            note("the reviews index would not parse: ${it.message}")
+            return@get emptyList()
+        }
+        collectListing(json)
+    }
+
+    /**
+     * `window.__PRELOADED_STATE__ = {…}`, found by matching braces.
+     *
+     * A greedy regex cannot balance braces across a couple of megabytes, and a
+     * lazy one stops at the first nested object. Strings are tracked so a brace
+     * inside a review's own text does not end the scan early.
+     */
+    internal fun extractPreloadedState(html: String): String? {
+        val marker = html.indexOf("__PRELOADED_STATE__")
+        if (marker == -1) return null
+        val start = html.indexOf('{', marker)
+        if (start == -1) return null
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (i in start until html.length) {
+            val c = html[i]
+            when {
+                inString -> when {
+                    escaped -> escaped = false
+                    c == '\\' -> escaped = true
+                    c == '"' -> inString = false
+                }
+                c == '"' -> inString = true
+                c == '{' -> depth++
+                c == '}' -> if (--depth == 0) return html.substring(start, i + 1)
+            }
+        }
+        return null
+    }
+
+    /**
+     * Walk the state and collect every review in it.
+     *
+     * Matched on contentType + ratingValue + url rather than on a fixed path
+     * through the object, so Pitchfork reshuffling its containers does not
+     * silently empty the list — it is the shape of a review that is recognised,
+     * not where the page happened to put it.
+     */
+    internal fun collectListing(state: JSONObject): List<Listed> {
+        val out = ArrayList<Listed>()
+        val seen = HashSet<String>()
+        val stack = ArrayDeque<Any>()
+        stack.addLast(state)
+        var guard = 0
+        while (stack.isNotEmpty() && guard++ < MAX_NODES) {
+            when (val node = stack.removeLast()) {
+                is JSONArray -> for (i in 0 until node.length()) {
+                    node.opt(i)?.takeIf { it is JSONObject || it is JSONArray }?.let(stack::addLast)
+                }
+
+                is JSONObject -> {
+                    val rating = node.optJSONObject("ratingValue")
+                    val url = node.str("url")
+                    if (node.str("contentType") == "review" && rating != null && url.isNotEmpty()) {
+                        val full = (if (url.startsWith("http")) url else host + url)
+                            .substringBefore('?').substringBefore('#')
+                        if (seen.add(full)) {
+                            // dangerousHed is HTML; source.hed is the
+                            // markdown-ish fallback, consulted only when
+                            // stripping leaves nothing behind.
+                            var album = stripTags(node.str("dangerousHed")).trim()
+                            if (album.isEmpty()) {
+                                album = node.optJSONObject("source")?.str("hed")
+                                    ?.replace("*", "")?.trim().orEmpty()
+                            }
+                            out += Listed(
+                                url = full,
+                                album = album,
+                                artist = node.optJSONObject("subHed")?.str("name")?.trim()
+                                    ?.takeIf { it.isNotEmpty() },
+                                score = rating.str("score").toDoubleOrNull()
+                                    ?.takeIf { it in 0.0..10.0 },
+                                isBestNewMusic = rating.optBoolean("isBestNewMusic") ||
+                                    rating.optBoolean("isBestNewReissue")
+                            )
+                        }
+                    }
+                    for (key in node.keys()) {
+                        node.opt(key)?.takeIf { it is JSONObject || it is JSONArray }
+                            ?.let(stack::addLast)
+                    }
+                }
+            }
+        }
+        return out
+    }
 
     /**
      * What Pitchfork has published lately, from its RSS feed.
@@ -250,6 +428,8 @@ class Pitchfork(
     private val notes = ArrayList<String>()
 
     private val feedCache = TtlCache<String, List<Listed>>(FEED_TTL_MS, 2)
+
+    private val listingCache = TtlCache<String, List<Listed>>(FEED_TTL_MS, 2)
 
     /**
      * The score already in hand, without a request. A cached miss and a name
@@ -426,6 +606,10 @@ class Pitchfork(
         const val INTERVAL_MS = 1500L
 
         const val FEED_KEY = "album-reviews"
+        const val LISTING_KEY = "reviews-index"
+
+        /** A stack walk over somebody else's JSON needs a stop. */
+        const val MAX_NODES = 60_000
 
         /**
          * Pitchfork publishes a handful of reviews a day, so an hour is fresh
