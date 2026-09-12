@@ -19,8 +19,16 @@ It works out what's playing by asking whoever actually knows:
 
 ## Install
 
-Sideload the APK on an Android device running 8.0 or newer. Open it and the card
+[**Download musicd-share-card-0.13.0-debug.apk**](dist/musicd-share-card-0.13.0-debug.apk)
+and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
+
+### Updating
+
+Every build is signed with a throwaway key at the moment, so Android sees a new
+APK as a different app and refuses to install it over the old one — uninstall
+first. That stops once a real signing key is in place; after that, new versions
+install straight over the top.
 
 ## Using it from your other devices
 

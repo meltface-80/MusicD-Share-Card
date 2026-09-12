@@ -43,7 +43,9 @@ class RoonClient(
     private val store: TokenStore,
     private val extension: ExtensionInfo,
     /** Held while discovery runs; Android filters multicast out of userspace. */
-    private val multicastLock: MulticastLock = MulticastLock.NONE
+    private val multicastLock: MulticastLock = MulticastLock.NONE,
+    /** A seam for the tests — see [MooSocket]. Nothing in the app passes it. */
+    private val callTimeoutMs: Long = MooSocket.DEFAULT_CALL_TIMEOUT_MS
 ) {
 
     /** How the extension introduces itself in Roon → Settings → Extensions. */
@@ -133,8 +135,24 @@ class RoonClient(
         net.shutdownNow()
     }
 
-    /** Forget the saved address and look again. What Refresh asks for. */
+    /**
+     * Forget the saved address and look again. What Refresh asks for.
+     *
+     * AND IT DOES NOTHING WHILE A SOCKET IS OPEN, which is the other half of
+     * the six-extensions bug — see [register]. Waiting to be enabled is a
+     * healthy state: the socket is up and the registration is outstanding, so
+     * there is nothing to rediscover. Tearing it down and asking again is what
+     * put another line in Roon's Extensions list on every press, and the notice
+     * on the page asks for exactly that press.
+     *
+     * Once paired there is nothing to refresh either: zones arrive on a live
+     * subscription. So a press only means anything when nothing is connected.
+     */
     fun rediscover() = onNet {
+        if (socket.get()?.isOpen == true) {
+            Log.i(TAG, "refresh ignored: still connected (${status.stage})")
+            return@onNet
+        }
         store.forgetLastCore()
         host = null
         port = 0
@@ -220,7 +238,7 @@ class RoonClient(
     private fun openSocket(h: String, p: Int) {
         if (!running.get()) return
         publish(RoonStatus(RoonStage.CONNECTING, coreId, coreName, "Connecting to $h:$p"))
-        val ws = MooSocket(http, "ws://$h:$p/api", SocketEvents())
+        val ws = MooSocket(http, "ws://$h:$p/api", SocketEvents(), callTimeoutMs)
         socket.set(ws)
         ws.connect()
     }
@@ -264,20 +282,50 @@ class RoonClient(
         }
     }
 
+    /**
+     * Introduce the extension, then WAIT — for as long as it takes.
+     *
+     * THIS IS WHERE SIX COPIES OF THIS EXTENSION CAME FROM, and the mechanism
+     * is not the obvious one. Registration used to go through
+     * `ws.call(…, expect = "Registered")`, which gives up after ninety seconds.
+     * But Roon does not answer `register` until a human has enabled the
+     * extension in Settings → Extensions, and that wait is open ended — so on a
+     * first pair the call ALWAYS failed. Not sometimes: always.
+     *
+     * What that left on screen was "Roon: Roon did not answer
+     * com.roonlabs.registry:1/register in time", a closed socket and no
+     * reconnect. The only way out of it is the Refresh button — which this
+     * app's own Roon notice tells people to press — and [rediscover] introduced
+     * the extension again. Every press, another line in Roon's list, all of
+     * them named "MusicD Share Card", so the one to enable was a guess.
+     *
+     * The comment that used to sit here already said Roon "answers Registered
+     * only once the user has enabled the extension, which on a first pair can
+     * be minutes". It was right; the code under it used a deadline anyway.
+     *
+     * So the registration is sent and not awaited. The reply handler stays
+     * armed for the life of the socket, the socket stays open, and the answer
+     * arrives whenever somebody presses Enable — a minute later or tomorrow.
+     * One entry, one connection, nothing to press.
+     */
     private fun register() {
         val ws = socket.get() ?: return
         backoffMs = BACKOFF_START_MS
         try {
+            // `info` IS answered immediately, so this one can be awaited.
             val info = ws.call(RoonServices.REGISTRY, "info", expect = null)
             info.bodyText?.let { JSONObject(it) }?.let { body ->
                 coreId = body.str("core_id").takeIf { it.isNotEmpty() } ?: coreId
                 coreName = body.str("display_name").takeIf { it.isNotEmpty() } ?: coreName
             }
 
+            val known = coreId?.let { store.tokenFor(it) } != null
             publish(
                 RoonStatus(
                     RoonStage.AWAITING_APPROVAL, coreId, coreName,
-                    "Enable “${extension.displayName}” in Roon → Settings → Extensions"
+                    if (known) "Reconnecting to ${coreName ?: "Roon"}"
+                    else "Enable \u201C${extension.displayName}\u201D in Roon " +
+                        "\u2192 Settings \u2192 Extensions"
                 )
             )
 
@@ -303,29 +351,49 @@ class RoonClient(
                 )
             coreId?.let { id -> store.tokenFor(id)?.let { reginfo.put("token", it) } }
 
-            // Registration is not a one-shot reply: Roon answers "Registered"
-            // only once the user has enabled the extension, which on a first
-            // pair can be minutes. Everything after that arrives on the same id.
-            val registered = ws.call(RoonServices.REGISTRY, "register", reginfo, expect = "Registered")
-            val body = registered.bodyText?.let { JSONObject(it) }
-            val id = body?.str("core_id")?.takeIf { it.isNotEmpty() } ?: coreId
-            coreId = id
-            coreName = body?.str("display_name")?.takeIf { it.isNotEmpty() } ?: coreName
-            body?.str("token")?.takeIf { it.isNotEmpty() }?.let { token ->
-                if (id != null) store.saveToken(id, token)
+            // Sent, NOT awaited. See the comment above.
+            ws.send(RoonServices.REGISTRY, "register", reginfo) { msg ->
+                when {
+                    msg == null -> Unit
+                    msg.name == "Registered" -> onRegistered(msg)
+                    else -> {
+                        // A refusal, which is different from silence: Roon has
+                        // an opinion and it is not "wait". Say it and stop —
+                        // retrying would put another entry in the list.
+                        val detail = msg.bodyText?.take(200).orEmpty()
+                        Log.w(TAG, "Roon refused the registration: ${msg.name} $detail")
+                        publish(
+                            RoonStatus(
+                                RoonStage.ERROR, coreId, coreName,
+                                "Roon refused this extension (${msg.name})."
+                            )
+                        )
+                    }
+                }
             }
-
-            subscribeZones()
-            publish(RoonStatus(RoonStage.PAIRED, coreId, coreName, "Paired with ${coreName ?: "Roon"}"))
         } catch (e: Exception) {
-            Log.w(TAG, "registration failed: ${e.message}")
+            // Only `info` and the send itself can land here now, and both mean
+            // the socket is in trouble rather than the user being slow.
+            Log.w(TAG, "could not introduce the extension: ${e.message}")
             publish(RoonStatus(RoonStage.ERROR, coreId, coreName, e.message ?: "Registration failed"))
-            // The socket listener drives the reconnect when the socket itself
-            // died. If it is still open, this was a refusal — back off and retry.
             if (socket.get()?.isOpen == true) {
                 socket.getAndSet(null)?.close("registration failed")
             }
         }
+    }
+
+    /** Roon said yes — which may be a minute after asking, or a day. */
+    private fun onRegistered(msg: Moo.Message) {
+        val body = msg.bodyText?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val id = body?.str("core_id")?.takeIf { it.isNotEmpty() } ?: coreId
+        coreId = id
+        coreName = body?.str("display_name")?.takeIf { it.isNotEmpty() } ?: coreName
+        body?.str("token")?.takeIf { it.isNotEmpty() }?.let { token ->
+            // Kept so the approval is asked for once and never again.
+            if (id != null) store.saveToken(id, token)
+        }
+        subscribeZones()
+        publish(RoonStatus(RoonStage.PAIRED, coreId, coreName, "Paired with ${coreName ?: "Roon"}"))
     }
 
     private fun subscribeZones() {

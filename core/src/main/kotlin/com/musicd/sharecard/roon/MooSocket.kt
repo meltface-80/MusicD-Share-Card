@@ -32,7 +32,12 @@ import java.util.concurrent.atomic.AtomicReference
 class MooSocket(
     private val http: OkHttpClient,
     private val url: String,
-    private val events: Events
+    private val events: Events,
+    /**
+     * How long [call] waits. A seam for the tests, which cannot afford to sit
+     * out the real ninety seconds; nothing in the app passes it.
+     */
+    private val callTimeoutMs: Long = DEFAULT_CALL_TIMEOUT_MS
 ) {
 
     interface Events {
@@ -54,14 +59,18 @@ class MooSocket(
     /** Thrown when the Core does not answer, or answers with a failure name. */
     class MooException(message: String, val roonName: String? = null) : IOException(message)
 
-    private companion object {
-        const val TAG = "Moo"
+    companion object {
+        private const val TAG = "Moo"
 
         /**
          * A stuck-call backstop, not a performance budget: a slow-but-working
          * Core must not be broken by it. MusicD-Remote uses the same 90s.
+         *
+         * NOTE that `register` is deliberately NOT a [call] — see the comment
+         * on RoonClient.register. Roon does not answer it until a human has
+         * enabled the extension, so no deadline is the right deadline.
          */
-        const val CALL_TIMEOUT_MS = 90_000L
+        const val DEFAULT_CALL_TIMEOUT_MS = 90_000L
     }
 
     private val nextRequestId = AtomicInteger(0)
@@ -137,7 +146,7 @@ class MooSocket(
         send(service, method, body) { msg ->
             if (reply.compareAndSet(null, msg)) latch.countDown()
         }
-        if (!latch.await(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+        if (!latch.await(callTimeoutMs, TimeUnit.MILLISECONDS)) {
             throw MooException("Roon did not answer $service/$method in time")
         }
         val msg = reply.get() ?: throw MooException("Lost the connection during $service/$method")

@@ -90,9 +90,17 @@ was simply not there, however carefully the DIDL was parsed.
   used to say nothing, which is the same dead end as before.
 - **Zone ids are prefixed with their source** (`roon:…`, `sonos:…`) so two
   sources cannot collide on one room, and the picker says which is which.
-- **Roon's first run needs a human.** The Core does not answer `register` until
-  somebody enables the extension in Settings → Extensions, and that wait is open
-  ended. `Source.notice()` is what stops that looking like a broken app.
+- **Roon's first run needs a human, and NOTHING may put a deadline on that
+  wait.** `register` went through `MooSocket.call`, which gives up after ninety
+  seconds. Roon does not answer `register` at all until somebody presses Enable
+  in Settings → Extensions, so the first pair did not sometimes fail — it always
+  failed, with "Roon did not answer com.roonlabs.registry:1/register in time" and
+  a closed socket. The only way out of that is Refresh, and Refresh introduced
+  the extension again: six identically named copies in Roon's list, one per
+  press, and no way to tell which to enable. Registration is now SENT, not
+  awaited, and `rediscover()` refuses to tear down a socket that is already
+  open. `Source.notice()` is what stops the wait itself looking like a broken
+  app.
 - **Only `TokenStore` writes anything**, and nothing on the network can reach
   it. The rule that every route is a read is unchanged.
 - **The Roon client is a port of MusicD Remote Lite's**, trimmed to the shortest
@@ -253,6 +261,15 @@ was simply not there, however carefully the DIDL was parsed.
   `-webkit-touch-callout: none`, a `touchstart` that calls `preventDefault`, or
   an overlay on the image each kill it silently, and the loss is invisible until
   somebody actually holds a finger on the card.
+
+- **Text selection is off page-wide, and the card is put back explicitly.**
+  Holding a finger near a button was selecting the label and raising Copy / Look
+  Up / Translate. `html, body` carry `user-select: none`, but `.stage img` sets
+  it back to `auto` with `-webkit-touch-callout: default` — without that the
+  page-wide rule reaches the card and silently removes the iOS long-press menu,
+  which is the only way an iPhone copies the picture. `.diag` (the crash report,
+  which exists to be read off the screen and typed out) and every input keep
+  `user-select: text`.
 
 - **startForeground() is the FIRST thing CardService.onCreate does.** A start
   delivered as `startForegroundService` must be answered within about five
