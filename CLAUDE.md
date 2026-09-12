@@ -196,37 +196,48 @@ was simply not there, however carefully the DIDL was parsed.
   version put Save below the fold behind three paragraphs of prose, and a
   settings screen you have to scroll to finish is one people abandon half done.
   Short fields pair across the width; every explanation is one line.
-- **THE ICON IS ONE SUPPLIED RENDER, AND `tools/icon/source.png` IS THE ONLY
-  COPY OF IT.** Every icon in the repo — five Android densities, two layers
-  each, four web PNGs and two for the project page — is cut from that file by
-  `tools/make-icons.py`, and NOTHING is drawn any more. It was drawn: three grey
-  dashes (unreadable at launcher size), then a single quaver whose flag is a
-  hairline curl and thinned to nothing, reported as "a funny looking music
-  note", then a beamed pair with tilted heads held in step by hand between a
-  Python script and an Android vector. The render replaces all of it. Change the
-  icon by replacing the source and re-running the script; never by editing an
-  output, because the next run silently puts it back.
+- **THE ICON IS `tools/icon/source.svg`, AND NOTHING IS DRAWN IN CODE ANY
+  MORE.** Every icon in the repo — five Android densities, two layers each, four
+  web PNGs and two for the project page — comes from that one file. It was drawn
+  once: three grey dashes (unreadable at launcher size), then a single quaver
+  whose flag is a hairline curl and thinned to nothing, reported as "a funny
+  looking music note", then a beamed pair with tilted heads held in step by hand
+  between a Python script and an Android vector. A supplied 3D render replaced
+  all of that, and the SVG replaced the render. Change the icon by replacing the
+  SVG; never by editing an output, because the next run silently puts it back.
+- **THE ICON PIPELINE IS TWO STAGES AND BOTH MUST BE RUN.**
+  `make-icons.py --render` needs a browser and rewrites the two committed
+  masters (`tools/icon/artwork.png`, `tools/icon/backdrop.png`); plain
+  `make-icons.py` turns those into the sixteen icons with nothing but Pillow.
+  The split exists so CI can check the second half exactly: a different Chromium
+  antialiases differently, so a check that re-rendered the SVG would fail for a
+  reason that has nothing to do with the icon. Stopping after `--render` leaves
+  sixteen icons drawn from the old picture, and nothing in this repo reads them
+  — only a launcher and a Home Screen do, and neither is here.
 - **THE ANDROID ICON IS TWO BITMAPS, AND IT CANNOT GO BACK TO A VECTOR.** The
-  render has gradients, a bevel, a soft shadow and a glow, and an Android vector
-  holds none of those. The artwork very nearly fills the render's tile, so
-  handing that tile to a launcher full-bleed loses the sleeve's left edge and
-  the arcs' right to the mask — it is scaled into the 66dp safe zone instead.
-  The FOREGROUND is the tile and the BACKGROUND is that same tile's dark field
-  carried out to the edges, cut from one picture so the join between them has no
-  seam and a launcher's parallax slides the artwork over more of the same field.
-- **A SQUARE CROP OF A ROUNDED TILE STILL HAS FOUR SQUARE CORNERS.** Trimming
-  the rim off the render was not enough: each corner kept a wedge of the grey
-  backdrop the tile was photographed on, and because everything outside the crop
-  is made by repeating the crop's border, each wedge was smeared out to the edge
-  of the finished icon as a notch. Insetting far enough to clear the arcs is not
-  available — the artwork leaves no spare margin — so `_repair` pulls each
-  corner back onto the tile's arc. `CORNER` is that radius, measured off the
-  source; it is wrong the moment the source is replaced.
-- **iOS needs a real PNG icon, and `tools/make-icons.py` cuts it.**
+  SVG has gradients, a drop shadow and a glow, and an Android vector holds none
+  of those. The FOREGROUND is the artwork with real transparency around it — the
+  thing the SVG buys over a flat render, because there is no rectangle to hide
+  and so no seam to hide it with — and the BACKGROUND is the SVG's own backdrop,
+  squared off and carried to every edge.
+- **THE ANDROID FOREGROUND IS SIZED BY A RADIUS, NOT BY A BOUNDING BOX.** A
+  launcher mask is as often a circle as a square, and a box around arcs in one
+  corner and a sleeve in the other is far larger than the artwork really is —
+  sizing to it shrinks the icon to fit corners that are empty. `SAFE_RADIUS`
+  puts the artwork's outermost solid pixel at 34dp of the 108dp canvas, inside
+  the middle 66dp that Android guarantees, and the radius is MEASURED off the
+  artwork's alpha at generation time so it stays right when the SVG changes.
+- **THE SVG'S ROUNDED TILE IS DELIBERATELY THROWN AWAY.** `source.svg` draws its
+  artwork on a rounded tile inset from the edge — an icon as a picture of an
+  icon. Every platform here masks its own shape out of a full-bleed square, so
+  the output is the backdrop carried to all four edges with the artwork over it.
+  Keeping the tile's rounding would show as a dark ring cut just short of the
+  real mask, and the glass edge with it.
+- **iOS needs a real PNG icon, and `tools/make-icons.py` writes it.**
   `apple-touch-icon` will not take an SVG or an adaptive icon, and without one
-  the Home Screen shows a screenshot or a bare letter. Run the script after
-  touching the source or its geometry, and commit everything it writes, or the
-  two platforms quietly stop showing one icon.
+  the Home Screen shows a screenshot or a bare letter. Run both stages after
+  touching the source, and commit everything that moves, or the two platforms
+  quietly stop showing one icon.
 - **Do not retype an SVG path; copy it.** The settings cog was a hand-shortened
   Feather icon — `1.6` where its arcs need `1.65`, `.1` where they need `.06` —
   and those are large-arc sweeps, so rounding them turned the teeth into loops.

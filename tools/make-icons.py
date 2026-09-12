@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
 """
-The app icon, cut from one picture and emitted for both platforms.
+The app icon, rendered from one SVG and emitted for both platforms.
 
-THE SOURCE IS A RENDER, NOT GEOMETRY. Until 0.26.0 this script DREW the icon —
-a sleeve and a beamed pair of notes, from the same numbers as a vector in
-ic_launcher_foreground.xml, and the two were kept in step by hand. The icon is
-now a supplied 3D render (tools/icon/source.png): gradients, bevels, a soft
-shadow and a glow, none of which a handful of rounded rectangles can express and
-none of which an Android vector can hold. So the drawing is gone, the render is
-the single source, and this script only ever crops and scales it.
+    python3 tools/make-icons.py --render    # SVG  -> the two masters (needs a browser)
+    python3 tools/make-icons.py             # masters -> every icon in the repo
 
-    python3 tools/make-icons.py
+TWO STAGES, AND THE REASON IS CI. tools/icon/source.svg is the icon: it carries
+gradients, a drop shadow and a glow, and only a real SVG engine draws those the
+way the author meant. Chromium is that engine here. But a check that re-rendered
+the SVG could not compare the result to what is committed — a different Chromium
+draws antialiasing differently, and the check would fail for a reason that has
+nothing to do with the icon. So the browser stage is run by hand and its two
+outputs are COMMITTED (tools/icon/artwork.png, tools/icon/backdrop.png), and
+everything after it is Pillow arithmetic that any machine reproduces exactly.
+tools/check-icons.py checks that second half, in CI.
+
+    source.svg --[--render, a browser, by hand]--> artwork.png + backdrop.png
+                                                        |
+                                       [this script, Pillow]--> 16 icons
+
+CHANGING THE ICON means replacing source.svg, running BOTH stages and committing
+everything that moves. Stopping after the first leaves sixteen icons drawn from
+the old picture, and nothing in this repo reads them — only a launcher and a
+Home Screen do, neither of which is here.
 
 WHAT IT EMITS
 
@@ -18,186 +30,170 @@ WHAT IT EMITS
   docs/                            the project page's logo and favicon
   app/src/main/res/mipmap-*/       the two layers of the Android adaptive icon
 
-WHY THE ANDROID ONE IS TWO BITMAPS AND NOT THE RENDER. A launcher masks the
-middle of a 108dp canvas — roughly a 72dp circle — and only the middle 66dp is
-guaranteed to survive. The render's artwork spans very nearly the whole of its
-tile, so handing the tile over full-bleed loses the sleeve's left edge and the
-arcs' right. The artwork is therefore scaled to sit inside that safe zone, and
-the space around it is the tile's own background carried outwards by repeating
-its border — which is how the FOREGROUND layer's rectangle and the BACKGROUND
-layer's field meet with no seam: at the join they are the same pixels.
+WHY THE TILE IS THROWN AWAY. source.svg draws its artwork on a rounded tile,
+inset from the edge — an icon as a picture of an icon. Every platform here masks
+its own shape out of a full-bleed square, so what is emitted is the backdrop
+carried to all four edges with the artwork over it, and iOS, the launcher and
+the browser each round it however they round things. The tile's rounding and its
+glass edge are deliberately not in the output; they would be cut off by those
+masks, or worse, cut off just short of them.
 """
 
 import os
+import subprocess
+import sys
+
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
-SOURCE = os.path.join(HERE, "icon", "source.png")
+SOURCE = os.path.join(HERE, "icon", "source.svg")
+ARTWORK = os.path.join(HERE, "icon", "artwork.png")
+BACKDROP = os.path.join(HERE, "icon", "backdrop.png")
 
-# The render is a photograph of a tile: the tile floats on a grey backdrop with
-# a drop shadow, and neither belongs in an icon. These are the tile's own edges,
-# measured off the source, pulled in by RIM so the crop starts inside the bevel
-# highlight that runs along the top and the dark line along the bottom. A rim
-# left in would draw a faint square outline across the finished icon, because
-# everything outside the crop is made by repeating the crop's border.
-TILE = (126, 82, 1163, 1122)   # left, top, right, bottom
-RIM = 26
+# The masters are rendered at the SVG's own coordinate system, which is twice
+# the largest icon anything here asks for.
+MASTER = 1024
 
-# The tile's corner radius, measured off the source, and how far inside its arc
-# a repaired corner is allowed to sample.
+# The artwork alone: the only direct-child <rect> elements of the <svg> are the
+# tile and its glass edge, so this selector names them without touching the
+# author's file. Do not "simplify" it by editing source.svg — the SVG is theirs.
+ARTWORK_CSS = "svg > rect { display: none }"
+
+# The backdrop alone, squared off and carried to every edge. The tile rect is
+# the first child; CSS geometry properties move and unround it in place.
+BACKDROP_CSS = (
+    "svg > g, svg > path, svg > rect + rect { display: none }\n"
+    "svg > rect:first-of-type { x: 0; y: 0; width: 1024px; height: 1024px; rx: 0 }"
+)
+
+CHROMES = (
+    os.environ.get("CHROME"),
+    "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+)
+
+# Where the artwork's outermost pixel lands on Android's 108dp canvas.
 #
-# TRIMMING THE RIM IS NOT ENOUGH ON ITS OWN, and the first version of this only
-# did that: a square crop inset 26px from a rounded rect still has its four
-# corners OUTSIDE the rounding, so each one carried a wedge of the render's grey
-# backdrop — and because everything beyond the crop is made by repeating its
-# border, each wedge was then smeared out to the edge of the icon as a notch.
-# Insetting far enough to clear the arcs is not an option either: the artwork
-# very nearly fills the tile, so there is no spare margin to give up. The
-# corners are repaired instead, by pulling each one back onto the arc.
-CORNER = 225
-CORNER_INSET = 35
+# A LAUNCHER MASK IS A CIRCLE AS OFTEN AS IT IS A SQUARE, so the measurement
+# that matters is a RADIUS from the artwork's own centre and not the width of
+# its bounding box: the arcs sit top-right and the sleeve bottom-left, and a box
+# around both is far bigger than the artwork actually is. Google guarantees the
+# middle 66dp of the 108dp canvas, so 34 is a shade inside the worst case, and
+# the corners no longer decide how big the icon is allowed to be.
+SAFE_RADIUS = 34 / 108
 
-# The artwork itself — sleeve, note and arcs — measured off the source by
-# looking for saturated or near-white pixels. It is what gets centred, and what
-# the safe-zone fractions below are fractions OF. Its own soft shadow and glow
-# fall outside it and are carried along by the crop.
-ART = (206, 236, 1088, 871)
-
-# How wide the artwork is drawn, as a fraction of the finished square.
-#
-# WEB is close to full because iOS and the browser only round the corners off.
-# ANDROID is not: 62/108 keeps the artwork inside the 66dp a launcher mask
-# guarantees, whatever shape that launcher's mask happens to be.
-WEB = 0.80
-SMALL = 0.90      # a favicon is 32px; the same margin at that size is mush
-ANDROID = 62 / 108
+# Alpha below this is the shadow and the glow rather than the artwork. Sizing to
+# the glow would shrink everything else to make room for a blur.
+SOLID = 40
 
 
-def _repair(tile, x0, y0):
-    """Replace each corner's wedge of backdrop with the tile beside it."""
-    left, top, right, bottom = TILE
-    radius = CORNER - CORNER_INSET
-    pixels = tile.load()
-    for sx, sy, dx, dy in (
-        (left + CORNER, top + CORNER, -1, -1),
-        (right - CORNER, top + CORNER, 1, -1),
-        (left + CORNER, bottom - CORNER, -1, 1),
-        (right - CORNER, bottom - CORNER, 1, 1),
-    ):
-        cx, cy = sx - x0, sy - y0
-        for y in range(tile.height):
-            if (y - cy) * dy <= 0:
-                continue
-            for x in range(tile.width):
-                if (x - cx) * dx <= 0:
-                    continue
-                ox, oy = x - cx, y - cy
-                far = (ox * ox + oy * oy) ** 0.5
-                if far <= radius:
-                    continue
-                k = radius / far
-                pixels[x, y] = pixels[
-                    min(tile.width - 1, max(0, round(cx + ox * k))),
-                    min(tile.height - 1, max(0, round(cy + oy * k))),
-                ]
-    return tile
+def _chrome():
+    for path in CHROMES:
+        if path and os.path.exists(path):
+            return path
+    raise SystemExit(
+        "no Chromium found — set CHROME=/path/to/chrome. This stage needs a real\n"
+        "SVG engine; the committed masters are there so nothing else does."
+    )
 
 
-def _crop():
-    """The tile, square, with its rim trimmed off and its corners repaired."""
-    left, top, right, bottom = TILE
-    side = min(right - left, bottom - top) - 2 * RIM
-    cx, cy = (left + right) / 2, (top + bottom) / 2
-    x0, y0 = round(cx - side / 2), round(cy - side / 2)
-    tile = Image.open(SOURCE).convert("RGB").crop((x0, y0, x0 + side, y0 + side))
-    art = (ART[0] - x0, ART[1] - y0, ART[2] - x0, ART[3] - y0)
-    return _repair(tile, x0, y0), art
+def _render(css, size=MASTER):
+    """One rasterisation of source.svg, with `css` applied over it."""
+    page = os.path.join(HERE, "icon", ".render.html")
+    shot = os.path.join(HERE, "icon", ".render.png")
+    with open(page, "w") as out:
+        out.write(
+            "<!doctype html><meta charset=utf-8>\n<style>\n"
+            "html, body { margin: 0; padding: 0; background: transparent; overflow: hidden }\n"
+            f"svg {{ display: block; width: {size}px; height: {size}px }}\n"
+            f"{css}\n</style>\n" + open(SOURCE).read()
+        )
+    try:
+        subprocess.run(
+            [_chrome(), "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
+             "--force-device-scale-factor=1", "--default-background-color=00000000",
+             # Headless spends some of the window on chrome of its own, so ask
+             # for more than is wanted and cut the square out of the top-left.
+             f"--window-size={size},{size + 240}", f"--screenshot={shot}", "file://" + page],
+            check=True, capture_output=True,
+        )
+        image = Image.open(shot).convert("RGBA")
+        image.load()
+        if image.width < size or image.height < size:
+            raise SystemExit(f"the browser drew {image.size}, which is short of {size}")
+        return image.crop((0, 0, size, size))
+    finally:
+        for path in (page, shot):
+            if os.path.exists(path):
+                os.remove(path)
 
 
-def _place(size, fraction):
-    """Where the tile lands on a `size` square, with the artwork centred."""
-    tile, art = _crop()
-    scale = fraction * size / (art[2] - art[0])
-    side = max(1, round(tile.width * scale))
-    scaled = tile.resize((side, side), Image.LANCZOS)
-    ox = round(size / 2 - (art[0] + art[2]) / 2 * scale)
-    oy = round(size / 2 - (art[1] + art[3]) / 2 * scale)
-    return scaled, ox, oy
+def render_masters():
+    for css, path in ((ARTWORK_CSS, ARTWORK), (BACKDROP_CSS, BACKDROP)):
+        _render(css).save(path, optimize=True)
+        print("rendered", os.path.relpath(path, ROOT))
 
 
-def _extend(canvas, tile, ox, oy):
+_masters = {}
+
+
+def _master(path):
+    if path not in _masters:
+        image = Image.open(path).convert("RGBA")
+        image.load()
+        _masters[path] = image
+    return _masters[path]
+
+
+def _artwork():
+    """The artwork, its centre, and how far from that centre it reaches."""
+    art = _master(ARTWORK)
+    alpha = art.split()[3]
+    box = alpha.getbbox()
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    pixels = alpha.load()
+    far = 0.0
+    for y in range(box[1], box[3]):
+        for x in range(box[0], box[2]):
+            if pixels[x, y] >= SOLID:
+                far = max(far, ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5)
+    return art, cx, cy, far
+
+
+def square(size):
     """
-    Carry the tile's border out to the edges of `canvas`.
+    A finished full-bleed icon: the backdrop to all four edges, artwork over it.
 
-    Nearest-edge replication, which is the one extension that CANNOT show a
-    seam: every pixel touching the tile is a copy of the tile pixel beside it.
-    The border here is flat near-black, so what it actually looks like is the
-    tile simply being larger.
+    The artwork keeps the place and the size the SVG gives it, because nothing
+    masks these as hard as a launcher does — iOS rounds the corners off and a
+    browser draws the square as it is.
     """
-    w, h = tile.size
-    size = canvas.width
-    top = tile.crop((0, 0, w, 1))
-    bottom = tile.crop((0, h - 1, w, h))
-    left = tile.crop((0, 0, 1, h))
-    right = tile.crop((w - 1, 0, w, h))
-
-    if oy > 0:
-        canvas.paste(top.resize((w, oy), Image.NEAREST), (ox, 0))
-    below = size - (oy + h)
-    if below > 0:
-        canvas.paste(bottom.resize((w, below), Image.NEAREST), (ox, oy + h))
-    if ox > 0:
-        canvas.paste(left.resize((ox, h), Image.NEAREST), (0, oy))
-    beyond = size - (ox + w)
-    if beyond > 0:
-        canvas.paste(right.resize((beyond, h), Image.NEAREST), (ox + w, oy))
-
-    # The four corners, each the single pixel nearest to it.
-    for cx, cy, px, py in (
-        (0, 0, 0, 0), (ox + w, 0, w - 1, 0),
-        (0, oy + h, 0, h - 1), (ox + w, oy + h, w - 1, h - 1),
-    ):
-        cw = ox if cx == 0 else size - (ox + w)
-        ch = oy if cy == 0 else size - (oy + h)
-        if cw > 0 and ch > 0:
-            canvas.paste(Image.new("RGB", (cw, ch), tile.getpixel((px, py))), (cx, cy))
-    return canvas
-
-
-def square(size, fraction=WEB):
-    """The finished icon, full-bleed: the tile, centred, carried to the edges."""
-    tile, ox, oy = _place(size, fraction)
-    canvas = Image.new("RGB", (size, size))
-    canvas.paste(tile, (ox, oy))
-    return _extend(canvas, tile, ox, oy)
+    canvas = _master(BACKDROP).resize((size, size), Image.LANCZOS)
+    canvas.alpha_composite(_master(ARTWORK).resize((size, size), Image.LANCZOS))
+    return canvas.convert("RGB")
 
 
 def adaptive(size):
     """
-    The two layers of the Android adaptive icon.
+    The two layers of the Android adaptive icon, on a 108dp canvas `size` across.
 
-    The foreground is the tile and nothing else — transparent everywhere the
-    tile is not — so a launcher that shifts the layers against each other for
-    parallax shifts the artwork, not the whole picture. The background is the
-    same field the full-bleed version uses, with the artwork replaced by a
-    vertical blend of the tile's own top and bottom rows: it is only ever seen
-    a pixel or two at a time, at the edge of the shifted foreground, and it has
-    to match what is beside it rather than show a second copy of the note.
+    The foreground is the artwork and nothing else — genuinely transparent
+    around it, which is what the SVG buys over a photograph of an icon: there is
+    no rectangle to hide and so no seam to hide it with. The background is the
+    backdrop, full bleed, and a launcher may slide one against the other for
+    parallax without exposing anything.
     """
-    tile, ox, oy = _place(size, ANDROID)
-    foreground = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    foreground.paste(tile.convert("RGBA"), (ox, oy))
+    art, cx, cy, far = _artwork()
+    scale = SAFE_RADIUS * size / far
+    side = max(1, round(art.width * scale))
+    scaled = art.resize((side, side), Image.LANCZOS)
 
-    w, h = tile.size
-    blend = Image.new("RGB", (w, h))
-    top, bottom = tile.crop((0, 0, w, 1)), tile.crop((0, h - 1, w, h))
-    for y in range(h):
-        row = Image.blend(top, bottom, y / max(1, h - 1))
-        blend.paste(row, (0, y))
-    background = Image.new("RGB", (size, size))
-    background.paste(blend, (ox, oy))
-    return foreground, _extend(background, tile, ox, oy)
+    foreground = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    foreground.paste(scaled, (round(size / 2 - cx * scale), round(size / 2 - cy * scale)))
+    return foreground, _master(BACKDROP).resize((size, size), Image.LANCZOS).convert("RGB")
 
 
 def generate():
@@ -212,10 +208,10 @@ def generate():
         "app/src/main/assets/web/icons/apple-touch-icon.png": square(180),
         "app/src/main/assets/web/icons/icon-192.png": square(192),
         "app/src/main/assets/web/icons/icon-512.png": square(512),
-        "app/src/main/assets/web/icons/favicon-32.png": square(32, SMALL),
-        # The project page shows the same picture, cut from the same render.
+        "app/src/main/assets/web/icons/favicon-32.png": square(32),
+        # The project page shows the same picture, from the same masters.
         "docs/icon.png": square(512),
-        "docs/favicon.png": square(32, SMALL),
+        "docs/favicon.png": square(32),
     }
     # 108dp, at each density Android asks for.
     for bucket, px in (("mdpi", 108), ("hdpi", 162), ("xhdpi", 216),
@@ -228,6 +224,8 @@ def generate():
 
 
 if __name__ == "__main__":
+    if "--render" in sys.argv:
+        render_masters()
     for path, image in generate().items():
         full = os.path.join(ROOT, path)
         os.makedirs(os.path.dirname(full), exist_ok=True)
