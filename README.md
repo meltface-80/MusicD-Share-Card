@@ -19,7 +19,8 @@ It works out what's playing by asking whoever actually knows:
 
 ## Install
 
-Sideload the APK on an Android device running 8.0 or newer. Open it and the card
+[**Download musicd-share-card-0.13.0-debug.apk**](dist/musicd-share-card-0.13.0-debug.apk)
+and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 
 ### Updating
