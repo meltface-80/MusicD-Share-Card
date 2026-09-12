@@ -4,7 +4,7 @@ Makes a share card for whatever you're playing and using whatever music app, and
 
 https://meltface-80.github.io/MusicD-Share-Card/
 
-<!-- Screenshots go here. -->
+![A share card: cover, title, artist, release year, Pitchfork score and a short description from Wikipedia](docs/screenshots/card.jpg)
 
 ## What it does
 
@@ -12,12 +12,21 @@ Open it and you get a card for the record that's on: cover, title, artist, year,
 and a short description from Wikipedia. Then share it, copy it, save it, or send
 it straight to Discord.
 
+<img src="docs/screenshots/app.jpg" width="360" alt="The app: the card, the room it is playing in, and buttons to download it or post it to Discord">
+
 It works out what's playing by asking whoever actually knows:
 
 - **Roon** — asked directly, through its own extension API
 - **Sonos** — for anything the speakers stream themselves (Spotify Connect,
   Apple Music via the Sonos app, radio)
 - **UPnP / DLNA** — any other renderer on the network
+
+Every room it can see is in one list, whichever source found it. Leave it on
+**Whatever's playing** and it picks the room that is actually playing — and when
+two sources see the same room, the one that knows the most about the record
+wins.
+
+<img src="docs/screenshots/zones.jpg" width="360" alt="The room picker, listing rooms from Roon, Sonos and UPnP together">
 
 ## Install
 
@@ -32,11 +41,9 @@ of the page; press **Update** and it downloads it, checks it, and hands it to
 Android to install. Only the device running the app can start that — from
 another device you need the PIN, the same one webhooks ask for.
 
-One catch, for now: builds are signed with a throwaway key, so Android sees each
-one as a different app and refuses to replace the old one. Until that changes
-the app says so instead of offering the button, and you have to uninstall first.
-Two repository secrets fix it permanently — see
-[docs/signing.md](docs/signing.md).
+Every build is signed with the same key, so a new version installs straight over
+the top. The one exception was the last unsigned build — if you are still on one
+of those, uninstall once and this is the last time.
 
 ## Using it from your other devices
 
@@ -92,6 +99,8 @@ turn that off.
 
 Get the URL from Discord: **Edit Channel → Integrations → Webhooks → Copy
 Webhook URL**.
+
+<img src="docs/screenshots/webhooks.jpg" width="360" alt="The webhook settings: channel name, the name to post as, the webhook URL, a picture to upload, and the PIN">
 
 ## If it can't find anything
 
