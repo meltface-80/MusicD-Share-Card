@@ -25,6 +25,7 @@ node --check app/src/main/assets/web/app.js
 npx eslint -c tools/eslint.config.mjs app/src/main/assets/web/*.js
 node tools/check-css.js
 node tools/check-sharecard.js
+python3 tools/check-icons.py
 ```
 
 **A new test must fail before the fix and pass after it.** Prove it: break the
@@ -195,21 +196,37 @@ was simply not there, however carefully the DIDL was parsed.
   version put Save below the fold behind three paragraphs of prose, and a
   settings screen you have to scroll to finish is one people abandon half done.
   Short fields pair across the width; every explanation is one line.
-- **The icon is a BEAMED PAIR, and the notehead tilt is not decoration.** It
-  was three grey dashes (unreadable), then a single quaver whose flag is a
-  hairline curl — at the ~12dp a home-screen icon gives that note, the flag
-  thinned to nothing and left a stem with a blob on it, reported as "a funny
-  looking music note". A beam is a solid bar that survives the size, and two
-  heads say "music" where one says "a shape". The heads lean with their right
-  end up because every notehead in engraved music does; an upright one looks
-  wrong without looking obviously wrong. `android:rotation` is clockwise and
-  PIL's is not, so the vector says -22 where the script says 22.
-- **iOS needs a real PNG icon, and `tools/make-icons.py` draws it.**
+- **THE ICON IS ONE SUPPLIED RENDER, AND `tools/icon/source.png` IS THE ONLY
+  COPY OF IT.** Every icon in the repo — five Android densities, two layers
+  each, four web PNGs and two for the project page — is cut from that file by
+  `tools/make-icons.py`, and NOTHING is drawn any more. It was drawn: three grey
+  dashes (unreadable at launcher size), then a single quaver whose flag is a
+  hairline curl and thinned to nothing, reported as "a funny looking music
+  note", then a beamed pair with tilted heads held in step by hand between a
+  Python script and an Android vector. The render replaces all of it. Change the
+  icon by replacing the source and re-running the script; never by editing an
+  output, because the next run silently puts it back.
+- **THE ANDROID ICON IS TWO BITMAPS, AND IT CANNOT GO BACK TO A VECTOR.** The
+  render has gradients, a bevel, a soft shadow and a glow, and an Android vector
+  holds none of those. The artwork very nearly fills the render's tile, so
+  handing that tile to a launcher full-bleed loses the sleeve's left edge and
+  the arcs' right to the mask — it is scaled into the 66dp safe zone instead.
+  The FOREGROUND is the tile and the BACKGROUND is that same tile's dark field
+  carried out to the edges, cut from one picture so the join between them has no
+  seam and a launcher's parallax slides the artwork over more of the same field.
+- **A SQUARE CROP OF A ROUNDED TILE STILL HAS FOUR SQUARE CORNERS.** Trimming
+  the rim off the render was not enough: each corner kept a wedge of the grey
+  backdrop the tile was photographed on, and because everything outside the crop
+  is made by repeating the crop's border, each wedge was smeared out to the edge
+  of the finished icon as a notch. Insetting far enough to clear the arcs is not
+  available — the artwork leaves no spare margin — so `_repair` pulls each
+  corner back onto the tile's arc. `CORNER` is that radius, measured off the
+  source; it is wrong the moment the source is replaced.
+- **iOS needs a real PNG icon, and `tools/make-icons.py` cuts it.**
   `apple-touch-icon` will not take an SVG or an adaptive icon, and without one
-  the Home Screen shows a screenshot or a bare letter. The PNGs in
-  `app/src/main/assets/web/icons/` are GENERATED from the same numbers as
-  `ic_launcher_foreground.xml` — run the script after changing either, and
-  change both, or the two platforms quietly stop showing one icon.
+  the Home Screen shows a screenshot or a bare letter. Run the script after
+  touching the source or its geometry, and commit everything it writes, or the
+  two platforms quietly stop showing one icon.
 - **Do not retype an SVG path; copy it.** The settings cog was a hand-shortened
   Feather icon — `1.6` where its arcs need `1.65`, `.1` where they need `.06` —
   and those are large-arc sweeps, so rounding them turned the teeth into loops.
