@@ -279,6 +279,25 @@ was simply not there, however carefully the DIDL was parsed.
   page or presses Refresh. This runs on a device that is never switched off; a
   timer anywhere means interrogating the household all day to answer a question
   nobody is reading.
+- **AND COMING BACK TO THE APP IS NOT A REQUEST EITHER.** The page reloaded on
+  `visibilitychange`, which looked like the same rule — ask at the moment
+  somebody wants to know — and is not: going to the Home Screen and returning
+  fires it, so the card you were looking at was thrown away and replaced by a
+  spinner every single time, and one left up deliberately to show somebody
+  could not survive a glance at anything else. Reported as "each time I return
+  to the Home Screen and open the app it has to refresh itself". A stale card
+  is the right trade: it says what it is a picture of, and Refresh is one tap
+  away. `PageRefreshTest` scans for that listener and for the shapes the same
+  mistake takes next — `pageshow`, `focus`, an `onResume` in the shell — because
+  no test here can open a browser and the failure mode is a card that quietly
+  went away, which reads as the app working.
+- **The article behind the blurb is a LINK, not just a credit.** The words on
+  the card come from Wikipedia and the card says so in type too small to be
+  followable, which left the one source the blurb actually came from as the
+  only thing on the page you could not open. `Metadata.Bio.url` had carried it
+  since the port with nothing ever offering it; `/api/extras` returns it as
+  `bioUrl` and the chip is labelled from `bioSource`, so a second source added
+  later names its own.
 - **Zone ids move.** A regroup in the Sonos app changes which player coordinates
   a room, and a card headed with the wrong room is the result. Resolve through
   `Household.group()`, which follows a member to its coordinator, never from a
