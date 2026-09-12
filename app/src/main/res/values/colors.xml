@@ -4,5 +4,4 @@
          colour before the WebView paints. -->
     <color name="background">#0E1012</color>
     <color name="accent">#D4A017</color>
-    <color name="icon_background">#16191D</color>
 </resources>

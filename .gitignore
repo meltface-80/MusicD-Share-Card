@@ -6,3 +6,6 @@ local.properties
 .DS_Store
 node_modules/
 .kotlin/
+
+# tools/check-icons.py imports make-icons.py by path.
+tools/__pycache__/

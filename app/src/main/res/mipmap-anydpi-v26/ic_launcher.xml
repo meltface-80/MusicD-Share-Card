@@ -3,8 +3,20 @@
   Only the -v26 variant exists, and that is complete rather than a gap: minSdk
   is 26, so every device this installs on supports adaptive icons and there is
   no older launcher left to fall back for.
+
+  TWO BITMAPS RATHER THAN A VECTOR AND A COLOUR. The icon used to be a shape
+  made of rounded rectangles and ellipses, which a vector holds exactly and a
+  flat colour sat behind. It is now a 3D render — gradients, a bevel, a soft
+  shadow and a glow — and none of that is expressible as an Android vector.
+
+  BOTH LAYERS ARE GENERATED, TOGETHER, BY tools/make-icons.py. The foreground
+  carries the artwork and stops where the render's tile stopped; the background
+  carries that tile's own dark field out to the edges of the 108dp canvas. They
+  are cut from one picture so they meet with no seam, and a launcher that slides
+  them against each other for parallax slides the artwork over more of the same
+  field. Do not replace one without re-running the script for the other.
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/icon_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
 </adaptive-icon>
