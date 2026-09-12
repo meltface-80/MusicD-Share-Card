@@ -1,0 +1,256 @@
+<svg
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+
+    <!-- Background -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#252A32"/>
+      <stop offset="45%" stop-color="#111419"/>
+      <stop offset="100%" stop-color="#07090C"/>
+    </linearGradient>
+
+    <!-- Album -->
+    <linearGradient id="album" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFD51A"/>
+      <stop offset="55%" stop-color="#FFB300"/>
+      <stop offset="100%" stop-color="#FF8A00"/>
+    </linearGradient>
+
+    <!-- Vinyl -->
+    <radialGradient id="vinyl" cx="40%" cy="35%">
+      <stop offset="0%" stop-color="#2B3038"/>
+      <stop offset="55%" stop-color="#11151B"/>
+      <stop offset="100%" stop-color="#050609"/>
+    </radialGradient>
+
+    <!-- Note -->
+    <linearGradient id="note" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#D9DDE4"/>
+    </linearGradient>
+
+    <!-- Shadows -->
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow
+        dx="0"
+        dy="22"
+        stdDeviation="24"
+        flood-color="#000000"
+        flood-opacity="0.65"
+      />
+    </filter>
+
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Subtle inner highlight -->
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+  </defs>
+
+  <!-- APP ICON -->
+  <rect
+    x="32"
+    y="32"
+    width="960"
+    height="960"
+    rx="190"
+    fill="url(#bg)"
+  />
+
+  <!-- Inner glass edge -->
+  <rect
+    x="48"
+    y="48"
+    width="928"
+    height="928"
+    rx="175"
+    fill="none"
+    stroke="url(#edge)"
+    stroke-width="3"
+  />
+
+  <!-- Album shadow -->
+  <g transform="rotate(-8 440 500)" filter="url(#shadow)">
+
+    <!-- Album/card -->
+    <rect
+      x="180"
+      y="270"
+      width="470"
+      height="470"
+      rx="52"
+      fill="url(#album)"
+    />
+
+    <!-- Album highlight -->
+    <rect
+      x="185"
+      y="275"
+      width="460"
+      height="460"
+      rx="48"
+      fill="none"
+      stroke="#FFF176"
+      stroke-opacity="0.45"
+      stroke-width="5"
+    />
+
+    <!-- Vinyl -->
+    <circle
+      cx="415"
+      cy="505"
+      r="150"
+      fill="url(#vinyl)"
+    />
+
+    <!-- Vinyl grooves -->
+    <circle
+      cx="415"
+      cy="505"
+      r="126"
+      fill="none"
+      stroke="#59616D"
+      stroke-opacity="0.35"
+      stroke-width="5"
+    />
+
+    <circle
+      cx="415"
+      cy="505"
+      r="112"
+      fill="none"
+      stroke="#59616D"
+      stroke-opacity="0.25"
+      stroke-width="4"
+    />
+
+    <circle
+      cx="415"
+      cy="505"
+      r="96"
+      fill="none"
+      stroke="#59616D"
+      stroke-opacity="0.22"
+      stroke-width="3"
+    />
+
+    <!-- Record centre label -->
+    <circle
+      cx="415"
+      cy="505"
+      r="42"
+      fill="#FFB800"
+    />
+
+    <circle
+      cx="415"
+      cy="505"
+      r="10"
+      fill="#111419"
+    />
+
+  </g>
+
+  <!-- Music note shadow -->
+  <path
+    d="
+      M 610 445
+      L 610 675
+      C 610 735 560 770 510 770
+      C 460 770 430 742 430 705
+      C 430 660 470 630 520 630
+      C 545 630 565 636 580 646
+      L 580 420
+      L 735 375
+      L 735 555
+      C 735 605 695 638 650 638
+      C 610 638 585 615 585 580
+      C 585 540 620 515 660 515
+      C 682 515 700 521 712 530
+      L 712 410
+      Z
+    "
+    fill="#000000"
+    opacity="0.5"
+    transform="translate(8 14)"
+  />
+
+  <!-- Music note -->
+  <path
+    d="
+      M 610 445
+      L 610 675
+      C 610 735 560 770 510 770
+      C 460 770 430 742 430 705
+      C 430 660 470 630 520 630
+      C 545 630 565 636 580 646
+      L 580 420
+      L 735 375
+      L 735 555
+      C 735 605 695 638 650 638
+      C 610 638 585 615 585 580
+      C 585 540 620 515 660 515
+      C 682 515 700 521 712 530
+      L 712 410
+      Z
+    "
+    fill="url(#note)"
+  />
+
+  <!-- Share / wireless arcs -->
+
+  <g
+    fill="none"
+    stroke="#FFC400"
+    stroke-linecap="round"
+    filter="url(#glow)"
+  >
+
+    <path
+      d="M 790 205
+         C 865 225 915 290 920 365"
+      stroke-width="32"
+    />
+
+    <path
+      d="M 755 275
+         C 800 290 830 330 834 375"
+      stroke-width="30"
+    />
+
+  </g>
+
+  <!-- Arc highlights -->
+  <g
+    fill="none"
+    stroke="#FFE66D"
+    stroke-linecap="round"
+    opacity="0.8"
+  >
+    <path
+      d="M 790 205
+         C 865 225 915 290 920 365"
+      stroke-width="6"
+    />
+
+    <path
+      d="M 755 275
+         C 800 290 830 330 834 375"
+      stroke-width="5"
+    />
+  </g>
+
+</svg>
