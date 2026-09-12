@@ -1,6 +1,7 @@
 package com.musicd.sharecard.meta
 
 import com.musicd.sharecard.Log
+import com.musicd.sharecard.library.Normalize
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.Locale

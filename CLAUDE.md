@@ -248,6 +248,30 @@ was simply not there, however carefully the DIDL was parsed.
   answering on port 1400, every one of them "would not describe the household".
   Nothing here reads a namespace URI; every lookup goes through `Xml.localName`,
   which strips the prefix off the tag name.
+- **A Pitchfork lookup has THREE tries, and the constructed URL is only the
+  first.** `/reviews/albums/<artist>-<album>/` is one request and the only way
+  an album from 1994 is found at all, but it fails whenever the speaker's
+  spelling is not Pitchfork's — and a just-released album that was sitting in
+  Pitchfork's own feed came back with nothing. So: the constructed URL, then the
+  same with a trailing `(Deluxe Edition)` stripped, then the RSS feed matched on
+  title. Each step only runs when the last found nothing, so an ordinary hit
+  still costs exactly one request. The feed and not the listing page: the
+  listing's reviews live in a `__PRELOADED_STATE__` blob, and RSS is a contract
+  where that is an implementation detail.
+- **`Normalize.text` is the ONE folding rule and slugs must go through it.**
+  `Pitchfork.slugify` folded by hand and dropped anything outside `[a-z0-9]`, so
+  "Björk" became "bj-rk" and no album by an artist with an accent ever resolved
+  — invisible, because a missing score looks exactly like a record nobody
+  reviewed. NFKD is not enough on its own either: a ligature or a stroked letter
+  has no decomposition, so `Normalize` expands æ, œ, ø, ß, þ and friends before
+  folding, or "Ænima" becomes "nima". There must never be a second copy of this
+  rule — one was briefly added in `meta/` and deleted in the same round.
+- **A missing score is silent, so `/api/debug` now lists what was asked.**
+  "Pitchfork never reviewed it" and "the URL this app built was not the one
+  Pitchfork used" look identical from the card. `Pitchfork.attempts()` keeps the
+  last dozen lookups with their outcome, and the page shows them under "Album
+  reviews". That distinction took a bug report to notice; it should not take a
+  second one.
 - **QOBUZ NEEDS AN ALBUM ID; A SEARCH LINK CAN NEVER OPEN THAT APP.** Shipping
   `StreamingLinks` alone gave Qobuz the same pre-filled search as everyone else,
   and it landed on the download store's search page — reported from the field as

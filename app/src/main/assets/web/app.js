@@ -301,7 +301,11 @@
         // that reflows for no visible change is worse than one that doesn't.
         const better = (full.release && full.release !== painted.release) ||
                        (full.bio && full.bio !== painted.bio) ||
-                       (full.score != null && full.score !== painted.score);
+                       (full.score != null && full.score !== painted.score) ||
+                       // A review found on the slow path adds a link even when
+                       // the score is unchanged, and the links are drawn by
+                       // paint() — without this the chip never appears.
+                       (full.reviewUrl && full.reviewUrl !== painted.reviewUrl);
         if (!better) return;
         return paint(mine, playing, merge(painted, full));
       }).catch(() => { /* the card without it is already up */ });
@@ -619,6 +623,9 @@
       rows.push('<p class="diag-advice">' + escapeHtml(d.notices.join(" ")) + "</p>");
     }
     section("The app", d.app);
+    // What Pitchfork was asked, and what it said. A missing score looks
+    // identical to a missing review from the card.
+    section("Album reviews", d.reviews);
     // Each source in its own words. Roon's line is where "not approved yet"
     // appears, and that is not a network problem however much it looks like one.
     section("Sources", d.sources);

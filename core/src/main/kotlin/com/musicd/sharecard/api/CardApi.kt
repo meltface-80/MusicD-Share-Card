@@ -121,7 +121,7 @@ class CardApi(
         "/api/extras" -> extras(request)
         "/api/qobuz" -> qobuzLink(request)
         "/api/art" -> artwork(request)
-        "/api/debug" -> Json.obj(Diagnostics(sources, hostNotes).run())
+        "/api/debug" -> Json.obj(Diagnostics(sources, hostNotes, pitchfork::attempts).run())
         else -> static(request.path)
     }
 
