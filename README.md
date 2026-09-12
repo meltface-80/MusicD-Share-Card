@@ -1,6 +1,8 @@
 # MusicD Share Card
 
-Makes a share card for whatever you're playing, and posts it wherever you want it.
+Makes a share card for whatever you're playing and using whatever music app, and posts it wherever you want it.
+
+https://meltface-80.github.io/MusicD-Share-Card/
 
 <!-- Screenshots go here. -->
 
