@@ -83,7 +83,7 @@ class ShareCardApp(
             version = version,
             publisher = "Music Duck",
             email = "noreply@example.com",
-            website = "https://github.com/meltface-80/New"
+            website = "https://github.com/meltface-80/MusicD-Share-Card"
         ),
         multicastLock = roonMulticastLock
     )
@@ -178,6 +178,6 @@ class ShareCardApp(
          * the same string.
          */
         fun userAgent(version: String): String =
-            "MusicDShareCard/$version ( https://github.com/meltface-80/New )"
+            "MusicDShareCard/$version ( https://github.com/meltface-80/MusicD-Share-Card )"
     }
 }

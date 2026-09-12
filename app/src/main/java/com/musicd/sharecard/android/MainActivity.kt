@@ -12,6 +12,9 @@ import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.net.Uri
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -43,7 +46,19 @@ class MainActivity : Activity() {
 
         /** How long to wait for the local server before saying something. */
         const val SERVER_WAIT_MS = 10_000L
+
+        const val FILE_CHOOSER = 2
     }
+
+    /**
+     * The page's pending `<input type="file">`, waiting on the file picker.
+     *
+     * It MUST be answered — with the files, or with null when the picker is
+     * cancelled. A WebView whose callback is never invoked leaves that input
+     * permanently dead: every later tap on it does nothing, with no way back
+     * short of reloading the page.
+     */
+    private var pendingFiles: ValueCallback<Array<Uri>>? = null
 
     private lateinit var root: FrameLayout
     private lateinit var web: WebView
@@ -83,6 +98,44 @@ class MainActivity : Activity() {
                 displayZoomControls = false
             }
             webViewClient = LocalClient()
+
+            /*
+             * WITHOUT THIS, `<input type="file">` DOES NOTHING AT ALL.
+             *
+             * A WebView does not open a file picker by itself: it asks its
+             * WebChromeClient to, and with no WebChromeClient set there is
+             * nothing to ask. Tapping the control is silently inert — no
+             * picker, no error, no log line. That is exactly what the avatar
+             * photo button did.
+             */
+            webChromeClient = object : WebChromeClient() {
+                override fun onShowFileChooser(
+                    view: WebView?,
+                    callback: ValueCallback<Array<Uri>>?,
+                    params: FileChooserParams?
+                ): Boolean {
+                    // Answer any previous request first, or the input it came
+                    // from stays dead for the life of the page.
+                    pendingFiles?.onReceiveValue(null)
+                    pendingFiles = callback
+                    val intent = params?.createIntent()
+                    if (intent == null) {
+                        pendingFiles = null
+                        return false
+                    }
+                    return try {
+                        // createIntent() honours the accept attribute, so
+                        // accept="image/*" produces a picker showing photos.
+                        startActivityForResult(intent, FILE_CHOOSER)
+                        true
+                    } catch (e: Exception) {
+                        Log.w(TAG, "nothing on this device can pick a file", e)
+                        pendingFiles?.onReceiveValue(null)
+                        pendingFiles = null
+                        false
+                    }
+                }
+            }
             // NOTE: unlike MusicD Remote, the native long-press is deliberately
             // LEFT ALONE. That app disabled it because its page implemented a
             // long-press of its own; here there is none to protect, and the
@@ -206,7 +259,29 @@ class MainActivity : Activity() {
         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION)
     }
 
+    /**
+     * The file picker's answer, handed back to the page.
+     *
+     * `parseResult` turns a cancel into null, which is the right answer rather
+     * than a missing one — the input is released either way.
+     */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == FILE_CHOOSER) {
+            val callback = pendingFiles
+            pendingFiles = null
+            callback?.onReceiveValue(
+                WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+            )
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun onDestroy() {
+        // A page being torn down with a picker still open would otherwise leak
+        // the callback.
+        pendingFiles?.onReceiveValue(null)
+        pendingFiles = null
         // The service keeps running deliberately: closing the window must not
         // take the card server off the network. That is the whole point of it
         // being a service — see CardService.

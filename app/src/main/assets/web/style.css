@@ -419,7 +419,27 @@ body {
   text-overflow: ellipsis;
 }
 
-.wh-file input { display: none; }
+/*
+ * HIDDEN, BUT NOT `display: none`.
+ *
+ * A file input that is display:none is removed from the layout, and several
+ * browsers — Android's WebView among them — will not open a picker for a
+ * control that is not there, even when a label points at it. Taking it out of
+ * the flow while leaving it rendered keeps the click working, and keeps it
+ * reachable by keyboard.
+ */
+.wh-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+}
 
 .wh-buttons {
   display: flex;
