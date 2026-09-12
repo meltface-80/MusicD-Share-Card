@@ -76,6 +76,10 @@ class Diagnostics(
         //    not a network problem however much it looks like one.
         sources.refresh()
         report.put("sources", Json.strings(sources.diagnostics()))
+        // Anything the user must act on, first in the object so it is first on
+        // the page. A Roon Core waiting to be approved is not a network fault
+        // and must not be read as one.
+        report.put("notices", Json.strings(sources.notices()))
 
         val zones = sources.zones()
         report.put(

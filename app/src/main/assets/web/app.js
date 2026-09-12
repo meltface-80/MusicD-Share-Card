@@ -60,6 +60,9 @@
   /** The PIN, when this page is the one running on the device itself. */
   let setup = { onDevice: false, mayConfigure: false, pin: null };
 
+  /** A source asking to be let in, which outranks any tip the page would show. */
+  let noticeText = "";
+
   const isIOS = /iP(hone|ad|od)/.test(navigator.platform || "") ||
     (navigator.userAgent.includes("Mac") && "ontouchend" in document);
 
@@ -193,6 +196,7 @@
     hintEl.textContent = "";
     errEl.textContent = "";
     nowEl.textContent = "";
+    noticeText = "";
     busy(true);
     spinner("Looking for what’s playing…");
 
@@ -223,9 +227,9 @@
         if (noPlayers && !notices.length) offerDiagnostics();
         return;
       }
-      if (playing.notices && playing.notices.length) {
-        hintEl.textContent = playing.notices.join(" ");
-      }
+      noticeText = (playing.notices && playing.notices.length)
+        ? playing.notices.join(" ") : "";
+      if (noticeText) hintEl.textContent = noticeText;
 
       spinner("Building the card…");
       await ensureFont();
@@ -454,9 +458,17 @@
     cog.onclick = showWebhookSettings;
     actions.appendChild(cog);
 
-    hintEl.textContent = isIOS
-      ? "Press and hold the card to copy it, save it to Photos or share it."
-      : "";
+    // A notice from a source — "enable this extension in Roon" — outranks the
+    // iOS tip and must NOT be cleared here. This line used to assign
+    // unconditionally, so on Android it wiped the notice a moment after it was
+    // set and a first Roon run looked like an app that simply ignored Roon.
+    if (noticeText) {
+      hintEl.textContent = noticeText;
+    } else if (isIOS) {
+      hintEl.textContent = "Press and hold the card to copy it, save it to Photos or share it.";
+    } else {
+      hintEl.textContent = "";
+    }
   }
 
   /*
@@ -494,6 +506,9 @@
       if (!items || !items.length) return;
       rows.push("<h3>" + escapeHtml(title) + "</h3><ul>" +
         items.map((i) => "<li>" + escapeHtml(String(i)) + "</li>").join("") + "</ul>");
+    }
+    if (d.notices && d.notices.length) {
+      rows.push('<p class="diag-advice">' + escapeHtml(d.notices.join(" ")) + "</p>");
     }
     section("The app", d.app);
     // Each source in its own words. Roon's line is where "not approved yet"
