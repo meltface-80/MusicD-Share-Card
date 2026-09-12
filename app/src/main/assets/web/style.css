@@ -27,6 +27,10 @@
 html, body {
   margin: 0;
   padding: 0;
+  /* Panning yes, pinch-zoom and double-tap-to-zoom no. Long press is not a
+     touch-action gesture and is unaffected — which matters, because it is how
+     iOS copies the card. */
+  touch-action: pan-x pan-y;
   background: var(--bg);
   color: var(--text);
   font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;

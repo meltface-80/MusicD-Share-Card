@@ -145,6 +145,14 @@ each gets its own button.
 In Discord: **Edit Channel → Integrations → Webhooks → Copy Webhook URL**, then
 paste it into **Webhooks** on the card page.
 
+**It will always carry Discord's APP tag.** A webhook can be given a display
+name and a picture — so a card can arrive as "Menzies" with your avatar rather
+than as the webhook's own name — but Discord marks every webhook message APP
+and there is no setting that removes it. That is deliberate on Discord's part:
+a reader should be able to tell a person from an integration. Posting as your
+account itself would mean driving a user token, which is self-botting and
+against Discord's terms.
+
 **The URL is a credential** — anyone holding it can post to that channel from
 anywhere, for as long as it exists. So it is typed once and never comes back
 out: no route returns it, the list shows only a mask, and the app itself does

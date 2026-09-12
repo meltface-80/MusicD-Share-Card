@@ -179,6 +179,73 @@ class WebhookTest {
         assertTrue(body.contains("\"parse\":[]"))
     }
 
+    /**
+     * As close to "posted by me" as a webhook is allowed to get.
+     *
+     * Discord lets a webhook set a display name and avatar per message. It does
+     * NOT let it drop the APP tag — that is deliberate, so a reader can always
+     * tell a person from an integration, and no field turns it off. Posting as
+     * the account itself would mean driving a user token, which is self-botting
+     * and against Discord's terms.
+     */
+    @Test
+    fun `a display name and avatar ride along when set`() {
+        server.enqueue(MockResponse().setResponseCode(204))
+        val hook = Webhook(
+            "id", "Vinyl chat", server.url("/api/webhooks/1/token").toString(),
+            username = "Menzies",
+            avatarUrl = "https://cdn.discordapp.com/avatars/1/2.png"
+        )
+        DiscordPoster(OkHttpClient()).post(hook, byteArrayOf(1), "x")
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue("the name must be sent: $body", body.contains("\"username\":\"Menzies\""))
+        assertTrue(body.contains("avatar_url"))
+        assertTrue(body.contains("cdn.discordapp.com"))
+    }
+
+    @Test
+    fun `neither is sent when unset, so Discord's own settings still apply`() {
+        server.enqueue(MockResponse().setResponseCode(204))
+        DiscordPoster(OkHttpClient()).post(hook(), byteArrayOf(1), "x")
+        val body = server.takeRequest().body.readUtf8()
+        assertFalse("an empty username would blank the webhook's own name", body.contains("username"))
+        assertFalse(body.contains("avatar_url"))
+    }
+
+    @Test
+    fun `a name Discord would refuse is caught here instead of in the channel`() {
+        for (bad in listOf("Clyde", "my discord bot", "x".repeat(81))) {
+            var refused = false
+            try {
+                WebhookUrls.validateUsername(bad)
+            } catch (e: WebhookRejected) {
+                refused = true
+            }
+            assertTrue("should have been refused: $bad", refused)
+        }
+        assertEquals("Menzies", WebhookUrls.validateUsername("  Menzies "))
+        assertEquals("", WebhookUrls.validateUsername("   "))
+    }
+
+    @Test
+    fun `an avatar Discord could never fetch is refused with the reason`() {
+        // Discord fetches the avatar itself, so a LAN address is invisible to
+        // it and would silently fall back to the default picture.
+        val local = runCatching { WebhookUrls.validateAvatar("https://192.168.0.5/me.png") }
+            .exceptionOrNull()
+        assertTrue(local!!.message!!.contains("public"))
+
+        val plain = runCatching { WebhookUrls.validateAvatar("http://example.com/me.png") }
+            .exceptionOrNull()
+        assertTrue(plain!!.message!!.contains("https"))
+
+        assertEquals(
+            "https://cdn.discordapp.com/avatars/1/2.png",
+            WebhookUrls.validateAvatar("https://cdn.discordapp.com/avatars/1/2.png")
+        )
+        assertEquals("", WebhookUrls.validateAvatar(""))
+    }
+
     @Test
     fun `a deleted webhook is reported in words, not as a status code`() {
         server.enqueue(MockResponse().setResponseCode(404).setBody("{}"))

@@ -43,6 +43,17 @@ class DiscordPoster(private val http: OkHttpClient = webhookHttpClient()) {
         val payload = buildString {
             append('{')
             append("\"content\":").append(quote(caption.take(MAX_CONTENT)))
+            // The name and picture Discord shows on the message. This is as
+            // close to "posted by me" as a webhook is allowed to get: Discord
+            // still tags every webhook message APP, deliberately, so a reader
+            // can tell a person from an integration. Omitted entirely when
+            // unset, so the webhook's own settings in Discord still apply.
+            if (webhook.username.isNotEmpty()) {
+                append(",\"username\":").append(quote(webhook.username))
+            }
+            if (webhook.avatarUrl.isNotEmpty()) {
+                append(",\"avatar_url\":").append(quote(webhook.avatarUrl))
+            }
             // Suppress @everyone and role pings outright. A card is a picture;
             // it has no business notifying a server, and an album title that
             // happens to contain "@everyone" must not become an announcement.
