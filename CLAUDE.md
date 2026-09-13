@@ -428,6 +428,32 @@ was simply not there, however carefully the DIDL was parsed.
   nobody has seen yet is excluded by default rather than suggested by default.
   An act with no album keeps its name and loses the record; naming a single
   would be the wrong answer where the bare act is an honest one.
+- **A SEARCH'S FIRST ROW IS NOT THE ANSWER — DEEZER EDITION.** The
+  similar-artist lookup asked Deezer for `limit=1` and used whatever came back.
+  Deezer carries every act sharing a name, and plenty of famous names are also
+  carried by somebody with a dozen followers and no related artists — so the
+  search succeeded, the name check passed, and the related lookup returned
+  nothing. Reported from the field as Sting getting no suggestions while The
+  Police, Calexico and The Sea Within each got three. It now takes a page of
+  rows, keeps the ones that really carry the name, and tries them **most-
+  followed first**; `nb_fan` RANKS and never filters, so a small act with its
+  name to itself is still found. A candidate with no related acts is not the
+  end either — the next is tried, because an empty answer from the wrong Sting
+  says nothing about the right one. Same lesson as `QobuzAlbum.pick` and the
+  Pitchfork listing, third service.
+- **THE REPORTED SYMPTOM WAS "SPOTIFY CONNECT GIVES NO SUGGESTIONS" AND THE
+  SOURCE HAD NOTHING TO DO WITH IT.** Spotify Connect and Qobuz Connect to a
+  Sonos speaker are the SAME code path — both `SonosSource` — so a difference
+  between them could never have been about where the music came from. It was
+  the artist. `/api/debug` is what settled it: the notes print the artist
+  string the lookup used and what came back, and "deezer(Sting) -> 0 acts"
+  beside "deezer(Calexico) -> 3 acts" named the real variable in one line.
+  Check the diagnostics before accepting a correlation.
+- **`Similar` NOTES THE HTTP STATUS FOR ListenBrainz, not just "no answer".**
+  It has never once answered in the field, and "no answer" cannot tell a
+  rejected dataset name (400) from a moved endpoint (404) from a host that was
+  never reached (0, which is not a status — it means the request got no answer
+  at all). Three different fixes, so the note names which.
 - **A FILTER THE SERVER APPLIES IS NOT EVIDENCE THE SERVER APPLIED IT.** The
   MusicBrainz browse asks for `type=album` and now also checks `primary-type`
   on every group that comes back. It was only asking, which is the same trust
