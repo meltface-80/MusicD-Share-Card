@@ -7,6 +7,7 @@ import com.musicd.sharecard.api.Assets
 import com.musicd.sharecard.describe
 import com.musicd.sharecard.meta.FileCacheStore
 import com.musicd.sharecard.roon.FileTokenStore
+import com.musicd.sharecard.settings.FileSettingsStore
 import com.musicd.sharecard.webhook.FileWebhookStore
 import java.io.File
 import java.time.Instant
@@ -70,7 +71,11 @@ fun main() {
             version = version,
             tokenStore = FileTokenStore(File(data, "roon.json")),
             webhookStore = webhooks,
-            cacheStore = cache
+            cacheStore = cache,
+            // Which services are linked and which rooms may be shown. Opt-in,
+            // so a first run here shows the empty state and points at
+            // Settings rather than drawing a card nobody asked for.
+            settingsStore = FileSettingsStore(File(data, "settings.json"))
             // updateInstaller is deliberately absent: see the note above.
         ).also { it.start() }
     } catch (t: Throwable) {

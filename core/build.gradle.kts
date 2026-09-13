@@ -51,7 +51,14 @@ tasks.test {
      * it is not still true.
      */
     inputs.files(
-        fileTree("$rootDir/app/src/main/assets/web") { include("**/*.js") },
+        // HTML AND CSS ARE IN THE LIST NOW. SettingsDrawnTest reads index.html
+        // and style.css to check the settings button is in the header and the
+        // dot it replaced is gone — and a scan Gradle does not track is a scan
+        // that reports UP-TO-DATE having looked at nothing, which is the exact
+        // way these tests lied once before.
+        fileTree("$rootDir/app/src/main/assets/web") {
+            include("**/*.js", "**/*.html", "**/*.css")
+        },
         fileTree("$rootDir/app/src/main/java") { include("**/*.kt") }
     ).withPropertyName("scannedSources").withPathSensitivity(PathSensitivity.RELATIVE)
 }

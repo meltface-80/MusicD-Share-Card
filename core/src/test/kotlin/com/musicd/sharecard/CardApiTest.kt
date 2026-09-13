@@ -12,6 +12,8 @@ import com.musicd.sharecard.meta.Similar
 import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.sonos.Household
 import com.musicd.sharecard.sonos.SonosSource
+import com.musicd.sharecard.settings.Settings
+import com.musicd.sharecard.settings.SettingsStore
 import com.musicd.sharecard.source.Sources
 import com.musicd.sharecard.sonos.NowPlaying
 import com.musicd.sharecard.sonos.TransportState
@@ -58,6 +60,25 @@ class CardApiTest {
         }
     }
 
+    /**
+     * EVERY ROOM SWITCHED ON, which is not the default and is deliberate here.
+     *
+     * Zones are opt-in, so a CardApi built with no settings can answer about
+     * nothing at all — and when that landed, every test in this file failed at
+     * once, which is exactly the shape of what it does to a household on
+     * upgrade. These tests are about zone selection, the chooser and the art
+     * proxy, so they enable the fakes and get on with their own subject. The
+     * DEFAULT is asserted on its own, once, in `a fresh install shows nothing
+     * until a room is chosen`.
+     */
+    private fun allZonesOn(sources: Sources): SettingsStore {
+        val store = SettingsStore.inMemory()
+        // Read through the unfiltered list: zones() is already filtered by the
+        // very setting being written here.
+        store.write(Settings(enabledZones = sources.allZones().map { it.id }.toSet()))
+        return store
+    }
+
     private fun api(shelf: CacheStore = CacheStore.NONE): CardApi {
         players.values.forEach { it.topology = topology }
         val http = metadataHttpClient()
@@ -66,14 +87,16 @@ class CardApiTest {
             seedHosts = listOf("10.0.0.1"),
             discover = { emptyList() }
         )
+        val sources = Sources(listOf(SonosSource(household)))
         return CardApi(
-            Sources(listOf(SonosSource(household))),
+            sources,
             Metadata(http, "test", shelf),
             Pitchfork(http, "test"),
             ArtProxy(http),
             assets,
             "1.0.0",
-            qobuz = com.musicd.sharecard.meta.QobuzAlbum(http, "test")
+            qobuz = com.musicd.sharecard.meta.QobuzAlbum(http, "test"),
+            settingsStore = allZonesOn(sources)
         )
     }
 
@@ -96,15 +119,17 @@ class CardApiTest {
             seedHosts = listOf("10.0.0.1"),
             discover = { emptyList() }
         )
+        val sources = Sources(listOf(SonosSource(household)))
         return CardApi(
-            Sources(listOf(SonosSource(household))),
+            sources,
             Metadata(http, "test"),
             Pitchfork(http, "test"),
             ArtProxy(http),
             assets,
             "1.0.0",
             qobuz = com.musicd.sharecard.meta.QobuzAlbum(http, "test"),
-            similar = similar
+            similar = similar,
+            settingsStore = allZonesOn(sources)
         )
     }
 

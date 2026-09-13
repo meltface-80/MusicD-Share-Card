@@ -132,4 +132,18 @@ class StreamingLinksTest {
         assertEquals("https://www.deezer.com/search/$q", links["deezer"])
         assertEquals("https://bandcamp.com/search?q=$q&item_type=a", links["bandcamp"])
     }
+
+    @Test
+    fun `the settings list and the link row name the same services`() {
+        /*
+         * TWO LISTS THAT MUST NOT DRIFT. `services()` is what the settings
+         * screen offers to switch on and off; `forAlbum` is what actually gets
+         * drawn under a card. A service added to one and not the other is
+         * either a switch that controls nothing, or a chip nobody can turn off
+         * — and both look like the feature working until somebody tries it.
+         */
+        val offered = StreamingLinks.services().map { it.service }
+        val drawn = StreamingLinks.forAlbum("Slint", "Spiderland").map { it.service }
+        assertEquals(offered, drawn)
+    }
 }

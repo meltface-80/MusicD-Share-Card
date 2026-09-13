@@ -38,6 +38,20 @@ class Sources(private val sources: List<Source>) {
     @Volatile
     var preferredZoneId: String? = null
 
+    /**
+     * Which zones are switched on, from the settings file.
+     *
+     * A property rather than a constructor argument because the answer changes
+     * while the app runs — somebody enables a room and the next request must
+     * see it, without rebuilding every source and re-running discovery.
+     *
+     * It defaults to letting everything through so that a test, and any caller
+     * that has no settings, behaves exactly as this class did before rooms
+     * became opt-in.
+     */
+    @Volatile
+    var zoneFilter: (String) -> Boolean = { true }
+
     fun start() = sources.forEach { source ->
         runCatching { source.start() }
             .onFailure { Log.w(TAG, "${source.name} would not start: ${it.message}", it) }
@@ -50,7 +64,22 @@ class Sources(private val sources: List<Source>) {
             .onFailure { Log.w(TAG, "${source.name} would not refresh: ${it.message}", it) }
     }
 
-    fun zones(): List<ZoneRef> = sources.flatMap { source ->
+    /**
+     * WHICH ZONES THIS APP MAY ANSWER ABOUT, which is not every zone it can
+     * see.
+     *
+     * Rooms are opt-in: a device is discovered, listed in Settings, and does
+     * nothing at all until somebody asks for it. So everything downstream of
+     * this — the picker, the chooser grid, the fallback ladder, `anyZones` —
+     * inherits the filter by inheriting this one function, and there is no
+     * second place that has to remember. [allZones] is the unfiltered list and
+     * exists for exactly one caller: the settings screen, which has to offer
+     * the rooms that are switched off.
+     */
+    fun zones(): List<ZoneRef> = allZones().filter { zoneFilter(it.id) }
+
+    /** Every zone every source can see, switched on or not. */
+    fun allZones(): List<ZoneRef> = sources.flatMap { source ->
         runCatching { source.zones() }
             .onFailure { Log.w(TAG, "${source.name} would not list zones: ${it.message}") }
             .getOrDefault(emptyList())
@@ -99,7 +128,10 @@ class Sources(private val sources: List<Source>) {
     }
 
     fun nowPlaying(preferId: String? = preferredZoneId): Playing? {
-        val chosen = preferId?.let { ask(it) }
+        // Filtered HERE and not only below, because the fast path a few lines
+        // down returns `chosen` outright — so a switched-off room asked for by
+        // id would come back having skipped every other check.
+        val chosen = preferId?.takeIf { zoneFilter(it) }?.let { ask(it) }
 
         // THE FAST PATH, and it is narrow on purpose: the chosen room is
         // playing AND it told us both the album and the artist. There is
@@ -117,6 +149,24 @@ class Sources(private val sources: List<Source>) {
             if (candidates.none { it.zoneId == playing.zoneId && it.source == playing.source }) {
                 candidates += playing
             }
+        }
+
+        /*
+         * ONE PICK PER SOURCE IS NOT ENOUGH ONCE ROOMS ARE OPT-IN.
+         *
+         * `source.nowPlaying(null)` answers with that source's OWN best room,
+         * which may be one that is switched off — and dropping it would then
+         * lose the whole source, including an enabled room beside it that is
+         * playing. So the switched-off answers go, and every enabled room the
+         * sources did not volunteer is asked directly.
+         *
+         * The cost is bounded by how many rooms somebody has actually turned
+         * on, and `rooms()` already pays exactly this for the chooser grid.
+         */
+        candidates.retainAll { zoneFilter(it.zoneId) }
+        for (zone in zones()) {
+            if (candidates.any { it.zoneId == zone.id }) continue
+            ask(zone.id)?.let { candidates += it }
         }
         if (candidates.isEmpty()) return null
 
@@ -205,7 +255,15 @@ class Sources(private val sources: List<Source>) {
      * nothing", which are the same thing to a card — see the rule that an
      * answer describing nothing is never drawn.
      */
-    fun inZone(zoneId: String): Playing? = ask(zoneId)?.takeIf { quality(it) >= 0 }
+    fun inZone(zoneId: String): Playing? {
+        // A SWITCHED-OFF ROOM ANSWERS NOTHING, and this is the line that makes
+        // "no background processes" true rather than merely cosmetic: without
+        // it a page left open from before the room was disabled — or a URL
+        // typed by hand — still reaches the speaker on every refresh. The
+        // filter is keyed on the id precisely so this costs no lookup.
+        if (!zoneFilter(zoneId)) return null
+        return ask(zoneId)?.takeIf { quality(it) >= 0 }
+    }
 
     /** Ask whichever source owns this prefixed id. */
     private fun ask(zoneId: String): Playing? {

@@ -47,6 +47,33 @@ object StreamingLinks {
     /** One service, ready for the page to draw. */
     data class Link(val service: String, val name: String, val url: String)
 
+    /** One service with no record in mind, for the settings screen to list. */
+    data class Service(val service: String, val name: String)
+
+    /**
+     * Every service this app knows, in the order the page shows them.
+     *
+     * THE NAMES LIVE HERE AND NOWHERE ELSE, because the settings screen has to
+     * list services when there is no album to link to — it is a list of what
+     * CAN be shown, not of what is showing. [forAlbum] reads its labels out of
+     * this map, and `StreamingLinksTest` asserts the two agree on the ids, so a
+     * service added to one and not the other fails a test rather than appearing
+     * in Settings with no chip behind it.
+     */
+    private val NAMES = linkedMapOf(
+        "qobuz" to "Qobuz",
+        "tidal" to "TIDAL",
+        "spotify" to "Spotify",
+        "apple" to "Apple Music",
+        "amazon" to "Amazon Music",
+        "deezer" to "Deezer",
+        "bandcamp" to "Bandcamp"
+    )
+
+    fun services(): List<Service> = NAMES.map { (id, name) -> Service(id, name) }
+
+    private fun named(id: String, url: String) = Link(id, NAMES.getValue(id), url)
+
     /**
      * Every service, in the order the page shows them.
      *
@@ -60,13 +87,13 @@ object StreamingLinks {
     ): List<Link> {
         val query = searchQuery(artist, album) ?: return emptyList()
         return listOf(
-            Link("qobuz", "Qobuz", QOBUZ + storefront(locale) + "/search/?q=" + query),
-            Link("tidal", "TIDAL", "https://tidal.com/search?q=$query"),
-            Link("spotify", "Spotify", "https://open.spotify.com/search/$query"),
-            Link("apple", "Apple Music", "https://music.apple.com/search?term=$query"),
-            Link("amazon", "Amazon Music", "https://music.amazon.com/search/$query"),
-            Link("deezer", "Deezer", "https://www.deezer.com/search/$query"),
-            Link("bandcamp", "Bandcamp", "https://bandcamp.com/search?q=$query&item_type=a")
+            named("qobuz", QOBUZ + storefront(locale) + "/search/?q=" + query),
+            named("tidal", "https://tidal.com/search?q=$query"),
+            named("spotify", "https://open.spotify.com/search/$query"),
+            named("apple", "https://music.apple.com/search?term=$query"),
+            named("amazon", "https://music.amazon.com/search/$query"),
+            named("deezer", "https://www.deezer.com/search/$query"),
+            named("bandcamp", "https://bandcamp.com/search?q=$query&item_type=a")
         )
     }
 

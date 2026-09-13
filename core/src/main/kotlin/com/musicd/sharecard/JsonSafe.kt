@@ -24,3 +24,28 @@ fun JSONObject.str(key: String, fallback: String = ""): String =
 
 /** As [str], for a field that is absent, empty or JSON null. */
 fun JSONObject.strOrNull(key: String): String? = str(key).takeIf { it.isNotEmpty() }
+
+/**
+ * A JSON boolean field, reading the shapes that are not booleans.
+ *
+ * `optBoolean` IS THE SAME FAMILY OF TRAP AS `optString`. It answers false for
+ * the number 1 and for the string "true", and this app has already been bitten
+ * once: Lyrion writes its booleans as 1 and 0, so reading `connected` with it
+ * marked a whole household asleep — see `LmsClient.truthy`, which is this
+ * function's older twin.
+ *
+ * The settings screen sends real JSON booleans, so nothing is wrong today. It
+ * is written this way because the body arrives over the network from a page
+ * this app does not get to check, and "the caller is us" has been wrong before.
+ */
+fun JSONObject.bool(key: String, fallback: Boolean = false): Boolean {
+    if (isNull(key)) return fallback
+    return when (val value = opt(key)) {
+        is Boolean -> value
+        is Number -> value.toInt() != 0
+        is String -> value.trim().lowercase() in TRUTHY
+        else -> fallback
+    }
+}
+
+private val TRUTHY = setOf("true", "1", "yes", "on")

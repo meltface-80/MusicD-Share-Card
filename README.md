@@ -38,6 +38,14 @@ Pick a room by name and you get that room, silence included. Each zone is
 independent, so a room that is not playing says so rather than showing you
 what is on somewhere else.
 
+**Rooms are opt-in.** A fresh install finds everything on the network and shows
+none of it: open **Settings → Zones** and switch on the ones you want. Anything
+that was powered off — a TV, an amp — joins that list the next time it answers,
+switched off, so nothing appears in your picker unasked. The cog beside the
+title also holds **Services**, where a streaming service you do not use can be
+switched off (it then gets no link under the card and is not looked up), and
+the Discord webhook setup, which used to live under the card.
+
 <p>
   <img src="docs/screenshots/rooms.jpg" width="330" alt="Whatever's playing: a grid of album covers, one per room, with the rooms that are silent listed underneath">
   <img src="docs/screenshots/zones.jpg" width="330" alt="The room picker open, listing rooms from Roon, Sonos and UPnP together with the source named beside each">
@@ -51,7 +59,7 @@ shell around it. Run whichever suits the machine you already leave switched on.
 
 ### Android
 
-[**Download musicd-share-card-0.44.0.apk**](dist/musicd-share-card-0.44.0.apk)
+[**Download musicd-share-card-0.45.0.apk**](dist/musicd-share-card-0.45.0.apk)
 and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 

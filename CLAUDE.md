@@ -347,6 +347,59 @@ was simply not there, however carefully the DIDL was parsed.
   "the" is NOT, or "The Who" lands back inside "The Guess Who". A spelling the
   article does not carry costs the blurb, which is the trade this app keeps
   making: a missing blurb is honest, a confident wrong one is not.
+- **ROOMS ARE OPT-IN NOW, AND THAT IS A DEFAULT THAT BREAKS A WORKING APP
+  ONCE.** `Settings` stores the exception to each default and the two sets run
+  OPPOSITE ways: SERVICES default on, so the set holds the ones switched OFF
+  and a service added in a later version appears by itself; ZONES default off,
+  so the set holds the ones switched ON and a television powered on next week
+  stays out of the picker until it is asked for. Stored the other way round,
+  each default inverts the moment the file is written — an upgrade that hides
+  every streaming link, or a device that appears unasked. Put to the owner with
+  the cost spelled out (every existing install, theirs included, goes blank on
+  update until rooms are chosen), the answer was to do exactly that: one rule,
+  no migration.
+- **THE EMPTY STATE MUST NAME THE RIGHT CAUSE.** "No players found on the
+  network" is a lie when the players are simply switched off, and the worst
+  possible one: it sends somebody to hosts.txt, multicast and VLANs for a
+  problem whose fix is two taps. `reasonForNothing` separates "found nothing
+  yet" from "found plenty and you have chosen none", and `SettingsApiTest`
+  asserts the message points at Settings.
+- **SWITCHED OFF MEANS NOT ASKED, NOT MERELY HIDDEN.** `Sources.zoneFilter`
+  keys on the zone ID so `inZone` can refuse without a lookup, and every
+  consumer inherits it through `zones()`. `allZones()` is the unfiltered list
+  and has exactly one caller: the settings screen, which must show the rooms
+  that are off. `ZoneFilterTest` asserts the fake speaker is never reached,
+  not just that a name is missing from a list.
+- **ONE PICK PER SOURCE IS NOT ENOUGH ONCE ROOMS ARE OPT-IN.**
+  `source.nowPlaying(null)` answers with that source's OWN best room, which may
+  be one that is switched off — and dropping that answer loses the whole
+  source, including an enabled room beside it that is playing. The ladder
+  filters the volunteered answers and then asks each enabled room the sources
+  did not mention. Cost is bounded by how many rooms somebody turned on, and
+  `rooms()` already pays exactly that for the chooser.
+- **THE SETTINGS SCREEN MUST CLAIM THE STAGE BEFORE IT AWAITS ANYTHING.** Every
+  screen draws into the same stage as the card, so a `load()` already in flight
+  will paint over it. Claiming after an await is not enough: measured in a real
+  browser during a first-run sweep, the first await queued behind the card's
+  request and the menu never drew at all — a cog that did nothing. `claimStage`
+  bumps the token, aborts the card's fetches and clears `busy`; it is called
+  first in every screen, and `SettingsDrawnTest` scans for an await that
+  overtakes it.
+- **AND THE SERVICES SCREEN MUST NOT ASK FOR ZONES.** Listing zones serialises
+  against a discovery sweep, so bundling them into one `/api/settings` payload
+  made the Services screen — which needs nothing from the network — wait on a
+  sweep it had no use for. `?zones=1` is opt-in: Services and Reviews answer in
+  about a millisecond, Zones pays the nine seconds and says "Looking for
+  rooms…" while it does, because a list of discovered devices cannot be
+  produced without discovering them.
+- **THE WEBFONT IS A RENDER-BLOCKING REMOTE STYLESHEET, AND A PENDING
+  STYLESHEET BLOCKS EVERY SCRIPT AFTER IT.** `index.html` pulls Manrope from
+  fonts.googleapis.com. With no route to the internet the whole page is inert
+  until that request gives up — twelve seconds, measured, during which no
+  button on the page does anything. This is a LAN app that otherwise needs no
+  internet at all. NOT FIXED, and deliberately left rather than changed
+  quietly: making it non-blocking changes what the page looks like while it
+  loads, which is the owner's call. Reopen it as a product question.
 - **A source can report an opaque id where a title should be.** Roon streaming
   to Sonos sends "Roon" + 32 hex characters as `dc:title`. A card headed with a
   hash looks like the app working, which is worse than one that admits it knows

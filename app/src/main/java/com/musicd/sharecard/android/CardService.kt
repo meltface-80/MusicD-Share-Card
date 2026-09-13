@@ -151,7 +151,11 @@ class CardService : Service() {
                 // What MusicBrainz, Wikipedia, Pitchfork and Qobuz said, kept
                 // across restarts. Playing a record a second time should not
                 // pay for all four again.
-                cacheStore = cache
+                cacheStore = cache,
+                // Which streaming services are linked and which rooms may be
+                // shown. Rooms are opt-in, so a first run finds the house and
+                // draws none of it until somebody says which.
+                settingsStore = SettingsFile(this)
             ).also { it.start() }
 
             app = started
