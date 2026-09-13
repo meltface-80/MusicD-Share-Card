@@ -74,8 +74,20 @@ Or with Compose — [`docker-compose.yml`](docker-compose.yml) is in the repo an
 is commented:
 
 ```bash
-curl -O https://raw.githubusercontent.com/meltface-80/MusicD-Share-Card/main/docker-compose.yml
+git clone https://github.com/meltface-80/MusicD-Share-Card.git
+cd MusicD-Share-Card
 docker compose up -d
+```
+
+**If `docker run` answers `denied`, the image is private, not missing.** GitHub
+makes every package private the first time it is published, and only the owner
+can change that — repository → Packages → `musicd-share-card` → Package
+settings → Change visibility → Public. Until then, build it yourself from a
+clone; it is the same Dockerfile CI uses, and `docker compose up -d` does it
+without any extra flag:
+
+```bash
+docker compose up -d --build
 ```
 
 Three things worth knowing before you run it:

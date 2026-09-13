@@ -441,3 +441,19 @@ jobs:
             ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # A PUSHED PACKAGE IS NOT A PULLABLE ONE, and nothing in this run says so.
+      # GitHub makes a container package PRIVATE on its first publish, and an
+      # unauthenticated `docker pull` of a private package answers "denied" --
+      # which reads as "there is no such image" and sent the first person to try
+      # it looking for a build that had in fact succeeded. There is no API to
+      # change it, so the most this can do is say where the switch is.
+      - name: Say where the visibility switch is
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # Single quotes, and no backticks anywhere: this is a double-quoted
+          # shell string, so a backticked "docker pull" would be RUN.
+          echo '::notice::If docker pull answers denied, the package is still PRIVATE.' \
+               'Repository -> Packages -> musicd-share-card -> Package settings ->' \
+               'Change visibility -> Public. One click, once.'
+          echo "Pushed ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}"
