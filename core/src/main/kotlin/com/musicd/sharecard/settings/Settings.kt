@@ -1,5 +1,7 @@
 package com.musicd.sharecard.settings
 
+import com.musicd.sharecard.meta.Reviews
+
 /**
  * What the person running this has turned on and off.
  *
@@ -30,7 +32,21 @@ data class Settings(
     /** Streaming services switched ON. Everything not named here is off. */
     val enabledServices: Set<String> = emptySet(),
     /** Zones switched ON. Everything not named here is off. */
-    val enabledZones: Set<String> = emptySet()
+    val enabledZones: Set<String> = emptySet(),
+    /**
+     * Review sources, or NULL meaning "nobody has chosen yet".
+     *
+     * THE NULL IS THE POINT, and it is why this is not a third set of the same
+     * shape as the two above. Those two default to nothing; these do not — the
+     * album sources are what the card has always drawn, and defaulting them
+     * off would empty every card in the house to make a settings screen
+     * consistent. So the absence of a choice has to be distinguishable from
+     * the choice of nothing, which an empty set cannot do.
+     *
+     * Once anything is touched the whole set is written out literally, so the
+     * file always says what is on rather than what was left alone.
+     */
+    val enabledReviews: Set<String>? = null
 ) {
 
     fun serviceEnabled(id: String): Boolean = id in enabledServices
@@ -47,6 +63,20 @@ data class Settings(
     fun withZone(id: String, enabled: Boolean): Settings = copy(
         enabledZones = if (enabled) enabledZones + id else enabledZones - id
     )
+
+    fun reviewEnabled(id: String): Boolean =
+        enabledReviews?.contains(id) ?: Reviews.onByDefault(id)
+
+    /**
+     * Materialises the defaults before changing one of them, so that switching
+     * Pitchfork off does not silently switch Wikipedia off with it.
+     */
+    fun withReview(id: String, enabled: Boolean): Settings {
+        val current = enabledReviews ?: Reviews.ALL.filter { it.onByDefault }.mapTo(
+            LinkedHashSet()
+        ) { it.id }
+        return copy(enabledReviews = if (enabled) current + id else current - id)
+    }
 }
 
 /**

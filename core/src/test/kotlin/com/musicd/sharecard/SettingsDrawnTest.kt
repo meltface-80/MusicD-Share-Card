@@ -56,9 +56,9 @@ class SettingsDrawnTest {
     @Test
     fun `every group the settings route returns is drawn`() {
         val lines = code(page)
-        // The two lists /api/settings can answer with. A third added later and
-        // not drawn is the failure this test exists to make loud.
-        for (group in listOf("services", "zones")) {
+        // The lists /api/settings can answer with. One added later and not
+        // drawn is the failure this test exists to make loud.
+        for (group in listOf("services", "zones", "reviews")) {
             assertTrue(
                 "the page never reads settings.$group, so the settings route " +
                     "would be serving it to nobody",
@@ -119,6 +119,22 @@ class SettingsDrawnTest {
             "showSettings awaits before claiming the stage, so a load() in " +
                 "flight can paint over it",
             awaits < 0 || claims < awaits
+        )
+    }
+
+    @Test
+    fun `the extra reading chips are drawn`() {
+        /*
+         * `/api/extras` answers with a `reading` array — AllMusic, an artist's
+         * article — and the page has to draw whatever is in it rather than
+         * knowing the names. Served and undrawn is exactly how the `similar`
+         * diagnostic shipped, and how the source name was left off the chooser
+         * tiles.
+         */
+        assertTrue(
+            "the page never reads extras.reading, so those chips would be " +
+                "served to nobody",
+            code(page).any { it.contains("extras.reading") }
         )
     }
 }

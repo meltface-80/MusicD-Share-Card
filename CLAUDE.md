@@ -1053,6 +1053,44 @@ was simply not there, however carefully the DIDL was parsed.
   literal plus because they carry the query in the PATH. And `%2F` is decoded
   back into a path segment by Qobuz's own redirect, so "AC/DC" 404s. Both are in
   `StreamingLinks.searchQuery` with a test each.
+- **REVIEW SOURCES DEFAULT ON WHERE SERVICES AND ZONES DEFAULT OFF, and that
+  is not an oversight.** Wikipedia and Pitchfork are what the card has always
+  drawn — the blurb under the cover, the score in the corner — so defaulting
+  them off would empty every card in the house to make a settings screen
+  consistent, which nobody asked for. The ARTIST sources are new and are asked
+  for, which is what was requested. `Settings.enabledReviews` is therefore
+  NULLABLE: null means nobody has chosen, an empty set means somebody chose
+  nothing, and an empty set cannot express both. Every install predating the
+  screen has no key at all, which is what keeps its blurb.
+- **THE STORED SET IS MATERIALISED FROM THE DEFAULTS BEFORE ONE IS CHANGED.**
+  Without that, switching Pitchfork off writes a set containing nothing and
+  takes Wikipedia and AllMusic with it — every card loses its blurb because
+  somebody turned off a score. `ReviewsTest` asserts each switch leaves the
+  others exactly as they were, in both directions.
+- **ALLMUSIC IS A SEARCH LINK AND THE SHAPES ARE DOCUMENTED, NOT OBSERVED.**
+  Their album URLs end in an opaque id (`…-mw0000190771`) that cannot be built
+  from a name, so a direct link would mean reading it off their search page the
+  way `QobuzAlbum` reads Qobuz's — a real option, not this change. allmusic.com
+  is not reachable from where this was written, so the first real run is the
+  verification. The URL goes through `StreamingLinks.searchQuery` like every
+  other search link, because that is where the `%20`-not-plus and slash-as-space
+  rules live.
+- **THE ARTIST BLURB WAS ALREADY BEING FETCHED AND THROWN AWAY.**
+  `Metadata.extras` has always brought back the artist's article because it
+  comes out of the same search as the album's; the card does not draw it
+  because a card is about a record. Offering it under Reviews costs no request
+  at all — which is why it is the one artist source that is words rather than
+  a link.
+- **ROON IS STILL NOT IN THE LINKS ROW, AND IT WAS ASKED FOR AND DECLINED
+  AGAIN.** Asked to add Roon as a service link that opens the app on the album.
+  Re-checked in 2026: no URL scheme, no web player, still an open feature
+  request on RoonLabs' own forum. Put to the owner with the three real options
+  — play it via the extension API, leave it out, or launch the app on whatever
+  screen it was last on — and the answer was to leave it out. What WAS asked
+  for instead is queueing a SUGGESTION into Roon when the card came from a Roon
+  zone and the record is in the library, which needs `com.roonlabs.browse:1`
+  and is its own change: no Core is reachable from here, so none of that wire
+  work can be exercised.
 - **Nothing links to Roon, and that is a SCOPE decision, not a technical wall.**
   Half of it is a wall: Roon publishes no URL scheme and no web player, so there
   is no link to build. Checked against RoonLabs' own `node-roon-api` and

@@ -67,7 +67,7 @@ shell around it. Run whichever suits the machine you already leave switched on.
 
 ### Android
 
-[**Download musicd-share-card-0.48.0.apk**](dist/musicd-share-card-0.48.0.apk)
+[**Download musicd-share-card-0.49.0.apk**](dist/musicd-share-card-0.49.0.apk)
 and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 
@@ -206,8 +206,8 @@ playback controls of any kind.
 
 Under the card is a row of links for whatever is playing:
 
-- the **Wikipedia** article the description came from, and the **Pitchfork**
-  review the score came from
+- the **Wikipedia** article the description came from, the **Pitchfork**
+  review the score came from, and **AllMusic**
 - a pre-filled search on **Qobuz, TIDAL, Spotify, Apple Music, Amazon Music,
   Deezer** and **Bandcamp**
 
@@ -216,8 +216,14 @@ They're searches rather than links to the album itself — that needs each
 service's own id for the record, and their APIs need credentials. Qobuz is the
 exception: it resolves the real album and opens the app on it.
 
-There's no Roon link. Roon has no web player and no link scheme, so there's
-nothing a tap could go to.
+**Settings → Reviews** decides which of those appear, and can add two more
+about the ARTIST rather than the record — their Wikipedia article and their
+AllMusic page. Those are off until you ask for them. Switching a source off
+stops it being looked up, not just drawn.
+
+There's no Roon link. Roon has no web player and no link scheme — still an
+open feature request, not an oversight — so there's nothing a tap could go
+to.
 
 ## If you like this, try these
 
