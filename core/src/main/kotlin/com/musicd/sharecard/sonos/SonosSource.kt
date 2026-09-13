@@ -2,6 +2,7 @@ package com.musicd.sharecard.sonos
 
 import com.musicd.sharecard.source.PlayState
 import com.musicd.sharecard.source.Playing
+import com.musicd.sharecard.source.StreamHosts
 import com.musicd.sharecard.source.Source
 import com.musicd.sharecard.source.ZoneRef
 
@@ -18,6 +19,9 @@ import com.musicd.sharecard.source.ZoneRef
  * record to itself.
  */
 class SonosSource(private val household: Household) : Source {
+
+    /** Whoever is streaming into these speakers, so their covers can be drawn. */
+    private val streamHosts = StreamHosts()
 
     override val name: String = NAME
 
@@ -58,6 +62,9 @@ class SonosSource(private val household: Household) : Source {
 
     internal fun playingOf(state: ZoneState): Playing? {
         val np = state.nowPlaying
+        // Noted from the TRANSPORT, before anything looks at the art URL: the
+        // host has to be seen carrying the audio to earn its picture.
+        streamHosts.remember(np.uri)
         // A station announcing "Artist - Title" is the only metadata some
         // streams ever send.
         val announced = if (np.artist.isEmpty() && np.streamContent.isNotEmpty()) {
@@ -89,8 +96,17 @@ class SonosSource(private val household: Household) : Source {
         )
     }
 
-    /** The speakers themselves, which serve their own `/getaa` art. */
-    override fun artHosts(): Collection<String> = household.knownHosts
+    /**
+     * The speakers, which serve their own `/getaa` art — and whoever is
+     * streaming INTO them, which is how a LAN music server's cover gets drawn.
+     *
+     * A server on the network puts an absolute art URL on its own address into
+     * the DIDL, and that address is not a speaker and not public https, so the
+     * proxy refused it and the card came out with a blank sleeve. See
+     * [StreamHosts]: a machine already sending audio to a speaker here is not a
+     * new trust decision.
+     */
+    override fun artHosts(): Collection<String> = household.knownHosts + streamHosts.hosts()
 
     override fun diagnostics(): List<String> {
         val lines = ArrayList<String>()

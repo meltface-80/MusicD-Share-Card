@@ -284,6 +284,48 @@ class CardApiTest {
         assertEquals("Study", body.getJSONObject("zone").getString("room"))
     }
 
+    @Test
+    fun `the server streaming the music may serve its cover`() {
+        // THE REPORTED CASE, end to end. A MusicD Server on a DietPi box
+        // streamed to a Sonos and put an absolute art URL on its own address
+        // into the DIDL. That host is not a speaker and not public https, so
+        // the proxy refused it and the card drew with a blank sleeve while the
+        // Sonos app showed the cover.
+        players["10.0.0.1"]!!.state = TransportState.PLAYING
+        players["10.0.0.1"]!!.track = NowPlaying(
+            album = "Heaven or Las Vegas",
+            artist = "Cocteau Twins",
+            uri = "http://192.168.0.57:3400/stream/track/1234.flac",
+            artUri = "http://192.168.0.57:3400/art/YTpDb2N0ZWF1IFR3aW5z"
+        )
+
+        val body = json("/api/now-playing", mapOf("zone" to "sonos:RINCON_A"))
+        assertEquals("Heaven or Las Vegas", body.getString("album"))
+        // The card names the proxy, never the server directly — a canvas that
+        // has drawn a cross-origin image cannot be read back.
+        assertTrue(body.getString("art"), body.getString("art").startsWith("/api/art?u="))
+
+        // And the proxy will now actually fetch it, because the transport said
+        // that host is the one playing the music.
+        val household = Household(
+            playerAt = { ip -> players.getValue(ip) },
+            seedHosts = listOf("10.0.0.1"),
+            discover = { emptyList() }
+        )
+        val sonos = SonosSource(household)
+        assertFalse(
+            "nothing is allowed before anything has been seen playing",
+            sonos.artHosts().contains("192.168.0.57")
+        )
+        sonos.nowPlaying(null)
+        assertTrue(
+            "the streaming host must be allowed once it has been seen",
+            sonos.artHosts().contains("192.168.0.57")
+        )
+        // The speakers are still known in their own right.
+        assertTrue(sonos.artHosts().contains("10.0.0.1"))
+    }
+
     // ---------------------------------------------------------------- zones
 
     @Test

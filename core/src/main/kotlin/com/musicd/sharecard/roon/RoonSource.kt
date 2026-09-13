@@ -88,12 +88,16 @@ class RoonSource(private val client: RoonClient) : Source {
         RoonStage.AWAITING_APPROVAL ->
             "Roon found. Enable \u201CMusicD Share Card\u201D in Roon \u2192 Settings \u2192 " +
                 "Extensions, then press refresh."
-        RoonStage.DISCOVERING -> "Looking for your Roon Core\u2026"
-        RoonStage.CONNECTING -> "Connecting to Roon\u2026"
         RoonStage.ERROR ->
             "Roon: " + (client.status.detail ?: "not connected") + "."
-        RoonStage.IDLE -> "Roon has not started looking yet."
-        RoonStage.PAIRED -> null
+        // SILENT UNLESS A CORE IS ACTUALLY THERE. ABSENT means the network was
+        // asked and holds no Core, and most people running this app do not run
+        // Roon — "Looking for your Roon Core…" sat on their screen for ever,
+        // under a card that had worked perfectly, about a product they do not
+        // own. DISCOVERING and CONNECTING are moments in passing and need no
+        // commentary either.
+        RoonStage.ABSENT, RoonStage.DISCOVERING, RoonStage.CONNECTING,
+        RoonStage.IDLE, RoonStage.PAIRED -> null
     }
 
     /**

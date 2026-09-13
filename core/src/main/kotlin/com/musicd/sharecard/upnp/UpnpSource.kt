@@ -8,6 +8,7 @@ import com.musicd.sharecard.sonos.TransportState
 import com.musicd.sharecard.sonos.Xml
 import com.musicd.sharecard.source.PlayState
 import com.musicd.sharecard.source.Playing
+import com.musicd.sharecard.source.StreamHosts
 import com.musicd.sharecard.source.Source
 import com.musicd.sharecard.source.ZoneRef
 import okhttp3.OkHttpClient
@@ -52,6 +53,9 @@ class UpnpSource(
 
     @Volatile
     private var renderers: List<Renderer> = emptyList()
+
+    /** Whoever is streaming into these renderers — same reason as Sonos. */
+    private val streamHosts = StreamHosts()
 
     @Volatile
     private var notes: List<String> = emptyList()
@@ -205,6 +209,9 @@ class UpnpSource(
             listOf<Pair<String, Any>>("InstanceID" to 0)
         )
         val np = Didl.parse(position["TrackMetaData"].orEmpty())
+        // A DLNA renderer is fed by a server on the network exactly as a Sonos
+        // is, and that server's art URL is refused for the same reason.
+        streamHosts.remember(np.uri)
         Playing(
             source = name,
             zoneId = ZoneRef.idFor(name, renderer.udn),
@@ -225,7 +232,8 @@ class UpnpSource(
         null
     }
 
-    override fun artHosts(): Collection<String> = renderers.map { it.host }
+    override fun artHosts(): Collection<String> =
+        renderers.map { it.host } + streamHosts.hosts()
 
     override fun diagnostics(): List<String> {
         scan()

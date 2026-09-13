@@ -45,7 +45,7 @@ what is on somewhere else.
 
 ## Install
 
-[**Download musicd-share-card-0.40.0.apk**](dist/musicd-share-card-0.40.0.apk)
+[**Download musicd-share-card-0.41.0.apk**](dist/musicd-share-card-0.41.0.apk)
 and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 
