@@ -86,9 +86,25 @@ was simply not there, however carefully the DIDL was parsed.
 - **`buildActions` must not clear `hintEl` unconditionally.** It did, which wiped
   a source's notice a moment after it was set — so on Android a Roon Core
   waiting to be approved said nothing at all, and Roon looked simply ignored.
-- **`Source.notice()` covers EVERY stage that is not paired**, not just
-  AWAITING_APPROVAL. A Core that was never found or that refused registration
-  used to say nothing, which is the same dead end as before.
+- **`Source.notice()` SPEAKS ONLY WHEN A CORE IS ACTUALLY THERE, and that
+  NARROWS an earlier rule here.** The rule used to be "every stage that is not
+  paired gets a line", written when a Core that was never found said nothing and
+  Roon looked simply ignored. That was right when Roon was the reason to run
+  this app. With four sources it inverted: most people do not run Roon, and
+  "Looking for your Roon Core…" sat on their screen for ever, under a card that
+  had worked perfectly, about a product they do not own. Reported as exactly
+  that. The dead end the old rule guarded is real only when a Core IS present,
+  so AWAITING_APPROVAL still speaks (you must enable the extension) and so does
+  ERROR (a Core was found and would not talk). `ABSENT` — asked the network,
+  found no Core — is a stage of its own and is SILENT. The fact is not lost:
+  `/api/debug` still prints the stage.
+- **ROON'S FAILED DISCOVERY USED TO RESCHEDULE ITSELF EVERY THIRTY SECONDS, FOR
+  EVER.** On a device that is never switched off that is a multicast sweep of
+  the household twice a minute to answer a question nobody asked — the precise
+  thing the no-polling rule below forbids, sitting inside the one source nobody
+  had checked against it. It looks once now and stops; Refresh calls
+  `rediscover()` and starts a fresh look, which is the bargain every other
+  source here already makes. `RoonQuietTest` scans for a timer coming back.
 - **Zone ids are prefixed with their source** (`roon:…`, `sonos:…`) so two
   sources cannot collide on one room, and the picker says which is which.
 - **Roon's first run needs a human, and NOTHING may put a deadline on that
@@ -186,6 +202,23 @@ was simply not there, however carefully the DIDL was parsed.
   recognised as private": `0177.0.0.1` is octal for loopback, and refusing to
   classify it made it pass. Every numeric host must be a clean unambiguous
   public quad; only a name gets the benefit of the doubt.
+- **A MUSIC SERVER STREAMING TO A SPEAKER MAY SERVE THAT TRACK'S PICTURE.** The
+  art proxy allows a known player or a confidently public https host, and a
+  server on the LAN is neither — so a MusicD Server on a DietPi box at
+  192.168.0.57:3400 streamed "Heaven or Las Vegas" to a Sonos and the card came
+  out with the album, the artist, the blurb and a BLANK SLEEVE, while the Sonos
+  app three feet away showed the cover because it fetches that URL directly.
+  `/api/debug` named it in one line. `StreamHosts` is the fix: the host in the
+  track's own transport URI has been observed carrying the audio, so it is not
+  a new trust decision — it is the thing playing the music. Nothing is inferred
+  from the ART url, which is the part an attacker would control, and "looks
+  local" still earns nothing.
+- **THAT BUG HID ONCE BEHIND A COINCIDENCE, WHICH IS WORTH KNOWING.** It
+  appeared to fix itself on 0.40.0, because Lyrion runs on the SAME box and
+  `LmsSource.artHosts()` put that address in the allowlist for its own reasons.
+  Two servers sharing a host is not a fix; stop Lyrion and the sleeve goes blank
+  again. When a bug disappears without the change that was meant to fix it, find
+  out which unrelated thing is holding it up.
 - **A source can report an opaque id where a title should be.** Roon streaming
   to Sonos sends "Roon" + 32 hex characters as `dc:title`. A card headed with a
   hash looks like the app working, which is worse than one that admits it knows

@@ -10,7 +10,14 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-enum class RoonStage { IDLE, DISCOVERING, CONNECTING, AWAITING_APPROVAL, PAIRED, ERROR }
+/**
+ * ABSENT is not an error, and that distinction is the whole of it: it means the
+ * network was asked and holds no Roon Core. Most people running this app do not
+ * run Roon, and telling them so on every screen is noise about a product they
+ * have not bought. ERROR is kept for a Core that WAS found and then would not
+ * talk — which is worth saying, because it is a thing that can be fixed.
+ */
+enum class RoonStage { IDLE, DISCOVERING, CONNECTING, AWAITING_APPROVAL, PAIRED, ABSENT, ERROR }
 
 data class RoonStatus(
     val stage: RoonStage,
@@ -224,14 +231,20 @@ class RoonClient(
             multicastLock.release()
         }
         if (!found && running.get()) {
+            // LOOKED ONCE, FOUND NOTHING, STOPPED. This used to reschedule
+            // itself every thirty seconds for as long as the app was up, which
+            // on a device that is never switched off is a multicast sweep of
+            // the house twice a minute, for ever, to answer a question nobody
+            // asked — the very thing the no-polling rule exists to forbid, and
+            // it had been sitting inside the one source nobody thought to
+            // check. Refresh calls rediscover() and starts a fresh look, which
+            // is the same bargain every other source here makes.
             publish(
                 RoonStatus(
-                    RoonStage.ERROR,
-                    detail = "No Roon Core found. Check this device is on the same network " +
-                        "as the Core."
+                    RoonStage.ABSENT,
+                    detail = "No Roon Core on this network. Press refresh to look again."
                 )
             )
-            net.schedule({ connectOrDiscover() }, 30, TimeUnit.SECONDS)
         }
     }
 
