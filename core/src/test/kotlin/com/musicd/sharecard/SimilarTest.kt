@@ -146,7 +146,7 @@ class SimilarTest {
                 path.startsWith("/similar-artists/json") ->
                     MockResponse().setResponseCode(400).setBody("unknown algorithm")
                 path.startsWith("/search/artist") ->
-                    ok("""{"data": [{"id": 4050, "name": "Talk Talk"}]}""")
+                    ok("""{"data": [{"id": 4050, "name": "Talk Talk", "nb_fan": 90000}]}""")
                 path.startsWith("/artist/4050/related") ->
                     ok("""{"data": [{"id": 77, "name": "Bark Psychosis"}]}""")
                 path.startsWith("/artist/77/albums") -> ok(
@@ -177,11 +177,118 @@ class SimilarTest {
         )
     }
 
+    /**
+     * THE ONE FROM THE FIELD. Sting got no suggestions while The Police,
+     * Calexico and The Sea Within all got three — and the diagnostics said
+     * "0 acts", meaning Deezer found AN artist of that name and that artist had
+     * no related acts. Deezer carries every act that shares a name, and the
+     * top row is not always the famous one.
+     */
     @Test
-    fun `Deezer's top hit has to actually be the artist asked for`() {
+    fun `a better-known act of the same name wins over the first row`() {
+        var relatedAskedOf: String? = null
+        val host = serve { request ->
+            val path = request.path.orEmpty()
+            when {
+                path.startsWith("/similar-artists/json") -> missing()
+                path.startsWith("/search/artist") -> ok(
+                    """{"data": [
+                         {"id": 111, "name": "Sting", "nb_fan": 12},
+                         {"id": 222, "name": "Sting", "nb_fan": 2400000}
+                       ]}"""
+                )
+                path.startsWith("/artist/222/related") -> {
+                    relatedAskedOf = "222"
+                    ok("""{"data": [{"id": 77, "name": "The Police"}]}""")
+                }
+                path.startsWith("/artist/111/related") -> {
+                    relatedAskedOf = "111"
+                    ok("""{"data": []}""")
+                }
+                path.startsWith("/artist/77/albums") -> ok(
+                    """{"data": [{"title": "Outlandos d'Amour", "release_date": "1978-11-02",
+                                  "record_type": "album"}]}"""
+                )
+                else -> missing()
+            }
+        }
+        val similar = Similar(
+            metadataHttpClient(), "test",
+            listenBrainz = base(host), musicBrainz = base(host), deezer = base(host)
+        )
+
+        val acts = similar.forArtist("Sting", null)
+        assertEquals(listOf("The Police"), acts.map { it.name })
+        assertEquals("222", relatedAskedOf)
+    }
+
+    @Test
+    fun `a candidate with no related acts is not the end of it`() {
+        // An empty answer from the wrong Sting says nothing about the right
+        // one, so the next candidate is tried rather than the row abandoned.
+        val host = serve { request ->
+            val path = request.path.orEmpty()
+            when {
+                path.startsWith("/similar-artists/json") -> missing()
+                path.startsWith("/search/artist") -> ok(
+                    """{"data": [
+                         {"id": 111, "name": "Sting", "nb_fan": 900},
+                         {"id": 222, "name": "Sting", "nb_fan": 400}
+                       ]}"""
+                )
+                path.startsWith("/artist/111/related") -> ok("""{"data": []}""")
+                path.startsWith("/artist/222/related") ->
+                    ok("""{"data": [{"id": 77, "name": "The Police"}]}""")
+                path.startsWith("/artist/77/albums") -> ok(
+                    """{"data": [{"title": "Ghost in the Machine", "release_date": "1981-10-02",
+                                  "record_type": "album"}]}"""
+                )
+                else -> missing()
+            }
+        }
+        val acts = Similar(
+            metadataHttpClient(), "test",
+            listenBrainz = base(host), musicBrainz = base(host), deezer = base(host)
+        ).forArtist("Sting", null)
+        assertEquals(listOf("The Police"), acts.map { it.name })
+    }
+
+    @Test
+    fun `a small act with its name to itself is still found`() {
+        // nb_fan ranks; it does not filter. An unknown artist Deezer reports no
+        // follower count for must still be tried.
+        val similar = Similar(metadataHttpClient(), "test")
+        val candidates = similar.readDeezerArtists(
+            org.json.JSONObject("""{"data": [{"id": 5, "name": "The Sea Within"}]}"""),
+            "The Sea Within"
+        )
+        assertEquals(1, candidates.size)
+        assertEquals("5", candidates[0].id)
+        assertEquals(0, candidates[0].fans)
+    }
+
+    @Test
+    fun `rows carrying somebody else's name are dropped, not ranked`() {
+        val similar = Similar(metadataHttpClient(), "test")
+        val candidates = similar.readDeezerArtists(
+            org.json.JSONObject(
+                """{"data": [
+                     {"id": 1, "name": "The Guess Who", "nb_fan": 9000000},
+                     {"id": 2, "name": "The Who", "nb_fan": 5}
+                   ]}"""
+            ),
+            "The Who"
+        )
+        assertEquals(listOf("2"), candidates.map { it.id })
+    }
+
+    @Test
+    fun `a Deezer search full of somebody else is refused, not used`() {
         // A search that returns SOMETHING is not evidence it returned this act.
         // Without this guard a row of suggestions is about somebody else and
-        // nothing downstream could tell.
+        // nothing downstream could tell. Checked on EVERY row now rather than
+        // only the first, which is why the note names the whole search rather
+        // than one hit.
         val host = serve { request ->
             val path = request.path.orEmpty()
             when {
@@ -197,7 +304,9 @@ class SimilarTest {
         )
 
         assertTrue(similar.forArtist("The Who", "mbid").isEmpty())
-        assertTrue(similar.attempts().any { it.contains("not this artist") })
+        assertTrue(
+            similar.attempts().any { it.contains("nobody on Deezer carries that name") }
+        )
     }
 
     @Test

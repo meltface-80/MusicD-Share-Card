@@ -108,9 +108,13 @@ class Similar(
     private fun viaListenBrainz(mbid: String): List<Act> {
         val url = "$listenBrainz/similar-artists/json?artist_mbids=" + urlEncode(mbid) +
             "&algorithm=" + urlEncode(ALGORITHM)
-        val body = lbGate.run { text(url) }
+        val (status, body) = lbGate.run { fetch(url) }
         if (body == null) {
-            note("listenbrainz($mbid) -> no answer, falling through to Deezer")
+            // THE STATUS, NOT JUST "no answer". This has never once answered in
+            // the field, and "no answer" cannot tell a rejected dataset name
+            // (400) from a moved endpoint (404) from a host that is simply not
+            // reachable (0) — which are three different fixes.
+            note("listenbrainz($mbid) -> HTTP $status, falling through to Deezer")
             return emptyList()
         }
         val acts = readListenBrainz(body)
@@ -190,25 +194,75 @@ class Similar(
 
     // ------------------------------------------------------------------ Deezer
 
+    /**
+     * NOT THE TOP HIT. THE RIGHT ONE.
+     *
+     * This asked for `limit=1` and used whatever came back. Deezer answers a
+     * name with every act that carries it, and plenty of famous names are also
+     * carried by somebody with four followers and no related artists — so the
+     * search "succeeded", the name check passed, and the related lookup came
+     * back empty. Reported from the field as Sting getting no suggestions while
+     * The Police, Calexico and The Sea Within all got three.
+     *
+     * It is the same lesson as [QobuzAlbum.pick] and the Pitchfork listing: a
+     * search that returns SOMETHING is not evidence it returned the thing you
+     * asked for, and the first row is not the answer. So: take a page of
+     * candidates, keep the ones actually carrying this name, and try them in
+     * order of how many people follow them — which is what separates Sting from
+     * somebody who named themselves after him.
+     *
+     * A candidate with no related acts is not the end either. The next one is
+     * tried, up to [CANDIDATES], because an empty answer from the wrong Sting
+     * says nothing about the right one.
+     */
     private fun viaDeezer(artist: String): List<Act> {
-        val search = "$deezer/search/artist?limit=1&q=" + urlEncode(artist)
-        val found = dzGate.run { getJson(search) }
-            ?.optJSONArray("data")?.optJSONObject(0)
-        val id = found?.let { it.strOrNull("id") ?: idOf(it) }
-        if (id == null) {
-            note("deezer($artist) -> Deezer has never heard of that artist")
+        val search = "$deezer/search/artist?limit=$SEARCH_ROWS&q=" + urlEncode(artist)
+        val candidates = readDeezerArtists(dzGate.run { getJson(search) }, artist)
+        if (candidates.isEmpty()) {
+            note("deezer($artist) -> nobody on Deezer carries that name")
             return emptyList()
         }
-        // The name check is the same guard the Pitchfork lookup needs: a search
-        // that returns SOMETHING is not evidence it returned this act.
-        if (!Normalize.namesOverlap(found.str("name"), artist)) {
-            note("deezer($artist) -> top hit is ${found.str("name")}, not this artist")
-            return emptyList()
+
+        for (candidate in candidates.take(CANDIDATES)) {
+            val related = dzGate.run {
+                getJson("$deezer/artist/${candidate.id}/related?limit=$WANTED")
+            }
+            val acts = readDeezerRelated(related)
+            if (acts.isEmpty()) continue
+            note("deezer($artist) -> ${candidate.name} (id ${candidate.id}," +
+                " ${candidate.fans} fans) -> ${acts.size} acts")
+            return acts.map { deezerAlbum(it.first, it.second) }
         }
-        val related = dzGate.run { getJson("$deezer/artist/$id/related?limit=$WANTED") }
-        val acts = readDeezerRelated(related)
-        note("deezer($artist) -> ${acts.size} acts")
-        return acts.map { deezerAlbum(it.first, it.second) }
+        note("deezer($artist) -> ${candidates.size} candidate(s), none with related acts")
+        return emptyList()
+    }
+
+    /** One Deezer artist worth trying. [fans] is the tie-break, not the filter. */
+    internal data class Candidate(val id: String, val name: String, val fans: Int)
+
+    /**
+     * The artists in a Deezer search response that really carry [artist]'s
+     * name, most-followed first.
+     *
+     * `nb_fan` is what tells two acts of the same name apart, and it is a
+     * RANKING rather than a threshold: a small artist with the name to
+     * themselves must still be found. Sorting is stable, so where Deezer
+     * reports no follower count at all the order it chose is kept.
+     */
+    internal fun readDeezerArtists(json: JSONObject?, artist: String): List<Candidate> {
+        val data = json?.optJSONArray("data") ?: return emptyList()
+        val out = ArrayList<Candidate>()
+        for (i in 0 until data.length()) {
+            val a = data.optJSONObject(i) ?: continue
+            val id = a.strOrNull("id") ?: idOf(a) ?: continue
+            val name = a.strOrNull("name")?.takeIf { it.isNotBlank() } ?: continue
+            // The same guard as before, applied to every row rather than only
+            // the first: a search that returns SOMETHING is not evidence it
+            // returned this act.
+            if (!Normalize.namesOverlap(name, artist)) continue
+            out += Candidate(id, name, a.optInt("nb_fan", 0))
+        }
+        return out.sortedByDescending { it.fans }
     }
 
     /** Related acts as (deezer id, name), in Deezer's own order. */
@@ -307,7 +361,10 @@ class Similar(
     private fun getJson(url: String): JSONObject? =
         text(url)?.let { runCatching { JSONObject(it) }.getOrNull() }
 
-    private fun text(url: String): String? {
+    private fun text(url: String): String? = fetch(url).second
+
+    /** The status and the body, so a diagnostic can say which failure it was. */
+    private fun fetch(url: String): Pair<Int, String?> {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", userAgent)
@@ -316,14 +373,16 @@ class Similar(
             http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     Log.d(TAG, "$url -> ${response.code}")
-                    null
+                    response.code to null
                 } else {
-                    response.body?.string()
+                    response.code to response.body?.string()
                 }
             }
         } catch (e: Exception) {
             Log.d(TAG, "$url failed: ${e.message}")
-            null
+            // 0 is not a status. It is "the request never got an answer", which
+            // is a different thing from one that came back refused.
+            0 to null
         }
     }
 
@@ -382,6 +441,16 @@ class Similar(
         /** MusicBrainz asks for one request a second and enforces it. */
         const val MB_INTERVAL_MS = 1100L
         const val DZ_INTERVAL_MS = 250L
+
+        /** How many search rows to consider before giving up on a name. */
+        const val SEARCH_ROWS = 10
+
+        /**
+         * How many of those to actually ask for related artists. Each one is a
+         * request, and by the third the name is either shared by a crowd or
+         * Deezer has nothing filed for any of them.
+         */
+        const val CANDIDATES = 3
 
         private const val MAX_NOTES = 12
     }
