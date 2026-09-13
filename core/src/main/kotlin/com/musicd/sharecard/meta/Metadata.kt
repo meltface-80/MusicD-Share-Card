@@ -220,10 +220,11 @@ class Metadata(
         if (title.isBlank()) return null
         val candidates = wikiSearch("$title $artist album")
         for (page in candidates) {
-            // The guard that stops a review being attached to the wrong record:
-            // the page title must actually mention the album.
+            // Cheap half of [albumArticleFits], applied first only so a page
+            // that cannot be the record costs no summary request.
             if (!Normalize.namesOverlap(page, title)) continue
             val summary = wikiSummary(page) ?: continue
+            if (!albumArticleFits(page, summary.extract, title, artist)) continue
             return Bio(summary.extract, "Wikipedia", "https://en.wikipedia.org/wiki/" +
                 urlEncode(page.replace(' ', '_')), summary.image)
         }
@@ -315,4 +316,41 @@ class Metadata(
             artistMbid = json.strOrNull("amb")
         )
     }
+}
+
+/**
+ * Is this Wikipedia article about THIS record, by THIS act.
+ *
+ * THE PAGE TITLE ALONE WAS THE WHOLE GUARD, AND THE PAGE TITLE IS THE HALF
+ * THAT CANNOT ANSWER THE QUESTION. "Cult" by To/Die/For drew the blurb for
+ * "Cult of Static" — a Static-X record — because [Normalize.namesOverlap]
+ * anchors at the front and deliberately accepts a name qualified on the
+ * RIGHT, which is the same rule that makes "Spiderland" match "Spiderland
+ * (Slint album)" and is wanted there. The artist was used to build the search
+ * QUERY and then never checked against the answer, so Wikipedia's own ranking
+ * was the only thing deciding, and it put a stranger's record on the card in
+ * confident prose. Reported from the field as the wrong blurb.
+ *
+ * An album page rarely names the artist in its TITLE and almost always does
+ * in its first sentence — "…is the sixth studio album by American industrial
+ * metal band Static-X" — so the extract is what gets read, with the title
+ * taken as well for the "(To/Die/For album)" shape. A spelling the article
+ * does not carry costs the blurb, which is this app's standing trade: a
+ * missing blurb is honest and a confident wrong one is not.
+ *
+ * What it CANNOT do is tell "Eagles" from "Eagles of Death Metal" — the
+ * article for either names a run of words the other is inside — and
+ * [AlbumArticleTest] asserts that limit rather than pretending otherwise.
+ */
+internal fun albumArticleFits(
+    page: String,
+    extract: String,
+    title: String,
+    artist: String
+): Boolean {
+    if (!Normalize.namesOverlap(page, title)) return false
+    // The speaker named no artist, so there is nothing to disagree with. The
+    // title match is all this can ever be, exactly as it was before.
+    if (artist.isBlank()) return true
+    return Normalize.mentions(extract, artist) || Normalize.mentions(page, artist)
 }

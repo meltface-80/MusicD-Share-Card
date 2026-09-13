@@ -93,6 +93,36 @@ object Normalize {
     }
 
     /**
+     * Does [haystack] NAME [needle] — as a run of whole words, folded once.
+     *
+     * This is the prose counterpart to [namesOverlap], and the difference
+     * between them is deliberate. [namesOverlap] compares two NAMES, where a
+     * match anywhere but the front is exactly how "The Who" became "The Guess
+     * Who". Here the haystack is a SENTENCE and the name may sit anywhere in
+     * it — "…is the sixth studio album by American industrial metal band
+     * Static-X" — so a run of words is the right search. Whole WORDS still,
+     * never characters: "Low" must not be found inside "Lowlife".
+     *
+     * "AND" IS DROPPED FROM BOTH SIDES. A speaker writes "Nick Cave & the Bad
+     * Seeds" and [text] spends the ampersand as a space, while Wikipedia's own
+     * sentence spells it out — so the RIGHT article would be refused over a
+     * conjunction. Only "and": dropping "the" with it would put the needle
+     * "the who" back inside "the guess who", which is the pair this whole
+     * family of rules exists to keep apart.
+     */
+    fun mentions(haystack: String, needle: String): Boolean {
+        val hay = words(haystack)
+        val name = words(needle)
+        if (hay.isEmpty() || name.isEmpty() || name.size > hay.size) return false
+        return (0..hay.size - name.size).any { at ->
+            name.indices.all { hay[at + it] == name[it] }
+        }
+    }
+
+    private fun words(s: String): List<String> =
+        text(s).split(" ").filter { it.isNotEmpty() && it != "and" }
+
+    /**
      * [hay] begins with every word of [needle], in order.
      *
      * Word by word rather than by string prefix: "the beat" must not match
