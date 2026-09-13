@@ -20,7 +20,8 @@ behaviour. Only the test found it.
 ## What "tested" means here, concretely
 
 ```bash
-./gradlew :core:test          # see the workaround below
+./gradlew :core:test -Psharecard.serverOnly=true        # see below
+./gradlew :server:installDist -Psharecard.serverOnly=true
 node --check app/src/main/assets/web/app.js
 npx eslint -c tools/eslint.config.mjs app/src/main/assets/web/*.js
 node tools/check-css.js
@@ -32,18 +33,89 @@ python3 tools/check-icons.py
 fix, run the test, show it failing, restore. A test that passes both ways is
 decoration.
 
-### The local Gradle workaround
+### Building without an Android SDK
 
 The proxy blocks the Android Gradle Plugin, so `:app` cannot be built here — only
-in CI. To run `:core:test` locally, temporarily strip the Android plugins:
+in CI. Add `-Psharecard.serverOnly=true` and it is left out of the build:
 
 ```bash
-# save build.gradle.kts and settings.gradle.kts first
-sed -i '/id("com.android/d;/id("org.jetbrains.kotlin.android")/d' build.gradle.kts
-sed -i 's/include(":app")//' settings.gradle.kts
-./gradlew :core:test
-# then RESTORE BOTH FILES — never commit the stripped versions
+./gradlew :core:test -Psharecard.serverOnly=true
+./gradlew :server:installDist -Psharecard.serverOnly=true   # the container's server
 ```
+
+**THAT FLAG REPLACED A SED, AND THE SED WAS THE HAZARD.** The documented way to
+run the tests here used to be stripping the plugins out of `build.gradle.kts` and
+`settings.gradle.kts` by hand, with "never commit the stripped versions" written
+in capitals beside it — a rule that needs capitals is a rule that gets broken,
+and a stripped `settings.gradle.kts` on a branch is a build that silently stops
+producing an APK. The plugin VERSIONS now live in `settings.gradle.kts` under
+`pluginManagement.plugins`, where they are defaults rather than declarations: a
+version is resolved only if something actually applies it, so a build with `:app`
+left out never asks for AGP at all. That is also what keeps the container image's
+builder stage from pulling an Android toolchain in to compile a JVM server.
+
+## The app is not only an Android app
+
+`:app` and `:server` are two shells around one `:core`. The Android one is a
+foreground service, a WebView and a share sheet; the container one is a `main`
+and a mounted directory. NOTHING THAT DECIDES ANYTHING MAY LIVE IN EITHER OF
+THEM — a rule that has been here since the first line, now with a second way to
+break it.
+
+- **ONE PAGE, PUT ON A CLASSPATH, NEVER COPIED.** `:server` declares
+  `app/src/main/assets` as a resource root, so `web/app.js` is the same bytes the
+  APK carries and `Assets` is the same lookup. Copying it would be a second card
+  that drifts from the first, which is exactly why `sharecard.js` is a port
+  rather than a rewrite.
+- **ONE VERSION NUMBER.** `server/build.gradle.kts` reads `versionName` out of
+  `app/build.gradle.kts` with the same expression CI uses. `/api/debug` is how a
+  bug report says which build it came from, and a second place to bump is a
+  second place to forget.
+- **THE THREE THINGS THAT WRITE TO DISK MOVED INTO `:core` AND IMMEDIATELY
+  FAILED A TEST.** `FileTokenStore`, `FileWebhookStore` and `FileCacheStore` were
+  `RoonTokenFile`, `WebhookFile` and `CacheFile` in `app/`, where the only
+  Android-shaped line in each was asking a Context where `filesDir` is. The
+  moment they landed in a module the scans look at, `JsonSafeTest` refused them:
+  all three read with `optString`, which on Android returns the literal text
+  `"null"`. That shipped as a Roon token reading `"null"` handed to a Core, and a
+  pairing that looks present and is not. **Nothing was wrong with the move; the
+  code had been wrong for as long as it existed and nothing was looking.** That
+  is the whole argument for pushing logic down into `:core`, stated by the
+  repository rather than by me.
+- **NO UPDATER IN THE CONTAINER, DELIBERATELY.** The Android build downloads an
+  APK and hands it to the package installer; a container replaces itself with
+  `docker compose pull`. `updateInstaller` is simply not passed, which is the
+  path `/api/update/status` already had for any host that cannot install — the
+  page hides the bar and nothing new was needed.
+- **MULTICAST IS THE CONTAINER'S VERSION OF THE MULTICAST LOCK.** On Android
+  discovery needs a `WifiManager.MulticastLock` or SSDP silently returns nothing.
+  In Docker it needs `network_mode: host`, and for the same reason: SSDP, Roon's
+  SOOD and Lyrion's UDP 3483 are all multicast or broadcast and NONE of them
+  cross a bridge. On a bridge the container comes up healthy, answers on its
+  port, and finds nothing — indistinguishable from a network with no players on
+  it, which is why it is the first thing the README says about it.
+- **THE PIN DEADLOCK THE CONTAINER CREATES.** [Access] trusts loopback without a
+  PIN because on Android loopback IS the device somebody is holding, and it
+  serves the PIN only to loopback. A server in a cupboard has no browser, so
+  nobody could ever see the PIN and webhooks could not be configured at all.
+  `SHARECARD_PIN` sets it, and failing that the minted one is printed to the log
+  — which is the container's equivalent of standing in front of the device:
+  whoever can run `docker logs` already owns the process and its data directory.
+  A PIN that is not six digits is REFUSED and said so, because the page's field
+  takes six and silently ignoring it would leave an operator believing they had
+  set one.
+- **THE CONTAINER IS NOT ROOT, AND THE COST IS PAID WITH A SENTENCE.** It binds a
+  LAN port and writes a webhook URL; neither wants uid 0. That makes a bind mount
+  created by hand owned by somebody else on a first run — and because every write
+  in this app is deliberately survivable, the result is an app that works
+  perfectly and forgets everything on restart, with nothing saying why.
+  `checkWritable` probes the directory at startup and names the uid and the
+  chown. It warns rather than refusing: a card that draws beats a server that
+  will not start.
+- **`/api/health` IS THE HEALTHCHECK, AND THE NO-POLLING RULE IS WHY IT CAN BE.**
+  A check runs every thirty seconds for the life of the container. The rule that
+  route must touch no network was written for a different reason and paid for
+  itself here.
 
 ## The honesty rule about Android code
 
@@ -59,6 +131,16 @@ unless somebody has run it on a device.
 tests. `SeedHosts` lives there rather than in the Android module for exactly this
 reason: the parsing is the part that can be wrong, and a bad address fails later
 as "no Sonos players found", which is indistinguishable from a network problem.
+The three file stores moved down for the same reason and a scan caught a real bug
+in them on the way — see above.
+
+`server/src/` is a third case again: it is plain JVM, so it can be RUN here. The
+container build was verified by building `:server:installDist`, starting it, and
+driving the real routes with curl — the page and every asset served, a webhook
+added from a non-loopback address with the PIN and refused without it, the file
+written 0600, and all of it still there after a restart. What CANNOT be verified
+here is the image itself: there is no Docker daemon in this environment, so the
+`Dockerfile` is checked by CI and nothing else. Say so when handing it over.
 
 ## The app is not a Sonos app
 

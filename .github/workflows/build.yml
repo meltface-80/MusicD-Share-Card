@@ -63,6 +63,16 @@ jobs:
           python3 -m pip install --quiet --disable-pip-version-check pillow
           python3 tools/check-icons.py
 
+      # THE CONTAINER'S ENTRY POINT, COMPILED HERE rather than only inside the
+      # image build. It is thirty seconds on a runner that is already warm, and
+      # without it a broken :server is first reported by a Docker build several
+      # minutes later, in a log nobody reads until the image is wanted.
+      #
+      # -Psharecard.serverOnly=true is what the image uses too: it drops :app
+      # from the build, so this needs no Android SDK.
+      - name: Build the container's server
+        run: ./gradlew :server:installDist -Psharecard.serverOnly=true --no-daemon --stacktrace
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
@@ -358,3 +368,76 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.name.outputs.apk }}
+
+  # --------------------------------------------------------------- image ----
+  #
+  # THE OTHER HALF OF THE SAME PROGRAM. The APK above and this image are built
+  # from one :core; what differs is the shell around it — a foreground service
+  # and a WebView there, a JVM main and a mounted directory here.
+  #
+  # BUILT ON EVERY PUSH, PUSHED ONLY FROM main. A Dockerfile that is only
+  # exercised at release time is one that breaks at release time, and the
+  # failure it breaks with (a COPY of a path that moved, a module left out of
+  # the server-only build) is one a branch build would have caught for free.
+  # Publishing is the part that must not happen from a branch: `:latest` is what
+  # a compose file pulls, and pointing it at a feature branch is the same
+  # mistake the APK manifest made once already.
+  image:
+    name: Container image
+    runs-on: ubuntu-latest
+    needs: core
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Only needed for the push below, and only granted here rather than at the
+      # top of the file so the APK job cannot write packages.
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The version the image reports comes from app/build.gradle.kts, with the
+      # same expression every other step here uses. ONE number: the container's
+      # /api/debug is how a bug report says which build it came from, and a
+      # second place to bump is a second place to forget.
+      - name: Read the version
+        id: version
+        run: |
+          version=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Image version: $version"
+
+      # Lowercased because a repository name may not contain capitals and this
+      # owner has one. ${{ github.repository }} would be rejected verbatim.
+      - name: Work out the image name
+        id: image
+        run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr 'A-Z' 'a-z')/musicd-share-card" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the container registry
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # arm64 as well as amd64, because the machine this is wanted on is as
+      # likely to be a Pi or a NAS as an x86 box — and an image that only runs
+      # on the architecture CI happens to use is one most of the people asking
+      # for it cannot run. Built under QEMU, which is slow and is why this job
+      # only does it when it is going to publish the result.
+      - uses: docker/setup-qemu-action@v3
+        if: github.ref == 'refs/heads/main'
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.ref == 'refs/heads/main' }}
+          platforms: ${{ github.ref == 'refs/heads/main' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          tags: |
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

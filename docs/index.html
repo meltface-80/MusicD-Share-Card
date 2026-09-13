@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MusicD Share Card for Android — download &amp; install</title>
+<title>MusicD Share Card — Android and Docker</title>
 <meta name="description" content="MusicD Share Card — a native Android APK that turns whatever is playing into a share card. Download and sideload.">
 <link rel="icon" href="favicon.png">
 <style>
@@ -120,7 +120,21 @@
   .card h3 .em { margin-right: 8px; }
   .card p { font-size: 13.5px; color: var(--muted); }
 
-  /* ---------- download ---------- */
+  /* ---------- download ----------
+     TWO PANELS SIDE BY SIDE, ONE PER BUILD, and one column on a phone. They are
+     the same program with a different shell around it, so neither gets to be
+     the footnote of the other. */
+  .two {
+    display: grid; gap: 18px; align-items: stretch;
+    grid-template-columns: 1fr 1fr;
+  }
+  /* MIN-WIDTH: 0 IS THE HALF THAT ACTUALLY STOPS THE OVERHANG. A grid item
+     will not shrink below its content without it, so the `pre` below — a
+     docker command, deliberately not re-wrapped — made the column as wide as
+     the longest line and pushed the whole page sideways on a phone. Exactly
+     the same rule the app's own action row needed. */
+  .two > * { min-width: 0; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
   .dl {
     background: var(--panel); border: 1px solid var(--line);
     border-radius: 14px; padding: 24px; text-align: center;
@@ -140,6 +154,22 @@
     word-break: break-all;
   }
   .dl .fp b { color: var(--copper-hi); font-family: var(--sans); }
+  .dl.left { text-align: left; }
+  .dl.left h3 { font-size: 15px; margin: 0 0 12px; }
+  /* A command is the one thing on this page that must not be re-wrapped: a
+     broken line pasted into a terminal is a different command. It scrolls
+     inside its own box instead, which is what keeps the page itself from
+     scrolling sideways on a phone. */
+  .dl pre {
+    font-family: var(--mono); font-size: 12px; line-height: 1.55;
+    background: var(--bg-deep); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 14px; margin: 0 0 12px;
+    overflow-x: auto; color: var(--text);
+  }
+  .dl.left p { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
+  .dl.left p b { color: var(--text); }
+
+  .sub-h { font-size: 15px; margin: 26px 0 10px; color: var(--copper-hi); }
 
   /* ---------- first run ---------- */
   .firstrun {
@@ -176,6 +206,7 @@
   <div class="wrap">
     <a class="brand" href="#top">Music<span>D</span> Share Card</a>
     <a href="#download">Download</a>
+    <a href="#docker">Docker</a>
     <a href="#install">Install</a>
     <a href="#screens">Screens</a>
     <a href="#features">Features</a>
@@ -188,13 +219,14 @@
        tools/make-icons.py, and committed here rather than hot-linked: a picture
        of the project should not depend on somebody else's hosting. -->
   <img class="logo" src="icon.png" alt="MusicD Share Card">
-  <h1>MusicD Share Card <span>for Android</span></h1>
+  <h1>MusicD Share Card <span>for Android and Docker</span></h1>
   <p class="tag">Turns whatever is playing into a card worth sending — cover, title, artist, year,
      a few lines about the record and a Pitchfork score. Share it, save it, or post it to Discord
      with a webhook.</p>
   <div class="badges">
-    <span class="badge" id="ver-badge">v0.43.0</span>
+    <span class="badge" id="ver-badge">v0.44.0</span>
     <span class="badge plain">Android 8.0+</span>
+    <span class="badge plain">Docker</span>
     <span class="badge plain">MIT licence</span>
     <span class="badge plain">Roon, Lyrion, Sonos, UPnP&nbsp;/&nbsp;DLNA</span>
   </div>
@@ -203,16 +235,40 @@
 <section id="download">
   <div class="wrap">
     <h2>Download</h2>
-    <div class="dl">
-      <a class="get" id="dl-link"
-         href="https://github.com/meltface-80/MusicD-Share-Card/raw/main/dist/musicd-share-card-0.43.0.apk">Download the APK</a>
-      <div class="filename" id="dl-name">musicd-share-card-0.43.0.apk</div>
-      <p class="sub">Android 8.0 (API 26) or newer. Your browser will warn you about downloading an
-         APK, and Android will ask permission to install from this source — both are normal for an
-         app that does not come from the Play Store.</p>
-      <div class="fp">
-        <b>Signing certificate (SHA-256)</b><br>
-        e37c46d366db31124f231d68755cd9856b146e3f437fc5a99ff190701be84c21
+    <p class="lead">Two builds, the same program. Run whichever suits the machine you already
+       leave switched on.</p>
+    <div class="two">
+      <div class="dl">
+        <a class="get" id="dl-link"
+           href="https://github.com/meltface-80/MusicD-Share-Card/raw/main/dist/musicd-share-card-0.44.0.apk">Download the APK</a>
+        <div class="filename" id="dl-name">musicd-share-card-0.44.0.apk</div>
+        <p class="sub">Android 8.0 (API 26) or newer. Your browser will warn you about downloading an
+           APK, and Android will ask permission to install from this source — both are normal for an
+           app that does not come from the Play Store.</p>
+        <div class="fp">
+          <b>Signing certificate (SHA-256)</b><br>
+          e37c46d366db31124f231d68755cd9856b146e3f437fc5a99ff190701be84c21
+        </div>
+      </div>
+
+      <div class="dl left" id="docker">
+        <h3>Or run it in Docker</h3>
+<pre>docker run -d --name musicd-share-card \
+  --network host \
+  -v "$PWD/sharecard-data:/data" \
+  --restart unless-stopped \
+  ghcr.io/meltface-80/musicd-share-card:latest</pre>
+        <p>Then open <code>http://&lt;that machine&gt;:8747</code> on anything on the network.
+           For a NAS, a Pi, or the box Lyrion is already on — nothing to keep awake, and
+           nothing to sideload.</p>
+        <p><b><code>--network host</code> is not optional</b> if you want it to find anything.
+           SSDP, Roon’s SOOD and Lyrion’s broadcast are all multicast, and none of them
+           cross a Docker bridge — on one, the container comes up healthy and finds nothing
+           at all.</p>
+        <div class="fp">
+          <b>Compose</b><br>
+          docker-compose.yml is in the repo, commented, and does the same thing.
+        </div>
       </div>
     </div>
   </div>
@@ -221,7 +277,9 @@
 <section id="install">
   <div class="wrap">
     <h2>Install</h2>
-    <p class="lead">Three steps, once.</p>
+    <p class="lead">Three steps each way, once.</p>
+
+    <h3 class="sub-h">On Android</h3>
     <div class="firstrun">
       <ol>
         <li><b>Download and open the APK.</b> Allow your browser to install unknown apps if
@@ -234,6 +292,26 @@
             an icon and opens it without browser chrome.</li>
       </ol>
     </div>
+
+    <h3 class="sub-h">In Docker</h3>
+    <div class="firstrun">
+      <ol>
+        <li><b>Make the data directory and give it to the container’s user.</b>
+            <code>mkdir -p sharecard-data &amp;&amp; sudo chown -R 10001 sharecard-data</code> — it
+            runs as uid 10001, not root. Skip it and the card still draws; it just forgets the
+            Roon pairing, the webhooks and the metadata cache on every restart, and says so in
+            the log.</li>
+        <li><b>Run it</b> with the command above, or <code>docker compose up -d</code>. Open
+            <code>http://&lt;that machine&gt;:8747</code> from anywhere on the network — the
+            same page, served by the same code.</li>
+        <li><b>If it finds nothing</b>, it is almost always the network mode. Where host
+            networking is not available — Docker Desktop on macOS and Windows — publish
+            <code>-p 8747:8747</code> instead and name your players’ addresses in
+            <code>SHARECARD_HOSTS</code>, which needs no multicast.</li>
+      </ol>
+    </div>
+    <p class="lead">Updating is <code>docker compose pull &amp;&amp; docker compose up -d</code>.
+       The in-app update button is Android-only, and the page hides it here.</p>
   </div>
 </section>
 

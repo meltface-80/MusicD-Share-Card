@@ -45,11 +45,77 @@ what is on somewhere else.
 
 ## Install
 
-[**Download musicd-share-card-0.43.0.apk**](dist/musicd-share-card-0.43.0.apk)
+There are two builds and they are the same program. Everything that decides
+anything — the sources, the card, the links — is shared; what differs is the
+shell around it. Run whichever suits the machine you already leave switched on.
+
+### Android
+
+[**Download musicd-share-card-0.44.0.apk**](dist/musicd-share-card-0.44.0.apk)
 and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 
-### Updating
+### Docker
+
+For a machine that is already always on — a NAS, a Pi, the box Lyrion is on. No
+phone to keep awake, and nothing to sideload.
+
+```bash
+docker run -d --name musicd-share-card \
+  --network host \
+  -v "$PWD/sharecard-data:/data" \
+  --restart unless-stopped \
+  ghcr.io/meltface-80/musicd-share-card:latest
+```
+
+Then open `http://<that machine>:8747` on anything on the network.
+
+Or with Compose — [`docker-compose.yml`](docker-compose.yml) is in the repo and
+is commented:
+
+```bash
+curl -O https://raw.githubusercontent.com/meltface-80/MusicD-Share-Card/main/docker-compose.yml
+docker compose up -d
+```
+
+Three things worth knowing before you run it:
+
+- **`--network host` is not optional if you want it to find anything.** Every
+  way this app discovers a player is multicast or broadcast — SSDP for Sonos and
+  UPnP, Roon's SOOD, Lyrion's UDP 3483 — and none of that crosses a Docker
+  bridge. On a bridge the container comes up healthy, answers on its port, and
+  finds nothing, which looks exactly like a network with no players on it. Where
+  host networking isn't available (Docker Desktop on macOS and Windows, for
+  one), publish `-p 8747:8747` instead and name your players' addresses in
+  `SHARECARD_HOSTS`; that path needs no multicast.
+- **The container runs as uid 10001**, so a directory you make yourself needs
+  `sudo chown -R 10001 ./sharecard-data`. Without it the card still draws and
+  everything else works — it just forgets the Roon pairing, the webhooks and the
+  metadata cache on every restart, and it says so in `docker logs`.
+- **Adding a Discord webhook from another device needs a PIN.** The Android
+  build shows it on the device's own screen; a server in a cupboard has no
+  screen, so it is printed once to the log instead — `docker logs
+  musicd-share-card`. Set `SHARECARD_PIN` to a six-digit number of your own to
+  skip that.
+
+Updating is `docker compose pull && docker compose up -d`. The in-app update
+button is Android-only and the page hides it here.
+
+Everything the container reads:
+
+| | |
+| --- | --- |
+| `SHARECARD_HOSTS` | Player or server addresses to try before searching, comma separated. IPv4 only. |
+| `SHARECARD_PIN` | Six digits. Adding or removing a Discord webhook from another device asks for it. |
+| `SHARECARD_PORT` | Default `8747`. Only if that one is taken. |
+| `SHARECARD_DATA` | Default `/data`. Where the pairing, the webhooks and the cache are kept. |
+| `SHARECARD_BIND` | Default `0.0.0.0`. |
+| `SHARECARD_DEBUG` | `false` quietens the log. On by default, because the log is the only diagnostic a container has. |
+
+You can also drop a `hosts.txt` in the data directory — one address per line,
+`#` for comments — which is the same file the Android build reads.
+
+### Updating the Android app
 
 The app updates itself. When a newer version is published it says so at the top
 of the page; press **Update** and it downloads it, checks it, and hands it to
@@ -62,15 +128,17 @@ of those, uninstall once and this is the last time.
 
 ## Using it from your other devices
 
-If the Android device stays on — a FiiO R7, a tablet in a dock, an old phone on a
-charger — anything else in the house can open the same card in a browser:
+Whichever build you run, anything else in the house can open the same card in a
+browser:
 
 ```
-http://<the Android device's IP>:8747
+http://<the machine running it>:8747
 ```
 
-The app shows that address on screen, and in its notification. Nothing extra is
-installed on the iPad or phone; it's just a web page served by the app.
+On Android — a FiiO R7, a tablet in a dock, an old phone on a charger — the app
+shows that address on screen and in its notification. In Docker it is printed to
+the log at startup. Nothing extra is installed on the iPad or the phone; it's
+just a web page, and it is the same page either way.
 
 | | |
 | --- | --- |
@@ -140,7 +208,9 @@ what it didn't, and the most likely reason — plus what the Pitchfork and
 suggestion lookups were asked and what they answered. An empty row has several
 causes that look identical from the card, and that page tells them apart.
 
-It's also where the last crash goes, so "it just closed" comes with a trace.
+It's also where the last crash goes, so "it just closed" comes with a trace. In
+Docker the same detail is in `docker logs`, which is on from the start — a
+container has no other window to look through.
 
 ## Licence
 
