@@ -33,6 +33,20 @@ object ServerRelease {
     const val ACTIVE = "active"
 
     /**
+     * Unpacked builds live BELOW the markers, never beside them.
+     *
+     * A VERSION IS A NAME FROM THE NETWORK, and the markers are names this app
+     * chose — so in one flat directory a build called "pending" makes a
+     * DIRECTORY where the marker file has to go, and the update dies with
+     * "pending (Is a directory)". That is not hypothetical: it is exactly what
+     * happened when the installer could not work out the version and fell back
+     * to a placeholder, which it had picked from this very list. One level of
+     * nesting means the two namespaces cannot touch, whatever a manifest says
+     * a version is called.
+     */
+    const val VERSIONS = "versions"
+
+    /**
      * Unpack [archive] into `<dir>/<version>` and mark it pending.
      *
      * EVERY ENTRY IS CHECKED AGAINST THE DESTINATION, because this file came
@@ -45,7 +59,7 @@ object ServerRelease {
      * install the rest of.
      */
     fun unpack(archive: File, dir: File, version: String): File {
-        val target = File(dir, version)
+        val target = File(File(dir, VERSIONS), version)
         if (target.exists()) target.deleteRecursively()
         if (!target.mkdirs()) throw IllegalStateException("could not make ${target.path}")
         val root = target.canonicalFile

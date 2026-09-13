@@ -42,8 +42,21 @@ class Updater(
     private val currentVersion: String,
     private val manifestUrl: String,
     private val downloadDir: File,
-    /** Hands the finished file to whatever installs it on this host. */
-    private val install: (File) -> Unit,
+    /**
+     * Hands the finished file, and the VERSION it is, to whatever installs it.
+     *
+     * THE VERSION IS PASSED BECAUSE THE FILENAME DOES NOT CARRY IT. The
+     * download is written to one fixed name, replaced each time — so the
+     * container's installer, which has to unpack into a directory named after
+     * the version, was reading it out of a name that never had it and falling
+     * back to a placeholder. That placeholder was the word "pending", which is
+     * also the name of the marker file beside it, so the unpack created a
+     * DIRECTORY called pending and the marker could not then be written:
+     * "pending (Is a directory)". Found by actually applying a real published
+     * update; every test until then had called the unpacker directly with a
+     * version in hand, which is precisely the step that was broken.
+     */
+    private val install: (File, String) -> Unit,
     /** Which build this host runs, and therefore which half of the manifest. */
     private val variant: Variant = Variant.ANDROID
 ) {
@@ -261,7 +274,13 @@ class Updater(
             // offered would grow without bound on a device nobody ever opens
             // the settings of.
             downloadDir.listFiles()?.forEach { it.delete() }
-            val target = File(downloadDir, "update.apk")
+            // Named for what it IS. The server variant downloads a zip, and
+            // a file called update.apk is a small lie that would eventually
+            // cost somebody an hour.
+            val target = File(
+                downloadDir,
+                if (variant == Variant.SERVER) "update.zip" else "update.apk"
+            )
 
             http.newCall(Request.Builder().url(release.url).build()).execute().use { response ->
                 if (!response.isSuccessful) {
@@ -290,7 +309,7 @@ class Updater(
             // confirmation this process is replaced. If the user declines,
             // nothing happens and the phase stays where it is.
             state.set(State(Phase.AWAITING_INSTALL, null, release))
-            install(target)
+            install(target, release.version)
         } catch (e: Throwable) {
             // Throwable, not Exception: this runs on a background thread and a
             // class that fails to initialise throws an Error, which would kill

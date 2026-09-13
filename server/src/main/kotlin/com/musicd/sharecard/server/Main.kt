@@ -93,9 +93,18 @@ fun main() {
              * launcher runs the new one.
              */
             updateInstaller = ShareCardApp.UpdateInstaller(
-                downloadDir = updates,
+                /*
+                 * A SCRATCH DIRECTORY OF ITS OWN, BELOW the one holding the
+                 * unpacked builds. The downloader empties its directory before
+                 * every attempt — one file, replaced each time, so a device
+                 * nobody opens does not accumulate every version ever offered
+                 * — and pointing that at the directory that also holds the
+                 * unpacked versions and the markers would have it deleting
+                 * them.
+                 */
+                downloadDir = File(updates, "download"),
                 variant = Updater.Variant.SERVER,
-                install = { archive -> applyServerUpdate(updates, archive) }
+                install = { archive, version -> applyServerUpdate(updates, archive, version) }
             )
             // updateInstaller is deliberately absent: see the note above.
         ).also { it.start() }
@@ -301,12 +310,7 @@ private class StdoutSink : Log.Sink {
  * called from inside the request that pressed Update, and a process that dies
  * mid-response leaves the page with a dropped connection instead of an answer.
  */
-private fun applyServerUpdate(updates: File, archive: File) {
-    val version = archive.name
-        .substringAfter("musicd-share-card-server-", "")
-        .substringBeforeLast(".zip", "")
-        .ifEmpty { "pending" }
-
+private fun applyServerUpdate(updates: File, archive: File, version: String) {
     ServerRelease.unpack(archive, updates, version)
     ServerRelease.markPending(updates, version)
     runCatching { archive.delete() }

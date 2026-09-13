@@ -111,7 +111,7 @@ class ShareCardApp(
      */
     class UpdateInstaller(
         val downloadDir: File,
-        val install: (File) -> Unit,
+        val install: (File, String) -> Unit,
         val variant: Updater.Variant = Updater.Variant.ANDROID
     )
 

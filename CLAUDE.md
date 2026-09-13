@@ -1133,6 +1133,27 @@ was simply not there, however carefully the DIDL was parsed.
   let `restart: unless-stopped` bring the container back on it. The cost is
   stated in the README rather than hidden — the JRE and the OS packages
   underneath change only when somebody pulls an image by hand.
+- **THE INSTALLER IS TOLD THE VERSION; IT MUST NEVER READ IT OFF A FILENAME.**
+  The downloader writes one fixed name, replaced each time, and that name has
+  never carried a version — so the container's installer parsed nothing and
+  fell back to a placeholder. The placeholder was the word "pending", which is
+  also the marker file beside it, so the unpack made a DIRECTORY called pending
+  and the marker could not be written: `pending (Is a directory)`. Every update
+  failed. NOTHING CAUGHT IT UNTIL A REAL ONE WAS APPLIED, because every test
+  until then called the unpacker directly with a version already in hand —
+  which is exactly the step that was broken. `install` takes `(File, String)`
+  now.
+- **UNPACKED BUILDS LIVE BELOW THE MARKERS, NEVER BESIDE THEM.** A version is a
+  name that came off the network; the markers are names this app chose. In one
+  flat directory those namespaces collide, which is what the bug above turned
+  into. `versions/<version>` means they cannot touch whatever a manifest calls
+  a release, and `ServerReleaseTest` unpacks builds named after each marker to
+  prove it.
+- **AND THE DOWNLOAD SCRATCH DIRECTORY IS NOT THE ONE HOLDING THE BUILDS.** The
+  downloader empties its directory before every attempt, so pointing it at the
+  directory that also holds the unpacked versions and the markers would have it
+  deleting them. `updates/download` sits below `updates/`, and a test asserts a
+  download cannot remove a build or a marker.
 - **ONE MANIFEST, TWO HALVES.** `latest.json` carries the APK at the top level
   and the server build under `server`. `Updater.Variant` decides which half is
   read. A second manifest would be a second thing to fall out of step, which

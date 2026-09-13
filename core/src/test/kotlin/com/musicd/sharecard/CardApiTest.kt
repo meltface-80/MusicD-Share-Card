@@ -655,7 +655,7 @@ class CardApiTest {
                 currentVersion = "1.0.0",
                 manifestUrl = "https://127.0.0.1:1/latest.json",
                 downloadDir = java.nio.file.Files.createTempDirectory("api-update").toFile(),
-                install = { throw AssertionError("no install in an API test") }
+                install = { _, _ -> throw AssertionError("no install in an API test") }
             )
         )
     }

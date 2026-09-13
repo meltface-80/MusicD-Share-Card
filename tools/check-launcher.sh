@@ -52,7 +52,7 @@ check "a fresh container runs the build in the image" "BAKED" "$(launch)"
 
 # 2. A pending build is taken, and recorded as being on trial first.
 setup
-fake "$WORK/run/data/updates/9.9.9/bin/server" "NEW 9.9.9"
+fake "$WORK/run/data/updates/versions/9.9.9/bin/server" "NEW 9.9.9"
 echo "9.9.9" > "$WORK/run/data/updates/pending"
 out="$(launch)"
 check "a pending build is started" "NEW 9.9.9" "$out"
@@ -62,18 +62,18 @@ check "and pending is consumed, so it is tried once" "" \
 
 # 3. THE ROLLBACK. A leftover `trying` is a build that never served.
 setup
-fake "$WORK/run/data/updates/9.9.9/bin/server" "NEW 9.9.9"
+fake "$WORK/run/data/updates/versions/9.9.9/bin/server" "NEW 9.9.9"
 echo "9.9.9" > "$WORK/run/data/updates/trying"
 out="$(launch)"
 check "a build that never served is not tried twice" "BAKED" "$out"
 check "and is thrown away" "" \
-  "$([ -d "$WORK/run/data/updates/9.9.9" ] && echo STILL-THERE || echo "")"
+  "$([ -d "$WORK/run/data/updates/versions/9.9.9" ] && echo STILL-THERE || echo "")"
 check "and the marker is cleared, so the next boot is ordinary" "" \
   "$([ -f "$WORK/run/data/updates/trying" ] && echo STILL-THERE || echo "")"
 
 # 4. A build that served before is used again without being re-tried.
 setup
-fake "$WORK/run/data/updates/9.9.9/bin/server" "NEW 9.9.9"
+fake "$WORK/run/data/updates/versions/9.9.9/bin/server" "NEW 9.9.9"
 echo "9.9.9" > "$WORK/run/data/updates/active"
 out="$(launch)"
 check "the last good build runs on an ordinary boot" "NEW 9.9.9" "$out"
@@ -87,21 +87,21 @@ check "a recorded build that has gone falls back to the image" "BAKED" "$(launch
 
 # 6. A pending build with no runnable launcher in it.
 setup
-mkdir -p "$WORK/run/data/updates/9.9.9/lib"
+mkdir -p "$WORK/run/data/updates/versions/9.9.9/lib"
 echo "9.9.9" > "$WORK/run/data/updates/pending"
 check "an unrunnable pending build is ignored, not fatal" "BAKED" "$(launch)"
 
 # 7. A pending build on top of a good one: the new one is tried, the old one
 #    is still there to go back to.
 setup
-fake "$WORK/run/data/updates/1.0.0/bin/server" "OLD 1.0.0"
-fake "$WORK/run/data/updates/9.9.9/bin/server" "NEW 9.9.9"
+fake "$WORK/run/data/updates/versions/1.0.0/bin/server" "OLD 1.0.0"
+fake "$WORK/run/data/updates/versions/9.9.9/bin/server" "NEW 9.9.9"
 echo "1.0.0" > "$WORK/run/data/updates/active"
 echo "9.9.9" > "$WORK/run/data/updates/pending"
 check "an update is preferred over the last good build" "NEW 9.9.9" "$(launch)"
 setup
-fake "$WORK/run/data/updates/1.0.0/bin/server" "OLD 1.0.0"
-fake "$WORK/run/data/updates/9.9.9/bin/server" "NEW 9.9.9"
+fake "$WORK/run/data/updates/versions/1.0.0/bin/server" "OLD 1.0.0"
+fake "$WORK/run/data/updates/versions/9.9.9/bin/server" "NEW 9.9.9"
 echo "1.0.0" > "$WORK/run/data/updates/active"
 echo "9.9.9" > "$WORK/run/data/updates/trying"
 check "and a failed update goes back to it, not to the image" "OLD 1.0.0" "$(launch)"

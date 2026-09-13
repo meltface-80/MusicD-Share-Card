@@ -146,7 +146,10 @@ class CardService : Service() {
                 // step, so :core does everything up to it and calls back here.
                 updateInstaller = ShareCardApp.UpdateInstaller(
                     downloadDir = ApkInstaller.downloadDir(this),
-                    install = { apk -> ApkInstaller.install(this, apk) }
+                    // The version comes with it now; Android does not need it
+                    // — the package manager reads it out of the APK — but the
+                    // container installer does, so the callback carries it.
+                    install = { apk, _ -> ApkInstaller.install(this, apk) }
                 ),
                 // What MusicBrainz, Wikipedia, Pitchfork and Qobuz said, kept
                 // across restarts. Playing a record a second time should not
