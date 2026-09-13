@@ -185,20 +185,28 @@ class CardApi(
      *
      * The zone is chosen here rather than by the page, because the choice needs
      * the transport state of every room and the page should not be making a
-     * round trip per speaker to find out. `zone=` narrows it to one room; left
-     * off, [Household.nowPlaying] picks whichever is playing.
+     * round trip per speaker to find out.
+     *
+     * TWO QUESTIONS, AND THEY ARE NOT THE SAME ONE. `zone=` asks about ONE
+     * room and is answered about that room, silence included — [Sources.inZone].
+     * Left off, it asks what is on in the house and [Sources.nowPlaying] walks
+     * its ladder to find the best answer anywhere. This comment claimed the
+     * first behaviour while the code did the second for both, which is how a
+     * card for an idle WiiM came back describing a Roon zone.
      */
     private fun nowPlaying(request: Request): Response {
-        val wanted = request.param("zone")
-        if (wanted != null) sources.preferredZoneId = wanted
+        // EMPTY IS NOT A ZONE. "Whatever's playing" sends no zone at all, and
+        // a named one is a lock rather than a hint — see [Sources.inZone].
+        val wanted = request.param("zone")?.takeIf { it.isNotBlank() }
+        sources.preferredZoneId = wanted
         if (request.param("refresh") == "1") sources.refresh()
 
-        val playing = sources.nowPlaying(wanted ?: sources.preferredZoneId)
+        val playing = if (wanted != null) sources.inZone(wanted) else sources.nowPlaying(null)
         if (playing == null || playing.isEmpty) {
             return Json.obj(
                 JSONObject()
                     .put("playing", false)
-                    .put("reason", reasonForNothing())
+                    .put("reason", reasonForNothing(wanted))
                     // Something the user can act on beats a description of the
                     // symptom — a first Roon run is not a broken app, it is one
                     // waiting to be let in.
@@ -206,15 +214,28 @@ class CardApi(
             )
         }
 
-        // Remember what actually answered, so the next card without a zone=
-        // comes from the same place rather than re-deciding on a tie.
-        sources.preferredZoneId = playing.zoneId
+        // A named zone stays named. An unnamed one is NOT pinned to whatever
+        // answered this time: "whatever's playing" has to keep meaning that,
+        // and pinning it made the next refresh answer about a room the user
+        // never chose.
         return Json.obj(cardJson(playing).put("notices", Json.strings(sources.notices())))
     }
 
-    private fun reasonForNothing(): String =
-        if (!sources.anyZones()) "No players found on the network."
-        else "Nothing is playing."
+    /**
+     * Why there is no card, in the terms the question was asked in.
+     *
+     * A named room that is silent is not "nothing is playing" — the house may
+     * be full of music. It is that ROOM that is quiet, and saying so is the
+     * difference between an answer and a shrug.
+     */
+    private fun reasonForNothing(zoneId: String?): String = when {
+        !sources.anyZones() -> "No players found on the network."
+        zoneId == null -> "Nothing is playing."
+        else -> {
+            val name = sources.zones().firstOrNull { it.id == zoneId }?.name
+            if (name != null) "Nothing is playing in $name." else "Nothing is playing there."
+        }
+    }
 
     /**
      * The card payload.

@@ -312,6 +312,22 @@ class Household(
     }
 
     /**
+     * What ONE group is playing, and nothing else.
+     *
+     * [nowPlaying] below is a ladder that ends at "any room with anything in
+     * it", which is the right answer to "what is on in the house" and the
+     * wrong answer to "what is on in the study". Asked the second question it
+     * answered the first: the picker said one room and the card named another,
+     * from a different source, playing something else. Reported from the field.
+     *
+     * Resolved through [group] like everything else, so naming a room that has
+     * since been grouped still follows it to its coordinator — that IS still
+     * that room's music. Null means the room is idle or describing nothing,
+     * which a card treats the same way.
+     */
+    fun inGroup(uid: String): ZoneState? = group(uid)?.let { stateOf(it) }
+
+    /**
      * The group the card should be about.
      *
      * The rule, in order:
@@ -322,10 +338,12 @@ class Household(
      *      makes a card;
      *   5. nothing, and the page says so.
      *
-     * A user's choice does NOT beat a room that is actually playing when the
-     * chosen room has fallen silent — the app's purpose is a card for what is
-     * on, and answering with an hour-old paused album because that room was
-     * picked once is the wrong answer to the question being asked.
+     * THIS IS THE ANSWER TO "WHAT IS ON IN THE HOUSE", and `preferUid` is only
+     * ever a tie-break within it: a choice does NOT beat a room that is
+     * actually playing when the chosen room has fallen silent, because
+     * answering with an hour-old paused album is the wrong answer to THAT
+     * question. Naming a room asks a different question and goes through
+     * [inGroup], which does not walk this ladder at all.
      */
     fun nowPlaying(preferUid: String? = preferredZoneUid): ZoneState? {
         val groups = groups()

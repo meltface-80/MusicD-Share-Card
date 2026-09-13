@@ -474,6 +474,36 @@ was simply not there, however carefully the DIDL was parsed.
   since the port with nothing ever offering it; `/api/extras` returns it as
   `bioUrl` and the chip is labelled from `bioSource`, so a second source added
   later names its own.
+- **A NAMED ZONE IS A LOCK, AND THE FALLBACK LADDER IS FOR "WHATEVER'S PLAYING"
+  ALONE.** `Sources.nowPlaying` walks a ladder that ends at any room with
+  anything in it, and naming a zone used to walk it too — so selecting an idle
+  WiiM Pro Plus drew a card headed "Playing in Stereo Fives · via Roon". The
+  picker said one room and the card described another, which reads as the app
+  choosing for you. `Sources.inZone` asks that room and answers for that room,
+  silence included, and `/api/now-playing` uses it whenever a zone is named.
+  Each zone is independent; a room that is not playing says so, by name.
+- **Sonos was the ONE source walking that ladder for a named zone, one layer
+  further down.** Roon and UPnP have always treated a zone id as a filter
+  (`client.zone(zoneId) ?: return null`, `renderers.filter { it.udn == zoneId }`),
+  but `Household.nowPlaying(preferUid)` took the uid as a *preference* and fell
+  through to any playing group — so fixing `Sources` alone left the bug intact
+  for the source that had it. `Household.inGroup` is the locked form, and it
+  still resolves through `group()`, so a room that has since been grouped
+  follows to its coordinator rather than being refused.
+- **AN EMPTY `zone` PARAMETER IS NOT A ZONE.** "Whatever's playing" sends the
+  parameter blank, and a blank string that reaches `inZone` names no source, so
+  the room lookup returns null and the page says nothing is playing while music
+  is. `?.takeIf { it.isNotBlank() }` is what separates the two questions.
+- **AN UNNAMED CHOICE MUST NOT BE PINNED.** `/api/now-playing` wrote whoever
+  answered into `preferredZoneId`, so the first card silently converted
+  "whatever's playing" into that room for every request after it — and once the
+  named path became a lock, that turned into a card that stopped following the
+  house. Only an explicitly named zone is remembered.
+- **PER-ZONE DIAGNOSTICS MUST ASK PER ZONE.** `/api/debug` listed every room
+  with the same record on it, because it called `nowPlaying(zone.id)` and got
+  the fallback's answer five times over — the report contradicted the source
+  lines printed directly above it, and a report that disagrees with itself sent
+  two rounds of diagnosis the wrong way. It uses `inZone` now.
 - **Zone ids move.** A regroup in the Sonos app changes which player coordinates
   a room, and a card headed with the wrong room is the result. Resolve through
   `Household.group()`, which follows a member to its coordinator, never from a

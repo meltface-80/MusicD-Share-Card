@@ -15,10 +15,16 @@ import com.musicd.sharecard.Log
  *   4. any zone with metadata at all, so a paused room still makes a card;
  *   5. nothing, and the page says so.
  *
- * A user's choice does NOT beat a room that is actually playing when the chosen
- * one has fallen silent. The app's purpose is a card for what is on, and
- * answering with an hour-old paused album because that room was picked once is
- * the wrong answer to the question being asked.
+ * THAT LADDER IS FOR "WHATEVER'S PLAYING" AND FOR NOTHING ELSE. Naming a zone
+ * goes through [inZone], which asks that room and answers for that room —
+ * silence included. The ladder used to run for a named zone too, and the
+ * result was a card headed "Playing in Stereo Fives · via Roon" while the
+ * picker said WiiM Pro Plus: the WiiM was idle, rung 2 found a room that was
+ * not, and the answer was about somewhere else entirely. Reported from the
+ * field, and it made /api/debug lie in the same breath — every zone in the
+ * report showed the same record, because the report asks per zone too.
+ *
+ * Each zone is independent. A room that is not playing says so.
  *
  * SOURCES ARE ASKED IN ORDER AND THE ORDER IS DELIBERATE. Roon first, because
  * when Roon is playing to a speaker it is the only one of the two that knows
@@ -140,6 +146,17 @@ class Sources(private val sources: List<Source>) {
         }
         return best
     }
+
+    /**
+     * What is playing IN ONE ROOM, and nothing else.
+     *
+     * No ladder, no fallback, no second source: the question is about that
+     * room, so an answer about a different one is wrong however much better it
+     * is. Null covers both "the room is idle" and "the room described
+     * nothing", which are the same thing to a card — see the rule that an
+     * answer describing nothing is never drawn.
+     */
+    fun inZone(zoneId: String): Playing? = ask(zoneId)?.takeIf { quality(it) >= 0 }
 
     /** Ask whichever source owns this prefixed id. */
     private fun ask(zoneId: String): Playing? {

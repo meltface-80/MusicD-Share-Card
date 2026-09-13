@@ -186,9 +186,47 @@ class CardApiTest {
         players["10.0.0.1"]!!.state = TransportState.PAUSED
         players["10.0.0.1"]!!.track = NowPlaying(album = "Blue", artist = "Joni Mitchell")
 
-        val body = json("/api/now-playing", mapOf("zone" to "RINCON_A"))
+        // THE PREFIXED ID, which is what the picker actually sends. This asked
+        // with a bare "RINCON_A", which names no source — so the lookup could
+        // not resolve it and the answer came back through the fallback ladder
+        // instead. It happened to name the right room, because that was the
+        // only room with anything in it, and the test passed while proving
+        // nothing about pinning.
+        val body = json("/api/now-playing", mapOf("zone" to "sonos:RINCON_A"))
         assertEquals("Living Room", body.getJSONObject("zone").getString("room"))
         assertEquals("Blue", body.getString("album"))
+    }
+
+    @Test
+    fun `a named room that is idle says so, and does not answer for another`() {
+        // THE REPORTED BUG. The picker said WiiM Pro Plus, the WiiM was idle,
+        // and the card said "Playing in Stereo Fives via Roon" — an answer
+        // about a different room entirely. Each zone is independent.
+        players["10.0.0.1"]!!.state = TransportState.PLAYING
+        players["10.0.0.1"]!!.track = NowPlaying(album = "Blue", artist = "Joni Mitchell")
+        players["10.0.0.3"]!!.state = TransportState.STOPPED
+        players["10.0.0.3"]!!.track = NowPlaying()
+
+        val body = json("/api/now-playing", mapOf("zone" to "sonos:RINCON_C"))
+        assertFalse(body.getBoolean("playing"))
+        assertFalse("it must not describe the room that IS playing", body.has("album"))
+        // And it names the room that is quiet rather than shrugging at the
+        // house, which is a different statement when music is on elsewhere.
+        assertEquals("Nothing is playing in Study.", body.getString("reason"))
+    }
+
+    @Test
+    fun `whatever's playing is not pinned to whoever answered last`() {
+        // Answering once used to set preferredZoneId, so the next card without
+        // a zone came from that room by preference. "Whatever's playing" has
+        // to keep meaning that.
+        players["10.0.0.1"]!!.state = TransportState.PLAYING
+        players["10.0.0.1"]!!.track = NowPlaying(album = "Blue", artist = "Joni Mitchell")
+        val api = api()
+
+        JSONObject(String(api.handle(get("/api/now-playing")).body, Charsets.UTF_8))
+        val selected = JSONObject(String(api.handle(get("/api/zones")).body, Charsets.UTF_8))
+        assertTrue("nothing was chosen, so nothing is selected", selected.isNull("selected"))
     }
 
     // ---------------------------------------------------------------- zones

@@ -46,8 +46,14 @@ class SonosSource(private val household: Household) : Source {
         household.refresh()
         // zoneId arrives already stripped of its "sonos:" prefix, which is
         // exactly the uid Household knows this group by.
-        val state = household.nowPlaying(zoneId) ?: return null
-        return playingOf(state)
+        //
+        // NAMED MEANS NAMED. household.nowPlaying is a ladder that ends at any
+        // room with anything in it, and handed a uid it still walked it — so a
+        // silent room answered with the neighbours' music. Roon and UPnP have
+        // always treated a named zone as a lock; this is Sonos catching up.
+        val state = if (zoneId != null) household.inGroup(zoneId)
+        else household.nowPlaying(null)
+        return playingOf(state ?: return null)
     }
 
     internal fun playingOf(state: ZoneState): Playing? {

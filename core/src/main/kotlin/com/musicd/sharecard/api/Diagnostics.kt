@@ -109,8 +109,12 @@ class Diagnostics(
             "zones",
             Json.array(
                 zones.map { zone ->
+                    // inZone, NOT nowPlaying: the second falls back to the
+                    // best answer anywhere when this room is idle, so every
+                    // row in this report used to carry the same record and the
+                    // report contradicted the source lines above it.
                     val playing = runCatching {
-                        sources.nowPlaying(zone.id)
+                        sources.inZone(zone.id)
                     }.getOrNull()
                     JSONObject()
                         .put("name", zone.name)
