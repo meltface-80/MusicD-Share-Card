@@ -21,6 +21,8 @@ and coming back does not throw it away.
 It works out what's playing by asking whoever actually knows:
 
 - **Roon** — asked directly, through its own extension API
+- **Lyrion Music Server** — asked over its JSON-RPC endpoint, so the card comes
+  from the machine that owns the library rather than the endpoint playing it
 - **Sonos** — for anything the speakers stream themselves (Spotify Connect,
   Apple Music via the Sonos app, radio)
 - **UPnP / DLNA** — any other renderer on the network

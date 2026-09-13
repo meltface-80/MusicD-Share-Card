@@ -12,6 +12,12 @@ package com.musicd.sharecard
  * only place with tests, and a bad address stored here fails later as "no Sonos
  * players found" — the same message a network problem produces, which is the
  * worst kind of failure to debug at a distance.
+ *
+ * NOT ONLY SONOS ANY MORE. Lyrion is found by a UDP broadcast on 3483, which
+ * the same networks drop for the same reasons, so an address here is tried as a
+ * Lyrion server too. One list, because from the user's side the question is the
+ * same one — "discovery cannot see it, here is where it lives" — and a second
+ * file asking that again per protocol would be a worse answer.
  */
 object SeedHosts {
 
