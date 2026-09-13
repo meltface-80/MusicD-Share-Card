@@ -130,6 +130,20 @@ class LmsStatusTest {
     }
 
     @Test
+    fun `OBSERVED - the real coverid from the field builds the real url`() {
+        // Not reasoned from documentation: this is a coverid captured from a
+        // live Lyrion on a DietPi box, and the URL asserted is the one the
+        // UPnP source had already built from the same server's DIDL while the
+        // Lyrion source was returning nothing. Hex, which is exactly what the
+        // digits-only rule threw away.
+        val track = JSONObject().put("coverid", "c8536003")
+        assertEquals(
+            "http://192.168.0.57:9000/music/c8536003/cover.jpg",
+            LmsStatus.artUrl("http://192.168.0.57:9000", track)
+        )
+    }
+
+    @Test
     fun `an unusable coverid falls through to the next candidate`() {
         // AND THIS IS THE HALF THAT MADE IT TOTAL. The old code took the first
         // PRESENT of the three keys and then checked it, so a coverid it could
