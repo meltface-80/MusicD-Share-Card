@@ -28,6 +28,7 @@ node tools/check-css.js
 node tools/check-sharecard.js
 python3 tools/check-icons.py
 sh tools/check-launcher.sh
+sh tools/check-docker-paths.sh   # after :server:installDist
 ```
 
 **A new test must fail before the fix and pass after it.** Prove it: break the
@@ -359,6 +360,46 @@ was simply not there, however carefully the DIDL was parsed.
   the cost spelled out (every existing install, theirs included, goes blank on
   update until rooms are chosen), the answer was to do exactly that: one rule,
   no migration.
+- **SERVICES ARE OPT-IN TOO, AND DEFAULTING THEM ON WAS REPORTED AS A BUG.**
+  They stored the set switched OFF, on the reasoning that a service added in a
+  later version should appear by itself. The first run said otherwise — "the
+  services show enabled already, said disabled" — and the report is right: an
+  app whose rooms are opt-in and whose services are opt-out is one rule wearing
+  two faces. Both sets hold what is switched ON now, and both default to
+  nothing. The older `disabledServices` file is simply not read; everything it
+  named is off anyway.
+- **A REDRAW THAT CLEARS THE ERROR LINE SILENCES THE ONLY EXPLANATION THERE
+  IS.** A refused settings change has to put the switch back, and putting it
+  back means redrawing — but every screen clears `errEl` as it opens, so
+  setting the message BEFORE the redraw wiped it. What a person saw was a
+  switch that flicked back and said nothing, which reads as an app that ignores
+  you. The message is set AFTER the redraw now. Same shape as `buildActions`
+  clearing `hintEl` and silencing a Roon notice a moment after it was set — the
+  second time this exact mistake has been made in this file.
+- **A PIN READ OFF THE FIELD WORKS EXACTLY ONCE.** Every settings change
+  redraws from the server's answer, which recreates the input EMPTY — so the
+  first switch after typing the PIN succeeded and every one after it was
+  refused, silently, thanks to the bug above. Reported as changes that would
+  not stick in Docker, where every browser is a remote one and the PIN is
+  always required; measured in a real browser as Spotify off succeeding and
+  Deezer off a moment later not. `heldPin` keeps it for as long as the page is
+  open and the field is redrawn carrying it.
+- **THE TWO PLATFORMS DIFFERED ONLY IN WHICH ADDRESS THE BROWSER WAS ON.**
+  "Works on Android, not in Docker" was not about Android at all: the app's own
+  WebView is loopback and needs no PIN, while a container is browsed from
+  another device and always does. When the two builds disagree, check the
+  socket address before looking for a platform — the same lesson as the 420px
+  breakpoint that was mistaken for an Android layout bug.
+- **RENAMING THE PUBLISHED ARCHIVE MOVED THE DIRECTORY `installDist` WRITES
+  TO.** `distributionBaseName` renames both, so `build/install/server` became
+  `build/install/musicd-share-card-server` — and the Dockerfile still copied
+  the old path. Locally it kept working, because the old directory was still
+  sitting in the build tree from before the rename and everything I ran was
+  reading it. CI failed on the image build with "not found", which is exactly
+  what that job is for; `tools/check-docker-paths.sh` now catches it in the
+  core job instead, and was shown reproducing the same failure locally. WHEN A
+  BUILD KEEPS WORKING AFTER A RENAME, CHECK WHETHER IT IS READING THE OLD
+  OUTPUT.
 - **THE EMPTY STATE MUST NAME THE RIGHT CAUSE.** "No players found on the
   network" is a lie when the players are simply switched off, and the worst
   possible one: it sends somebody to hosts.txt, multicast and VLANs for a
