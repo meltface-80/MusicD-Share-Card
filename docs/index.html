@@ -224,7 +224,7 @@
      a few lines about the record and a Pitchfork score. Share it, save it, or post it to Discord
      with a webhook.</p>
   <div class="badges">
-    <span class="badge" id="ver-badge">v0.45.0</span>
+    <span class="badge" id="ver-badge">v0.46.0</span>
     <span class="badge plain">Android 8.0+</span>
     <span class="badge plain">Docker</span>
     <span class="badge plain">MIT licence</span>
@@ -240,8 +240,8 @@
     <div class="two">
       <div class="dl">
         <a class="get" id="dl-link"
-           href="https://github.com/meltface-80/MusicD-Share-Card/raw/main/dist/musicd-share-card-0.45.0.apk">Download the APK</a>
-        <div class="filename" id="dl-name">musicd-share-card-0.45.0.apk</div>
+           href="https://github.com/meltface-80/MusicD-Share-Card/raw/main/dist/musicd-share-card-0.46.0.apk">Download the APK</a>
+        <div class="filename" id="dl-name">musicd-share-card-0.46.0.apk</div>
         <p class="sub">Android 8.0 (API 26) or newer. Your browser will warn you about downloading an
            APK, and Android will ask permission to install from this source — both are normal for an
            app that does not come from the Play Store.</p>
@@ -315,8 +315,12 @@
             <code>SHARECARD_HOSTS</code>, which needs no multicast.</li>
       </ol>
     </div>
-    <p class="lead">Updating is <code>docker compose pull &amp;&amp; docker compose up -d</code>.
-       The in-app update button is Android-only, and the page hides it here.</p>
+    <p class="lead">Updating is done in the app, the same as on Android: the page says when
+       there is something newer and <b>Update</b> downloads it, checks it and restarts into it.
+       That replaces the app&rsquo;s own code, not the image underneath &mdash; pull a new image
+       now and then (<code>docker compose pull &amp;&amp; docker compose up -d</code>) for JRE and
+       OS updates. An update that will not start is thrown away on the next restart and the
+       previous build comes back.</p>
   </div>
 </section>
 

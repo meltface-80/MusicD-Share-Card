@@ -58,6 +58,13 @@ jobs:
       # a launcher and a Home Screen, neither of which is here. An output edited
       # by hand, or a half-regenerated set after the source changed, would show
       # up as two platforms displaying different icons and nowhere else.
+      # The launcher decides which build a container boots, and its one
+      # unforgivable failure is a container that cannot boot at all. Reading it
+      # is not evidence, so it is driven through every case against throwaway
+      # directories — including an update that crashes, twice, as Docker would.
+      - name: Check the container launcher
+        run: sh tools/check-launcher.sh
+
       - name: Check the icons are what the source produces
         run: |
           python3 -m pip install --quiet --disable-pip-version-check pillow
@@ -136,6 +143,16 @@ jobs:
       - name: Run the Android unit tests
         timeout-minutes: 20
         run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      # THE CONTAINER'S BUILD, PUBLISHED BESIDE THE APK AND FROM THE SAME RUN.
+      #
+      # This is what the Docker build downloads when somebody presses Update:
+      # it unpacks it beside itself and restarts into it, because a container
+      # cannot replace its own image without the Docker socket and this app is
+      # deliberately not given one. One version number produces both, so the
+      # two can never disagree about what "0.46.0" means.
+      - name: Build the server distribution
+        run: ./gradlew :server:distZip -Psharecard.serverOnly=true --no-daemon --stacktrace
 
       # AN INSTALLABLE APK, ALWAYS — whether or not the signing secret exists.
       #
@@ -265,7 +282,19 @@ jobs:
           # Regenerating them costs nothing (they are derived from the version
           # and the ref), and the commit below is skipped when nothing actually
           # changed, so a docs-only push still publishes nothing.
+          SERVER="musicd-share-card-server-${version}.zip"
+          server_src=$(find server/build/distributions -name "$SERVER" | head -1)
+
           copied=no
+          if [ -n "$server_src" ] && [ ! -f "dist/$SERVER" ]; then
+            # One at a time, like the APK: git keeps every previous version in
+            # its history and the manifest names exactly one.
+            git rm -q --ignore-unmatch 'dist/musicd-share-card-server-*.zip'
+            mkdir -p dist
+            cp "$server_src" "dist/$SERVER"
+            copied=yes
+          fi
+
           if [ ! -f "dist/$APK" ]; then
             # One APK in the tree at a time. The old one is superseded rather
             # than kept: the README links to a single file, and git still has
@@ -299,13 +328,27 @@ jobs:
           # differs from the manifest's own — a manifest that can point the
           # installer anywhere is a manifest that can install anything — and the
           # app reads this file from raw.githubusercontent.com.
+          # THE SERVER BLOCK IS PART OF THE SAME MANIFEST, not a second file.
+          # Two manifests are two things to fall out of step, and this repo has
+          # already watched that happen once — a branch build left main naming
+          # an APK on a branch url. One file, one version, both halves.
+          #
+          # Absent when this version predates the server build, and the updater
+          # reads that as "no server update here" rather than as an error.
+          server_block=""
+          if [ -f "dist/$SERVER" ]; then
+            server_sha=$(sha256sum "dist/$SERVER" | cut -d' ' -f1)
+            server_block=$(printf ',\n    "server": {\n      "url": "https://raw.githubusercontent.com/%s/%s/dist/%s",\n      "sha256": "%s"\n    }' \
+              "${GITHUB_REPOSITORY}" "${GITHUB_REF_NAME}" "$SERVER" "$server_sha")
+          fi
+
           cat > dist/latest.json <<JSON
           {
             "version": "$version",
             "url": "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/dist/$APK",
             "sha256": "$sha",
             "signed": $( [ "$HAVE_KEY" = "true" ] && echo true || echo false ),
-            "notes": "$notes"
+            "notes": "$notes"$server_block
           }
           JSON
           sed -i 's/^          //' dist/latest.json

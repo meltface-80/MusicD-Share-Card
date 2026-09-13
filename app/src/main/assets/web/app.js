@@ -1646,13 +1646,22 @@
   async function checkForUpdate() {
     if (!updateEl) return;
     try {
-      // ONLY ON THE DEVICE ITSELF. The APK installs here, on the machine
-      // running the app — so an update bar on an iPad across the house is
-      // offering to replace software on something else, which is not what
-      // anybody pressing it means. It asked for a PIN and then did nothing
-      // visible, which was worse than not being there.
+      /*
+       * ONLY ON THE DEVICE ITSELF — UNLESS THE UPDATE IS THE SERVER'S.
+       *
+       * The APK installs HERE, on the machine running the app, so an update
+       * bar on an iPad across the house offers to replace software on
+       * something else. That was reported as "shows the update button, does
+       * nothing" and is why this hides off the socket address.
+       *
+       * A container update is not device-specific: it replaces the machine
+       * serving this page, which is the same machine whichever browser asked
+       * — and that machine usually has no browser on it at all, so hiding the
+       * bar from every other device would hide it from everybody. The server
+       * says which case it is rather than the page guessing.
+       */
       const state = await getJson("/api/update/status");
-      if (!state || !state.onDevice) {
+      if (!state || !(state.onDevice || state.fromAnyDevice)) {
         updateEl.classList.add("hidden");
         return;
       }

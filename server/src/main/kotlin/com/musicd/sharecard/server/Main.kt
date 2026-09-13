@@ -6,6 +6,8 @@ import com.musicd.sharecard.ShareCardApp
 import com.musicd.sharecard.api.Assets
 import com.musicd.sharecard.describe
 import com.musicd.sharecard.meta.FileCacheStore
+import com.musicd.sharecard.meta.ServerRelease
+import com.musicd.sharecard.meta.Updater
 import com.musicd.sharecard.roon.FileTokenStore
 import com.musicd.sharecard.settings.FileSettingsStore
 import com.musicd.sharecard.webhook.FileWebhookStore
@@ -59,6 +61,7 @@ fun main() {
     Log.i(TAG, "MusicD Share Card $version, data in ${data.absolutePath}")
     checkWritable(data)
 
+    val updates = File(data, "updates")
     val cache = FileCacheStore(File(data, "cache"))
     val webhooks = webhookStore(File(data, "webhooks.json"))
 
@@ -75,7 +78,25 @@ fun main() {
             // Which services are linked and which rooms may be shown. Opt-in,
             // so a first run here shows the empty state and points at
             // Settings rather than drawing a card nobody asked for.
-            settingsStore = FileSettingsStore(File(data, "settings.json"))
+            settingsStore = FileSettingsStore(File(data, "settings.json")),
+            /*
+             * UPDATING FROM THE APP, THE SAME WAY ANDROID DOES.
+             *
+             * The note above this used to say there was no updater here. There
+             * is now, and it is the same class: check a manifest, download,
+             * verify the sha256, hand the file over. Only the last step
+             * differs, because a container cannot replace its own image
+             * without the Docker socket and this app is deliberately not given
+             * it — the socket is root on the host. So the CODE moves instead:
+             * unpack beside the running build, mark it pending, and exit.
+             * Docker's restart policy brings the container back and the
+             * launcher runs the new one.
+             */
+            updateInstaller = ShareCardApp.UpdateInstaller(
+                downloadDir = updates,
+                variant = Updater.Variant.SERVER,
+                install = { archive -> applyServerUpdate(updates, archive) }
+            )
             // updateInstaller is deliberately absent: see the note above.
         ).also { it.start() }
     } catch (t: Throwable) {
@@ -84,6 +105,17 @@ fun main() {
         Log.e(TAG, "the card server could not start: ${describe(t)}", t)
         return
     }
+
+    /*
+     * THIS BUILD SERVED, SO IT IS THE ONE TO KEEP.
+     *
+     * Reached only after the socket is bound and the app is up. A build that
+     * crashes before here never clears the launcher's `trying` marker, and the
+     * next boot reads that leftover as "the update was bad", throws the
+     * version away and falls back. That is the entire rollback, and it hangs
+     * on this line being late rather than early.
+     */
+    ServerRelease.promote(updates, version)
 
     for (url in app.lanUrls()) Log.i(TAG, "open $url on any device on this network")
     announcePin(webhooks.pin())
@@ -254,4 +286,36 @@ private class StdoutSink : Log.Sink {
         if (level == 'E' || level == 'W') System.err.println(line) else println(line)
         error?.printStackTrace(if (level == 'E' || level == 'W') System.err else System.out)
     }
+}
+
+/**
+ * Unpack a downloaded build and stand aside for it.
+ *
+ * EXITING IS THE INSTALL. There is nothing else a process can do to replace
+ * itself: the new code is on disk, the launcher will prefer it, and the only
+ * remaining step is to stop being the thing that is running. `restart:
+ * unless-stopped` — which the compose file and the README's `docker run` both
+ * set — is what brings the container back a second later.
+ *
+ * The exit is on its own thread and slightly delayed for one reason: this is
+ * called from inside the request that pressed Update, and a process that dies
+ * mid-response leaves the page with a dropped connection instead of an answer.
+ */
+private fun applyServerUpdate(updates: File, archive: File) {
+    val version = archive.name
+        .substringAfter("musicd-share-card-server-", "")
+        .substringBeforeLast(".zip", "")
+        .ifEmpty { "pending" }
+
+    ServerRelease.unpack(archive, updates, version)
+    ServerRelease.markPending(updates, version)
+    runCatching { archive.delete() }
+    Log.i(TAG, "unpacked $version; restarting into it")
+
+    Thread({
+        runCatching { Thread.sleep(1_500) }
+        // Not a crash: the launcher and the restart policy between them are
+        // what make this an update rather than a stop.
+        Runtime.getRuntime().exit(0)
+    }, "sharecard-restart").apply { isDaemon = false }.start()
 }

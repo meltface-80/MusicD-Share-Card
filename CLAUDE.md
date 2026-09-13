@@ -27,6 +27,7 @@ npx eslint -c tools/eslint.config.mjs app/src/main/assets/web/*.js
 node tools/check-css.js
 node tools/check-sharecard.js
 python3 tools/check-icons.py
+sh tools/check-launcher.sh
 ```
 
 **A new test must fail before the fix and pass after it.** Prove it: break the
@@ -1082,6 +1083,52 @@ was simply not there, however carefully the DIDL was parsed.
   docs-only push, and a real bump. That harness is what caught the `notes`
   churn, which reading the diff had not. Any change here should be exercised
   the same way; CI is not the place to discover it.
+- **THE CONTAINER UPDATES ITS OWN CODE, AND IT IS NOT GIVEN THE DOCKER
+  SOCKET.** Pulling a real image needs `/var/run/docker.sock`, which is root on
+  the host — handed to a process that answers the whole LAN and whose every
+  route is a read precisely so it holds nothing worth attacking. Put to the
+  owner with that laid out, the answer was to move the CODE instead: download
+  the published `:server` zip, unpack it beside the running build, exit, and
+  let `restart: unless-stopped` bring the container back on it. The cost is
+  stated in the README rather than hidden — the JRE and the OS packages
+  underneath change only when somebody pulls an image by hand.
+- **ONE MANIFEST, TWO HALVES.** `latest.json` carries the APK at the top level
+  and the server build under `server`. `Updater.Variant` decides which half is
+  read. A second manifest would be a second thing to fall out of step, which
+  this repo has already watched happen once. A version published before the
+  server build existed has no `server` block, and the honest reading of that is
+  "nothing here for you" — never the APK's url, which a container would
+  download and fail to unpack.
+- **THE SIGNING FLAG IS ANDROID'S ALONE.** It exists because Android refuses an
+  APK signed with a different certificate and says only "App not installed".
+  A server build has no certificate to match, so applying the flag to it would
+  have refused every container update for a reason with nothing to do with it —
+  and until the keystore secret existed, that would have been all of them.
+- **A ZIP FROM THE NETWORK IS UNPACKED AND THEN EXECUTED, so every entry is
+  checked against the destination.** An archive naming `../` writes wherever it
+  likes; the bug is old enough to have a name and common enough to still be
+  shipped. An entry that escapes ends the whole unpack rather than being
+  skipped — a build that lies about its contents is not one to install the rest
+  of. `ServerReleaseTest` proves it, and that test escapes only as far as its
+  own fixture: an earlier version aimed three levels up and, when the guard was
+  removed to show the test could fail, wrote a real file into `/tmp` that then
+  failed the next run for the wrong reason.
+- **THE ROLLBACK HANGS ON `promote` BEING LATE.** The launcher writes `trying`
+  before running a pending build and never clears it; only a build that gets as
+  far as SERVING clears it, from `Main` after the socket is bound. So a build
+  that crashes on startup leaves the marker, and the next boot reads it, throws
+  that version away and falls back — to the last good build, or to the one in
+  the image, which is known to run because it is what shipped. A container
+  cannot be bricked by an update it could not run, and `tools/check-launcher.sh`
+  drives all thirteen cases including a real crashing build booted twice.
+- **`fromAnyDevice` IS WHY THE UPDATE BAR IS NOT HIDDEN IN DOCKER.** The bar is
+  hidden off the socket address because an APK installs on THIS device and a
+  page on an iPad across the house cannot replace it — reported as "shows the
+  update button, does nothing". A container update replaces the machine serving
+  the page, which is the same machine whichever browser asked, and that machine
+  usually has no browser on it at all — so hiding it from other devices would
+  hide it from everybody. The server says which case it is; the page does not
+  guess.
 - **The update manifest may not point the installer at another host.** The URL
   in it names a file this app downloads and hands to Android, so a manifest that
   can name anything can install anything. `Updater.parseManifest` requires https

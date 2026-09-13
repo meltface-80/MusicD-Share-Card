@@ -101,8 +101,19 @@ class ShareCardApp(
     settingsStore: SettingsStore = SettingsStore.inMemory()
 ) {
 
-    /** What the Android shell supplies so [updater] can finish the job. */
-    class UpdateInstaller(val downloadDir: File, val install: (File) -> Unit)
+    /**
+     * What a host supplies so [updater] can finish the job.
+     *
+     * [variant] is which half of the manifest to read and which rules apply.
+     * The Android shell hands an APK to the system installer; the container
+     * unpacks a build beside its own and restarts into it — see
+     * [com.musicd.sharecard.meta.ServerRelease].
+     */
+    class UpdateInstaller(
+        val downloadDir: File,
+        val install: (File) -> Unit,
+        val variant: Updater.Variant = Updater.Variant.ANDROID
+    )
 
     private val soap = SoapClient(soapHttpClient())
     private val metaHttp = metadataHttpClient()
@@ -185,7 +196,8 @@ class ShareCardApp(
             currentVersion = version,
             manifestUrl = UPDATE_MANIFEST_URL,
             downloadDir = it.downloadDir,
-            install = it.install
+            install = it.install,
+            variant = it.variant
         )
     }
 

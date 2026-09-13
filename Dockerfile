@@ -36,6 +36,10 @@ FROM eclipse-temurin:17-jre
 RUN useradd --system --uid 10001 --create-home --home-dir /home/sharecard sharecard
 
 COPY --from=build /src/server/build/install/server /opt/sharecard
+# The launcher decides which build runs: the one in this image, or a newer one
+# the app has downloaded into /data. See the script for the rollback.
+COPY server/docker/launch.sh /opt/sharecard/launch.sh
+RUN chmod +x /opt/sharecard/launch.sh
 
 ENV SHARECARD_DATA=/data \
     SHARECARD_PORT=8747 \
@@ -59,4 +63,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/${SHARECARD_PORT:-8747}; \
         printf "GET /api/health HTTP/1.0\r\n\r\n" >&3; grep -q "\"ok\":true" <&3'
 
-ENTRYPOINT ["/opt/sharecard/bin/server"]
+ENTRYPOINT ["/opt/sharecard/launch.sh"]
