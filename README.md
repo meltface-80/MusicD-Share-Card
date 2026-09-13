@@ -1,5 +1,7 @@
 # MusicD Share Card
 
+https://meltface-80.github.io/MusicD-Share-Card/
+
 Makes a share card for whatever you're playing, and posts it wherever you want it.
 
 ![A share card: cover, title, artist, release year, Pitchfork score and a short description from Wikipedia](docs/screenshots/card.jpg)
