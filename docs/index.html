@@ -85,6 +85,26 @@
   }
   section > .wrap > p.lead { color: var(--muted); margin-bottom: 26px; max-width: 720px; }
 
+  /* ---------- screenshots ----------
+     The card is the point of the app, so it leads at full width; the three
+     phone screens follow in a row that wraps to one column on a narrow
+     screen. Shot on a real device rather than rendered, so what is on this
+     page is what somebody actually sees. */
+  .shots { display: grid; gap: 14px; }
+  .shots img {
+    display: block; width: 100%; height: auto;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--bg-deep);
+  }
+  .shots .wide { max-width: 760px; margin: 0 auto; }
+  .shots .row {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+  .shots figure { margin: 0; }
+  .shots figcaption {
+    color: var(--muted); font-size: 13px; margin-top: 8px; text-align: center;
+  }
+
   /* ---------- feature grid ---------- */
   .grid {
     display: grid; gap: 14px;
@@ -157,6 +177,7 @@
     <a class="brand" href="#top">Music<span>D</span> Share Card</a>
     <a href="#download">Download</a>
     <a href="#install">Install</a>
+    <a href="#screens">Screens</a>
     <a href="#features">Features</a>
     <a class="gh" href="https://github.com/meltface-80/MusicD-Share-Card">GitHub&nbsp;&rarr;</a>
   </div>
@@ -212,6 +233,33 @@
             laptop and you get the same card. On iOS, <b>Share → Add to Home Screen</b> gives it
             an icon and opens it without browser chrome.</li>
       </ol>
+    </div>
+  </div>
+</section>
+
+<section id="screens">
+  <div class="wrap">
+    <h2>What it looks like</h2>
+    <p class="lead">Shot on the phone, not mocked up.</p>
+    <div class="shots">
+      <figure class="wide">
+        <img src="screenshots/card.jpg" alt="A share card: the cover, the album title, the artist, the release year and a few lines about the record from Wikipedia">
+        <figcaption>The card itself — this is the picture you send.</figcaption>
+      </figure>
+      <div class="row">
+        <figure>
+          <img src="screenshots/rooms.jpg" alt="Whatever's playing: a grid of album covers, one per room, with the silent rooms listed underneath">
+          <figcaption>More than one room on, so it asks rather than choosing.</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/zones.jpg" alt="The room picker open, listing rooms from Roon, Sonos and UPnP together with the source named beside each">
+          <figcaption>Every room, whichever source found it.</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/app.jpg" alt="One room's card, with buttons to download it or post it to Discord, links to read about it or find it on a streaming service, and three suggestions">
+          <figcaption>One screen: card, buttons, links, suggestions.</figcaption>
+        </figure>
+      </div>
     </div>
   </div>
 </section>

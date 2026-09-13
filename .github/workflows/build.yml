@@ -238,22 +238,52 @@ jobs:
           else
             APK="$DEBUG_APK"
           fi
-          if [ -f "dist/$APK" ]; then
-            echo "dist/$APK is already committed — nothing to publish."
-            exit 0
-          fi
-          # One APK in the tree at a time. The old one is superseded rather than
-          # kept: the README links to a single file, and git still has every
-          # previous version in its history.
-          #
-          # mkdir comes AFTER this, not before: `git rm` of the last file in a
-          # directory removes the directory too, so creating it first and
-          # copying afterwards fails with "No such file or directory".
-          git rm -q --ignore-unmatch 'dist/musicd-share-card-*.apk'
-          mkdir -p dist
-          cp "$APK" "dist/$APK"
           version=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
-          sha=$(sha256sum "$APK" | cut -d' ' -f1)
+
+          # THE APK IS COPIED ONCE PER VERSION; THE DERIVED FILES ARE WRITTEN
+          # EVERY TIME, AND THAT SPLIT IS A FIX.
+          #
+          # This used to exit the moment dist/$APK existed, treating "the file
+          # is here" as "the manifest is right". Those came apart as soon as a
+          # BRANCH published before main did: the branch wrote a manifest whose
+          # url names the branch, the merge carried both the APK and that
+          # manifest onto main, and main's own run then skipped — leaving main
+          # telling every device to fetch the APK from a branch url, which stops
+          # resolving the day that branch is deleted. The app reads main's
+          # manifest, so that is not cosmetic.
+          #
+          # Regenerating them costs nothing (they are derived from the version
+          # and the ref), and the commit below is skipped when nothing actually
+          # changed, so a docs-only push still publishes nothing.
+          copied=no
+          if [ ! -f "dist/$APK" ]; then
+            # One APK in the tree at a time. The old one is superseded rather
+            # than kept: the README links to a single file, and git still has
+            # every previous version in its history.
+            #
+            # mkdir comes AFTER this, not before: `git rm` of the last file in a
+            # directory removes the directory too, so creating it first and
+            # copying afterwards fails with "No such file or directory".
+            git rm -q --ignore-unmatch 'dist/musicd-share-card-*.apk'
+            mkdir -p dist
+            cp "$APK" "dist/$APK"
+            copied=yes
+          fi
+
+          # NOTES NAME THE BUILD, NOT THE PUSH, and that is what keeps a
+          # docs-only push from committing. Regenerating this line from
+          # GITHUB_SHA every time made the manifest differ on every push even
+          # when the APK had not moved — a commit per push, which is the churn
+          # the old early-exit existed to prevent. When the APK is already
+          # committed the note that came with it is still the true one.
+          notes="Built from ${GITHUB_SHA}."
+          if [ "$copied" = "no" ] && [ -f dist/latest.json ]; then
+            previous=$(grep -oP '"notes":\s*"\K[^"]*' dist/latest.json || true)
+            if [ -n "$previous" ]; then notes="$previous"; fi
+          fi
+          # Hash what the url actually names — the committed copy — not the
+          # freshly built one beside it, which need not be byte-identical.
+          sha=$(sha256sum "dist/$APK" | cut -d' ' -f1)
           # raw.githubusercontent.com and not github.com/.../raw, which only
           # redirects there. The in-app updater refuses an APK URL whose host
           # differs from the manifest's own — a manifest that can point the
@@ -265,7 +295,7 @@ jobs:
             "url": "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/dist/$APK",
             "sha256": "$sha",
             "signed": $( [ "$HAVE_KEY" = "true" ] && echo true || echo false ),
-            "notes": "Built from ${GITHUB_SHA}."
+            "notes": "$notes"
           }
           JSON
           sed -i 's/^          //' dist/latest.json
@@ -277,13 +307,49 @@ jobs:
           # And the project page's version badge, which the filename rewrite
           # above does not reach.
           sed -i -E "s#>v[0-9]+\.[0-9]+\.[0-9]+</span>#>v${version}</span>#" docs/index.html
-          git add "dist/$APK" dist/latest.json README.md docs/index.html
+          git add -A dist README.md docs/index.html
+          # NOTHING CHANGED IS THE ORDINARY CASE, not a failure: every push to a
+          # branch whose version is already published lands here.
+          if git diff --cached --quiet; then
+            echo "dist/ and the links already say $version on ${GITHUB_REF_NAME} — nothing to publish."
+            exit 0
+          fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Publish $APK" -m "Built from ${GITHUB_SHA}."
-          # The branch may have moved while this job ran.
-          git pull --rebase origin "$GITHUB_REF_NAME"
-          git push origin "HEAD:$GITHUB_REF_NAME"
+          git commit -q -m "Publish $APK" -m "Built from ${GITHUB_SHA}."
+
+          # THE BRANCH MAY HAVE MOVED, AND THE THING THAT MOVED IT MAY BE
+          # ANOTHER RUN PUBLISHING THIS SAME VERSION.
+          #
+          # Two pushes a minute apart both build the same versionName, both
+          # write the same APK path, and the loser's rebase hits an add/add
+          # conflict on a file identical in all but its "notes" line — which
+          # reds a build whose only fault was being second. A duplicate publish
+          # is not a failure, so it stands down; anything else still fails
+          # loudly rather than being forced through.
+          for attempt in 1 2 3; do
+            if git push -q origin "HEAD:$GITHUB_REF_NAME"; then
+              echo "published $APK to ${GITHUB_REF_NAME}"
+              exit 0
+            fi
+            echo "the branch moved; rebasing onto it (attempt $attempt)"
+            git fetch -q origin "$GITHUB_REF_NAME"
+            if ! git rebase "origin/$GITHUB_REF_NAME"; then
+              git rebase --abort || true
+              # Read the REMOTE copy rather than resetting onto it, so a genuine
+              # failure still has our commit to report.
+              theirs=$(git show "origin/$GITHUB_REF_NAME:dist/latest.json" 2>/dev/null || true)
+              if printf '%s' "$theirs" | grep -q "\"version\": \"${version}\"" \
+                 && printf '%s' "$theirs" | grep -q "/${GITHUB_REF_NAME}/dist/${APK}"; then
+                echo "another run published $version to ${GITHUB_REF_NAME} first — standing down."
+                exit 0
+              fi
+              echo "the branch moved and it does not carry $version — refusing to guess." >&2
+              exit 1
+            fi
+          done
+          echo "could not publish after three attempts" >&2
+          exit 1
 
       - name: Attach the APK to a tagged release
         if: >-

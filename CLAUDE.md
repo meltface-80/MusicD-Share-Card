@@ -802,6 +802,35 @@ was simply not there, however carefully the DIDL was parsed.
   `latest.json`'s `signed` flag is for: `Updater` refuses to download a build it
   knows cannot install, and says to uninstall first, rather than spending two
   megabytes on that dialog. See `docs/signing.md`.
+- **THE PUBLISH STEP REGENERATES THE DERIVED FILES EVERY RUN AND COPIES THE APK
+  ONCE.** It used to exit the moment `dist/$APK` existed, treating "the file is
+  here" as "the manifest is right". Those came apart as soon as a BRANCH
+  published before main did: the branch wrote a manifest whose `url` names the
+  branch, the merge carried both the APK and that manifest onto main, and
+  main's own run then skipped — leaving main telling every device to fetch the
+  APK from a branch url that stops resolving the day the branch is deleted. The
+  app reads MAIN's manifest, so that is not cosmetic. It happened twice: once
+  caught by hand inside a merge conflict, and once shipped because the next PR
+  merged cleanly and nothing corrected it.
+- **`notes` NAMES THE BUILD, NOT THE PUSH, and that is what keeps the churn
+  away.** Regenerating it from `GITHUB_SHA` every run made the manifest differ
+  on every push even when the APK had not moved — a commit per push, which is
+  the churn the old early-exit existed to prevent. When the APK is already
+  committed, the note that came with it is still the true one and is preserved.
+  The commit is skipped entirely when nothing actually changed.
+- **A DUPLICATE PUBLISH IS NOT A FAILURE.** Two pushes a minute apart build the
+  same `versionName`, write the same APK path, and the loser's rebase hits an
+  add/add conflict on a file identical but for its notes — reddening a build
+  whose only fault was being second. The push now retries onto the moved
+  branch, and on a conflict checks whether the REMOTE already carries this
+  version at this ref: if it does, it stands down; anything else still fails
+  loudly rather than being forced through.
+- **THE WORKFLOW WAS TESTED BY RUNNING IT, not by reading it.** The publish step
+  is extracted from the YAML and driven against throwaway git repos — a branch
+  publishing then merging to main, two concurrent runs at one version, a
+  docs-only push, and a real bump. That harness is what caught the `notes`
+  churn, which reading the diff had not. Any change here should be exercised
+  the same way; CI is not the place to discover it.
 - **The update manifest may not point the installer at another host.** The URL
   in it names a file this app downloads and hands to Android, so a manifest that
   can name anything can install anything. `Updater.parseManifest` requires https
