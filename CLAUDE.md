@@ -161,14 +161,44 @@ was simply not there, however carefully the DIDL was parsed.
   numbered with a NEGATIVE id, and pasting one into `/music/<id>/cover.jpg`
   builds a URL that 404s on every card. `artwork_url` comes first regardless,
   absolute for a station's CDN and relative for the server's own proxy.
+- **A LYRION COVER ID IS AN OPAQUE TOKEN, AND THE FALLBACK MUST TRY EACH ONE.**
+  Two bugs in four lines, and together they meant no Lyrion card ever drew a
+  cover. First, `artUrl` asked for the first NON-EMPTY of coverid /
+  artwork_track_id / id and only then checked whether it was usable — so a
+  coverid that was present but not a plain number ended the search there, with
+  artwork_track_id sitting beside it never looked at. A fallback chain that
+  stops at the first candidate is not a fallback chain. Second, the check
+  demanded DIGITS, and current Lyrion writes coverid as hex. What actually has
+  to be refused is a NEGATIVE id, which is how Lyrion numbers everything
+  remote; plain ASCII letters and digits refuses that, and refuses a slash or a
+  dot walking out of the path with it.
+- **TWO SOURCES SEEING ONE ROOM IS A FREE CONTROL EXPERIMENT.** The dump that
+  settled the Lyrion cover had the same speaker twice — `Lyrion` with `art: ""`
+  and `UPnP` with `http://…/music/c8536003/cover.jpg`, the very URL the Lyrion
+  source should have built. One row was the bug and the row beside it was the
+  expected answer. When a zone appears under two sources, compare them before
+  reasoning about either.
+- **"NO COVER" HAS FOUR CAUSES AND THEY LOOK IDENTICAL ON A CARD**: the source
+  sent no art url at all, the proxy refused the host, the server answered 404,
+  or the bytes were not an image. Telling them apart cost two rounds of
+  diagnosis before `ArtProxy.attempts()` existed. It now records every fetch
+  and its outcome, `/api/debug` carries it under `art`, and the page draws it —
+  `DiagnosticsDrawnTest` is what forces that last part, and it was shown
+  failing with the section removed.
 - **`optBoolean` READS THE NUMBER 1 AS FALSE.** LMS writes its booleans as 1 and
   0, so reading `connected` with `optBoolean` marks a whole household asleep.
   `LmsClient.truthy` takes a number, a string or a real boolean. Same family as
   the `optString` rule above: org.json's opt* accessors are not doing what the
   name suggests.
-- **THE LYRION WIRE SHAPES ARE DOCUMENTED, NOT OBSERVED.** No Lyrion server is
-  reachable from here, so `LmsStatusTest` and `LmsDiscoveryTest` pin the
-  protocol as written down rather than as captured. That is why the parsing is
+- **THE LYRION WIRE SHAPES ARE DOCUMENTED, NOT OBSERVED — EXCEPT WHERE A DUMP
+  SAYS OTHERWISE.** No Lyrion server is reachable from here, so `LmsStatusTest`
+  and `LmsDiscoveryTest` pin the protocol as written down rather than as
+  captured. TWO THINGS ARE NOW REAL, both from one `/api/debug` off a DietPi
+  box: the broadcast answers (`DietPi at 192.168.0.57:9000`), and a coverid is
+  HEX — `c8536003`, which the digits-only rule had been throwing away. The
+  test carrying that value says OBSERVED in its name, because the difference
+  between a shape somebody wrote down and one a machine actually sent is worth
+  being able to see at a glance. That is why the parsing is
   lenient — every field is looked for in more than one place — and why the
   socket is kept out of `parseReply`: if the real thing differs, it is one
   function to correct rather than a broadcast to debug from another room. Treat

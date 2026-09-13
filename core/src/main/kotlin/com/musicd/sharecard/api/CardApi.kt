@@ -137,7 +137,8 @@ class CardApi(
         "/api/debug" -> Json.obj(
             Diagnostics(
                 sources, hostNotes, pitchfork::attempts,
-                { similar?.attempts().orEmpty() }
+                { similar?.attempts().orEmpty() },
+                art::attempts
             ).run()
         )
         else -> static(request.path)
