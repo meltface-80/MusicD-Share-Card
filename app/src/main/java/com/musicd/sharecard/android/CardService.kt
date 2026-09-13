@@ -115,6 +115,9 @@ class CardService : Service() {
             val started = ShareCardApp(
                 assets = assets,
                 seedHosts = HostsFile.read(this),
+                // 8748, not the 8747 the container uses: the two are meant to
+                // be runnable side by side and told apart by their URL.
+                port = ShareCardApp.ANDROID_PORT,
                 version = BuildConfig.VERSION_NAME,
                 // So a crash is visible from the phone in the next room, not
                 // only on the device that crashed.

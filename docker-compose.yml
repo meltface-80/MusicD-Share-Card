@@ -51,10 +51,13 @@ services:
     #   # separated, IPv4 only.
     #   SHARECARD_HOSTS: "192.168.0.57,192.168.0.61"
     #
-    #   # The PIN another device needs in order to add or remove a Discord
-    #   # webhook. Six digits. Left unset, one is minted and printed to the log
-    #   # on first start - `docker logs musicd-share-card` - because unlike the
-    #   # Android build there may be no browser on this machine to show it to.
+    #   # UNSET MEANS NO PIN IS ASKED FOR, which is the default and is not the
+    #   # same as Android. The gate trusts the machine it runs on and
+    #   # challenges everything else - but a server in a cupboard has no
+    #   # browser on it, so every visit was a remote one and the gate applied
+    #   # to everybody, for switching a room on. Set six digits here to turn
+    #   # it back on; with it off, anyone who can reach the port can also
+    #   # change your webhooks.
     #   SHARECARD_PIN: "123456"
     #
     #   # Only if 8747 is taken. The URL is meant to be typed, so it is a fixed

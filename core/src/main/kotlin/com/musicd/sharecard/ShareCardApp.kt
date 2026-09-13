@@ -98,7 +98,9 @@ class ShareCardApp(
      * that passes no store gets it too rather than quietly behaving differently
      * from the real thing.
      */
-    settingsStore: SettingsStore = SettingsStore.inMemory()
+    settingsStore: SettingsStore = SettingsStore.inMemory(),
+    /** See [com.musicd.sharecard.api.Access]. The container may turn this off. */
+    requirePin: Boolean = true
 ) {
 
     /**
@@ -204,7 +206,7 @@ class ShareCardApp(
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
         webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz, similar,
-        settingsStore
+        settingsStore, requirePin
     )
 
     private val server = HttpServer(api, port, bindAddress)
@@ -264,6 +266,18 @@ class ShareCardApp(
          * would not start.
          */
         const val DEFAULT_PORT = 8747
+
+        /**
+         * The Android build serves here instead, so the two can coexist.
+         *
+         * Both shells answered on 8747, which is fine right up until somebody
+         * runs both — and running both is the ordinary case while a phone in a
+         * dock and a box in a cupboard are being compared. Same port on two
+         * addresses is not a clash the OS will report; it is a bookmark that
+         * silently starts answering for the wrong one, and two devices that
+         * cannot be told apart by their URL.
+         */
+        const val ANDROID_PORT = 8748
 
         /** Published by CI beside the APK it describes. */
         const val UPDATE_MANIFEST_URL =

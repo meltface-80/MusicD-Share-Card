@@ -62,7 +62,7 @@
   let webhooks = [];
 
   /** The PIN, when this page is the one running on the device itself. */
-  let setup = { onDevice: false, mayConfigure: false, pin: null };
+  let setup = { onDevice: false, mayConfigure: false, pin: null, needsPin: true };
 
   /** What the settings screens last read back from the server. */
   let settings = { services: [], zones: [], anyZoneEnabled: false };
@@ -1187,8 +1187,9 @@
     // a settings screen you have to scroll to finish is one people abandon
     // half-done. Every explanation here is one line, and the fields are paired
     // across the width where they are short enough to be.
-    const pinField = setup.mayConfigure ? "" :
-      '<input class="wh-input" id="wh-pin" inputmode="numeric" placeholder="PIN from the device">';
+    const pinField = (setup.mayConfigure || setup.needsPin === false) ? "" :
+      '<input class="wh-input" id="wh-pin" inputmode="numeric" placeholder="PIN from the device"' +
+      ' value="' + escapeHtml(heldPin) + '">';
 
     const pinLine = setup.onDevice && setup.pin
       ? '<p class="wh-note">PIN for other devices: <b>' + escapeHtml(setup.pin) + "</b></p>"
@@ -1344,9 +1345,12 @@
     // Redrawn WITH what was typed, for the reason in [heldPin]: a field that
     // empties itself on every change is one that stops working after the
     // first, silently.
-    const pinField = setup.mayConfigure ? "" :
+    // NOTHING TO TYPE WHERE NOTHING IS ASKED. The container trusts its own
+    // network unless a PIN is configured, so drawing an input there would be
+    // a box that does nothing sitting under every settings screen.
+    const pinField = (setup.mayConfigure || setup.needsPin === false) ? "" :
       '<p class="wh-note">Changes need the PIN from the device running Share Card' +
-      " \u2014 in Docker it is printed once to the log.</p>" +
+      " \u2014 in Docker, set SHARECARD_PIN or read it from the log.</p>" +
       '<div class="wh-row"><input class="wh-input" id="wh-pin" inputmode="numeric"' +
       ' placeholder="PIN from the device" value="' + escapeHtml(heldPin) + '"></div>';
     return pinField +
