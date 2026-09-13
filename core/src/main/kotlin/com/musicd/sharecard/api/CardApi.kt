@@ -14,6 +14,7 @@ import com.musicd.sharecard.meta.Similar
 import com.musicd.sharecard.meta.StreamingLinks
 import com.musicd.sharecard.meta.Updater
 import com.musicd.sharecard.source.Playing
+import com.musicd.sharecard.source.Room
 import com.musicd.sharecard.webhook.DiscordPoster
 import com.musicd.sharecard.webhook.Webhook
 import com.musicd.sharecard.webhook.WebhookRejected
@@ -201,6 +202,19 @@ class CardApi(
         sources.preferredZoneId = wanted
         if (request.param("refresh") == "1") sources.refresh()
 
+        // MORE THAN ONE ROOM ON MEANS THERE IS A CHOICE TO MAKE, and the app
+        // should not make it. Answered as a single card, "whatever's playing"
+        // had to pick one and silently discard the rest; answered as a grid,
+        // the person looking picks. One room on is not a choice — a grid of
+        // one tile costs a tap and shows nothing the card would not — so that
+        // still draws the card, and so does a house where everything is paused.
+        if (wanted == null) {
+            val rooms = sources.rooms()
+            if (rooms.count { it.playing?.state?.isPlaying == true } > 1) {
+                return Json.obj(chooserJson(rooms))
+            }
+        }
+
         val playing = if (wanted != null) sources.inZone(wanted) else sources.nowPlaying(null)
         if (playing == null || playing.isEmpty) {
             return Json.obj(
@@ -236,6 +250,42 @@ class CardApi(
             if (name != null) "Nothing is playing in $name." else "Nothing is playing there."
         }
     }
+
+    /**
+     * The chooser payload: every room, and what each one is playing.
+     *
+     * `choose` is what the page keys on, rather than counting the rooms
+     * itself. The rule for when a grid beats a card lives here, in the module
+     * with the tests — a copy of it in app.js would be a second place for it
+     * to drift, and nothing on the page can be tested.
+     *
+     * EVERY room is listed, silent ones included, because "not playing" is an
+     * answer. A grid of only the live rooms reads as the others having dropped
+     * off the network.
+     */
+    internal fun chooserJson(rooms: List<Room>): JSONObject = JSONObject()
+        .put("choose", true)
+        // The page hides the card's own rows on this, and they have nothing to
+        // act on, so say plainly there is no card rather than leaving it out.
+        .put("playing", false)
+        .put(
+            "rooms",
+            Json.array(
+                rooms.map { room ->
+                    val playing = room.playing
+                    JSONObject()
+                        .put("uid", room.zone.id)
+                        .put("name", room.zone.name)
+                        .put("source", room.zone.source)
+                        .put("playing", playing?.state?.isPlaying == true)
+                        .putOrNull("album", playing?.album.orEmpty())
+                        .putOrNull("artist", playing?.artist.orEmpty())
+                        .putOrNull("track", playing?.track.orEmpty())
+                        .putOrNull("art", playing?.let(::artPath))
+                }
+            )
+        )
+        .put("notices", Json.strings(sources.notices()))
 
     /**
      * The card payload.

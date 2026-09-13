@@ -474,6 +474,50 @@ was simply not there, however carefully the DIDL was parsed.
   since the port with nothing ever offering it; `/api/extras` returns it as
   `bioUrl` and the chip is labelled from `bioSource`, so a second source added
   later names its own.
+- **MORE THAN ONE ROOM ON IS A CHOICE, AND THE APP DOES NOT MAKE IT.** Answered
+  as one card, "whatever's playing" had to pick a room and silently discard the
+  rest — which is the same complaint as the zone bug one step out. Two or more
+  rooms playing returns `choose` and a grid of covers instead; ONE room on
+  still draws the card, because a grid of one tile costs a tap and shows
+  nothing the card would not, and a house where everything is paused still
+  falls down the ladder as before.
+- **THE GRID RULE LIVES IN `:core`, NOT IN `app.js`.** The page branches on the
+  server's `choose` flag and never counts the playing rooms itself. Nothing on
+  the page can be tested here, and a second copy of the rule is a second place
+  for it to drift — `ChooserDrawnTest` asserts the page has not grown one.
+- **`Sources.rooms()` COLLAPSES ONE ROOM SEEN BY TWO SOURCES.** Roon playing to
+  a Sonos speaker is seen by both and both say "playing", so a grid that
+  counted zones drew two tiles for one record — one of them headed with a
+  session id. Rooms folding to the same name through `Normalize.text` collapse
+  to one, and the survivor is picked by the ladder's own tie-break, so Roon
+  supplies the tile and it says the album. What it CANNOT do is spot one
+  speaker under two DIFFERENT names, and `RoomsTest` asserts that limit rather
+  than pretending otherwise: a spare tile is visible and tappable, where
+  wrongly merging two real rooms would hide one of them.
+- **A SILENT ROOM IS LISTED, NEVER DROPPED.** A grid holding only the live
+  rooms reads as the others having gone off the network, which is a worse and
+  wronger statement than "not playing". They are tappable too — reaching a room
+  is how you find out it is silent rather than missing.
+- **THE CHOOSER IS THE SECOND EXCEPTION TO THE NO-SCROLL RULE, for the
+  diagnostics' reason.** A list of rooms exists to be read and tapped, so a
+  room clipped off the bottom is a room you cannot reach. `.stage.choosing`
+  keeps the base `flex: 0 1 auto` — growing to fill drew a tall panel with the
+  rooms huddled at the top — so the panel hugs them and only scrolls once a
+  house has more rooms than fit. Verified by measuring at 320, 360 and 390px:
+  three playing and three silent scroll nothing at all, and eight playing with
+  six silent scrolls the STAGE while the page stays put.
+- **THE ACTION ROW, THE LINKS AND THE SUGGESTIONS ARE NOT DRAWN ON THE GRID.**
+  There is no card, so they have nothing to act on, and `load()` already
+  empties and hides all three before every request — the chooser simply returns
+  before building them. That is also what gives the grid its height.
+- **A TILE DRIVES THE PICKER, it does not go around it.** Tapping one sets
+  `zoneSel.value` and re-loads, so the dropdown and the card can never disagree
+  about which room is being shown — and the named-zone lock below then applies
+  to it like any other choice.
+- **THE TILE NAMES ITS SOURCE on the same condition the dropdown does.** It was
+  sent and not drawn in the first cut, and `ChooserDrawnTest` caught it: the
+  scan is there because a field can be correct, served and invisible, which is
+  exactly how the `similar` diagnostic shipped.
 - **A NAMED ZONE IS A LOCK, AND THE FALLBACK LADDER IS FOR "WHATEVER'S PLAYING"
   ALONE.** `Sources.nowPlaying` walks a ladder that ends at any room with
   anything in it, and naming a zone used to walk it too — so selecting an idle

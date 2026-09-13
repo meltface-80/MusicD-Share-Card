@@ -81,6 +81,9 @@
   function show(html) {
     stage.innerHTML = html;
     stage.classList.toggle("scrolls", !!stage.querySelector(".diag"));
+    // Decided from what actually went into the stage, like .scrolls above,
+    // rather than trusting every caller to remember to clear it.
+    stage.classList.toggle("choosing", !!stage.querySelector(".rooms"));
   }
 
   function busy(on) {
@@ -235,6 +238,21 @@
       if (force) params.set("refresh", "1");
       const playing = await getJson("/api/now-playing?" + params);
       if (mine !== token) return;
+
+      // MORE THAN ONE ROOM ON. The server decides this, not the page: the
+      // rule for when a grid beats a card lives in :core where it is tested,
+      // and a copy of it here would be a second place for it to drift.
+      if (playing.choose) {
+        showChooser(playing.rooms || []);
+        // The action row, the links and the suggestions stay as load() left
+        // them — emptied and hidden. There is no card, so they have nothing
+        // to act on, and the grid takes the space they leave.
+        const chooserNotices = playing.notices || [];
+        hintEl.textContent = chooserNotices.length
+          ? chooserNotices.join(" ")
+          : "Tap a room to make its card.";
+        return;
+      }
 
       if (!playing.album && !playing.artist) {
         message(playing.reason || "Nothing is playing.");
@@ -776,6 +794,76 @@
     if (playing.source) bits.push("via " + escapeHtml(playing.source));
     if (playing.stream) bits.push("live stream");
     nowEl.innerHTML = bits.join(" · ");
+  }
+
+  /*
+   * THE CHOOSER: every room, drawn from what the server sent.
+   *
+   * The rooms that are ON get a cover each, because a sleeve is how you
+   * recognise what is playing without reading. The SILENT ones are listed
+   * underneath in plain text — they are listed at all because a grid holding
+   * only the live rooms reads as the others having dropped off the network,
+   * which is a worse and wronger statement than "nothing is playing in there".
+   *
+   * Tapping either takes you to that room's card, silent or not. That is the
+   * same lock the dropdown applies: each zone is independent, and a room that
+   * is not playing says so by name rather than borrowing the neighbours'
+   * music.
+   */
+  function showChooser(rooms) {
+    const live = rooms.filter((r) => r.playing);
+    const idle = rooms.filter((r) => !r.playing);
+
+    // Two sources can see the same room and answer differently — Roon playing
+    // to a Sonos speaker is exactly that — so the tile says which, on the same
+    // condition the dropdown does. rooms() already collapses the pair when
+    // both call it the same name; this is for the rooms it cannot.
+    const manySources = new Set(rooms.map((r) => r.source).filter(Boolean)).size > 1;
+    const via = (room) => (manySources && room.source)
+      ? `<div class="room-src">${escapeHtml(room.source)}</div>` : "";
+
+    const what = (room) => {
+      const bits = [room.album, room.artist].filter(Boolean);
+      // A stream with no album still has a title worth showing.
+      return bits.length ? bits.join(" — ") : (room.track || "");
+    };
+
+    const tile = (room) => {
+      const art = room.art
+        ? `<img class="room-art" src="${escapeHtml(room.art)}" alt="">`
+        // No cover is a fact, not a gap to paper over — the tile keeps its
+        // square so the row does not go ragged.
+        : '<div class="room-art blank">♪</div>';
+      const line = what(room);
+      return `<button type="button" class="room" data-zone="${escapeHtml(room.uid)}">`
+        + art
+        + '<div class="room-text">'
+        + `<div class="room-name">${escapeHtml(room.name)}</div>`
+        + (line ? `<div class="room-what">${escapeHtml(line)}</div>` : "")
+        + via(room)
+        + "</div></button>";
+    };
+
+    const quiet = (room) =>
+      `<button type="button" class="room-idle" data-zone="${escapeHtml(room.uid)}">`
+      + escapeHtml(room.name)
+      + '<div class="room-what">not playing</div>'
+      + via(room)
+      + "</button>";
+
+    show('<div class="rooms">'
+      + `<div class="room-grid">${live.map(tile).join("")}</div>`
+      + (idle.length ? `<div class="rooms-idle">${idle.map(quiet).join("")}</div>` : "")
+      + "</div>");
+
+    stage.querySelectorAll("[data-zone]").forEach((el) => {
+      el.addEventListener("click", () => {
+        // Drive the picker rather than going around it, so the dropdown and
+        // the card never disagree about which room is being shown.
+        zoneSel.value = el.getAttribute("data-zone");
+        load(false);
+      });
+    });
   }
 
   function escapeHtml(s) {

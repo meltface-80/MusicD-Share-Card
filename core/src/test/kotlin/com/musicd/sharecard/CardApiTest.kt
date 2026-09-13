@@ -229,6 +229,61 @@ class CardApiTest {
         assertTrue("nothing was chosen, so nothing is selected", selected.isNull("selected"))
     }
 
+    @Test
+    fun `two rooms on offers the choice instead of picking one`() {
+        // Answered as a single card, "whatever's playing" had to choose a room
+        // and silently discard the other. The person looking chooses now.
+        players["10.0.0.1"]!!.state = TransportState.PLAYING
+        players["10.0.0.1"]!!.track = NowPlaying(album = "Blue", artist = "Joni Mitchell")
+        players["10.0.0.3"]!!.state = TransportState.PLAYING
+        players["10.0.0.3"]!!.track = NowPlaying(album = "Spiderland", artist = "Slint")
+
+        val body = json("/api/now-playing")
+        assertTrue(body.optBoolean("choose"))
+        // No card, and it says so: the page hides the card's own rows on this.
+        assertFalse(body.getBoolean("playing"))
+        assertFalse("a chooser is not a card", body.has("album"))
+
+        val rooms = body.getJSONArray("rooms")
+        assertEquals(2, rooms.length())
+        val byRoom = (0 until rooms.length()).associate {
+            rooms.getJSONObject(it).getString("name") to rooms.getJSONObject(it)
+        }
+        assertEquals("Blue", byRoom.getValue("Living Room").getString("album"))
+        assertEquals("Spiderland", byRoom.getValue("Study").getString("album"))
+        // The tile has to lead somewhere, and that is the zone's own card.
+        assertTrue(byRoom.getValue("Study").getString("uid").startsWith("sonos:"))
+    }
+
+    @Test
+    fun `one room on still draws the card, because one room is not a choice`() {
+        // A grid of one tile costs a tap and shows nothing the card would not.
+        players["10.0.0.1"]!!.state = TransportState.PLAYING
+        players["10.0.0.1"]!!.track = NowPlaying(album = "Blue", artist = "Joni Mitchell")
+        players["10.0.0.3"]!!.state = TransportState.STOPPED
+        players["10.0.0.3"]!!.track = NowPlaying()
+
+        val body = json("/api/now-playing")
+        assertFalse("one room on is not a chooser", body.optBoolean("choose"))
+        assertTrue(body.getBoolean("playing"))
+        assertEquals("Blue", body.getString("album"))
+    }
+
+    @Test
+    fun `naming a zone never opens the chooser, however many rooms are on`() {
+        // A named zone is a lock. Two rooms on is a choice only when the
+        // question was about the house.
+        players["10.0.0.1"]!!.state = TransportState.PLAYING
+        players["10.0.0.1"]!!.track = NowPlaying(album = "Blue", artist = "Joni Mitchell")
+        players["10.0.0.3"]!!.state = TransportState.PLAYING
+        players["10.0.0.3"]!!.track = NowPlaying(album = "Spiderland", artist = "Slint")
+
+        val body = json("/api/now-playing", mapOf("zone" to "sonos:RINCON_C"))
+        assertFalse(body.optBoolean("choose"))
+        assertEquals("Spiderland", body.getString("album"))
+        assertEquals("Study", body.getJSONObject("zone").getString("room"))
+    }
+
     // ---------------------------------------------------------------- zones
 
     @Test

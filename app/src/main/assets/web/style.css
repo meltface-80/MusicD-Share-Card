@@ -260,6 +260,160 @@ body {
 }
 
 /*
+ * THE CHOOSER: every room, when more than one is playing.
+ *
+ * "What is on in the house" answered as one card had to pick a room and
+ * silently discard the rest. Two rooms on is a choice, so the grid makes it
+ * visible and the person looking decides.
+ *
+ * THE SECOND EXCEPTION TO THE NO-SCROLL RULE, and for the diagnostics' reason
+ * rather than a new one: a list of rooms exists to be READ and tapped, so a
+ * room clipped off the bottom is a room you cannot reach. The stage grows to
+ * take the space the hidden action rows leave behind — there is no card, no
+ * links and no suggestions on this screen — and only scrolls past the point
+ * where a house has more rooms than fit.
+ */
+.stage.choosing {
+  /*
+   * NOT flex: 1 1 auto. Growing to fill drew a tall bordered panel with the
+   * rooms huddled at the top and a lot of nothing under them. The base
+   * 0 1 auto lets the panel hug the rooms and still SHRINK past them — which
+   * is what turns the overflow below into a scroll, in a house with more
+   * rooms than fit.
+   */
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px;
+}
+
+.rooms { width: 100%; }
+
+/*
+ * AUTO-FILL, NOT A FIXED COLUMN COUNT. A house has two rooms or nine, and the
+ * links row next door is four fixed columns only because it always holds the
+ * same eight or nine chips. This one cannot know, so the tile has a minimum
+ * and the row takes as many as fit — two across a 360px phone, more on an iPad.
+ */
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+  gap: 10px;
+}
+
+.room {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.room:active { border-color: var(--accent); }
+
+/*
+ * A SQUARE WHETHER OR NOT THERE IS A COVER. aspect-ratio holds the grid steady
+ * so a room with no art does not make its row a different height from the one
+ * beside it — the tiles are a set, and one short tile reads as broken rather
+ * than as missing art.
+ */
+.room-art {
+  width: 100%;
+  aspect-ratio: 1;
+  display: block;
+  object-fit: cover;
+  background: rgba(255,255,255,.04);
+}
+
+.room-art.blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 22px;
+}
+
+.room-text { padding: 0 10px 10px; min-width: 0; }
+
+/*
+ * THE ROOM NAME IS THE HEADING, not the album. The question this screen
+ * answers is "where", and the record is what tells two rooms apart underneath.
+ */
+.room-name {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  /* break-word, never anywhere: anywhere splits mid-word at the first
+     opportunity, which in a narrow tile gives "Bedroo / m". */
+  overflow-wrap: break-word;
+}
+
+.room-what {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-dim);
+  overflow-wrap: break-word;
+}
+
+/*
+ * THE SILENT ROOMS, under the grid and deliberately plainer.
+ *
+ * They are listed rather than dropped: a grid holding only the live rooms
+ * reads as the others having gone off the network, which is a different and
+ * much more alarming statement than "nothing is playing in there". They are
+ * still tappable, because a room you can reach is how you find out it is
+ * silent rather than missing.
+ */
+.rooms-idle {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.room-idle {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: break-word;
+}
+
+.room-idle:active { border-color: var(--accent); }
+
+/*
+ * WHICH SOURCE ANSWERED, drawn only when more than one is present — the same
+ * condition and the same reason as the dropdown's "(Roon)" caption. Faint and
+ * last, because it tells two entries apart rather than naming the room.
+ */
+.room-src {
+  margin-top: 3px;
+  font-size: 10px;
+  letter-spacing: .02em;
+  color: var(--text-faint);
+}
+
+.room-idle .room-what { color: var(--text-faint); }
+
+/*
  * THE CARD, AND THE LONG PRESS.
  *
  * This is an ordinary <img>, and that is the entire iOS story: press and hold
