@@ -1,0 +1,56 @@
+# MusicD Share Card, as a container.
+#
+#   docker compose up -d
+#
+# then open http://<this machine>:8747 on any device on the network.
+
+services:
+  sharecard:
+    image: ghcr.io/meltface-80/musicd-share-card:latest
+    # Build it yourself instead of pulling:
+    #   docker compose build
+    # build: .
+    container_name: musicd-share-card
+    restart: unless-stopped
+
+    # HOST NETWORKING IS NOT OPTIONAL IF YOU WANT DISCOVERY.
+    #
+    # Every way this app finds anything is multicast or broadcast: SSDP for
+    # Sonos and UPnP renderers, Roon's SOOD, and Lyrion's UDP 3483. NONE of
+    # those cross a Docker bridge — the container would come up healthy, answer
+    # on its port, and find nothing at all, which looks exactly like a network
+    # with no players on it.
+    #
+    # On Docker Desktop (macOS, Windows) host networking does not do this
+    # either. There, or on any setup where this is not possible, delete these
+    # two lines, add a `ports:` mapping, and name your players' addresses in
+    # SHARECARD_HOSTS below — that path does not need multicast.
+    network_mode: host
+
+    volumes:
+      # The Roon pairing token, the Discord webhooks and what the metadata
+      # lookups found. Without it every restart forgets all three.
+      #
+      # The container runs as uid 10001, so on a first run:
+      #   mkdir -p ./data && sudo chown -R 10001 ./data
+      - ./data:/data
+
+    # Everything below is optional; the defaults are what the Android build
+    # uses. Uncomment `environment:` along with whichever lines you want.
+    #
+    # environment:
+    #   # Speaker or server addresses to try before searching. Worth setting
+    #   # whenever discovery cannot work - a bridge network, a guest VLAN, a
+    #   # mesh router that drops multicast, players on another subnet. Comma
+    #   # separated, IPv4 only.
+    #   SHARECARD_HOSTS: "192.168.0.57,192.168.0.61"
+    #
+    #   # The PIN another device needs in order to add or remove a Discord
+    #   # webhook. Six digits. Left unset, one is minted and printed to the log
+    #   # on first start - `docker logs musicd-share-card` - because unlike the
+    #   # Android build there may be no browser on this machine to show it to.
+    #   SHARECARD_PIN: "123456"
+    #
+    #   # Only if 8747 is taken. The URL is meant to be typed, so it is a fixed
+    #   # port and not one the OS picks.
+    #   SHARECARD_PORT: "8747"

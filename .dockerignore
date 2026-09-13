@@ -1,0 +1,14 @@
+# Everything the build stage does not COPY is already excluded by it; this is
+# for the files that sit INSIDE the directories it does copy and would
+# otherwise be sent to the daemon and, worse, be baked into a layer.
+**/build/
+.gradle/
+.git/
+node_modules/
+dist/
+docs/
+tools/
+*.apk
+*.keystore
+*.jks
+local.properties
