@@ -510,6 +510,28 @@ was simply not there, however carefully the DIDL was parsed.
   There is no card, so they have nothing to act on, and `load()` already
   empties and hides all three before every request — the chooser simply returns
   before building them. That is also what gives the grid its height.
+- **"WHATEVER'S PLAYING" IS THE EMPTY STRING, AND THE EMPTY STRING IS FALSY.**
+  `loadZones` took `zoneSel.value || data.selected`, which cannot tell "nobody
+  has chosen yet" from "somebody just chose Whatever's playing" — both are "".
+  So choosing it fell through to the room the server still remembered, the
+  picker snapped back, and `load()` then SENT that room: the server never
+  received a request without a zone, so it never cleared `preferredZoneId`, and
+  the state latched. Reported as being able to reach every individual room but
+  never the grid again. `selected` is only ever a SEED for a page that has just
+  opened; once `pickerUsed` is set, the picker is the truth. A page reload with
+  a room remembered still restores it, which is the only thing `selected` was
+  ever for.
+- **THE ORDER IS `loadZones` THEN `/api/now-playing`, and that is what made it
+  self-perpetuating.** The server clears its memory correctly when no zone is
+  named — but the page rewrote the picker from that memory BEFORE asking, so
+  the clearing branch was unreachable. When a page and a server disagree about
+  remembered state, check which one runs first.
+- **A SOURCE SCAN MUST READ CODE, NOT PROSE.** The regression scan for the
+  above matched the comment explaining the fix, because the comment quotes the
+  broken expression on purpose. It also first asserted the wrong invariant —
+  "never mention `data.selected`" — which forbids the seed that is still
+  wanted. Assert what must be TRUE (every use is gated), and filter comment
+  lines out before scanning.
 - **A TILE DRIVES THE PICKER, it does not go around it.** Tapping one sets
   `zoneSel.value` and re-loads, so the dropdown and the card can never disagree
   about which room is being shown — and the named-zone lock below then applies

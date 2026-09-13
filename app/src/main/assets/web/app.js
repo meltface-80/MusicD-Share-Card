@@ -66,6 +66,15 @@
   /** A source asking to be let in, which outranks any tip the page would show. */
   let noticeText = "";
 
+  /*
+   * Has anybody actually touched the room picker on THIS page?
+   *
+   * It is the difference between a select that has never been built and one
+   * deliberately set back to "Whatever's playing" — see loadZones, where
+   * conflating the two made the grid unreachable.
+   */
+  let pickerUsed = false;
+
   const isIOS = /iP(hone|ad|od)/.test(navigator.platform || "") ||
     (navigator.userAgent.includes("Mac") && "ontouchend" in document);
 
@@ -186,7 +195,20 @@
       zoneWrap.classList.add("hidden");
       return;
     }
-    const chosen = zoneSel.value || data.selected || "";
+    // WHATEVER'S PLAYING IS THE EMPTY STRING, AND THE EMPTY STRING IS FALSY.
+    //
+    // `zoneSel.value || data.selected` could not tell "the user has not chosen
+    // yet" from "the user just chose Whatever's playing", because both are "".
+    // So picking it fell straight through to the room the server still
+    // remembered, the picker snapped back, and load() then SENT that room — so
+    // the server never got a request without a zone and never cleared its
+    // memory. Self-perpetuating: reported as being able to reach every
+    // individual room but never the grid again.
+    //
+    // The server's `selected` is only ever a SEED, for a page that has just
+    // been opened and has no options yet. Once somebody has used the picker,
+    // the picker is the truth.
+    const chosen = pickerUsed ? zoneSel.value : (zoneSel.value || data.selected || "");
     zoneSel.innerHTML = "";
     const auto = document.createElement("option");
     auto.value = "";
@@ -1395,7 +1417,12 @@
   // ---------------------------------------------------------------- wiring
 
   refresh.addEventListener("click", () => load(true));
-  zoneSel.addEventListener("change", () => load(false));
+  zoneSel.addEventListener("change", () => {
+    // From here on the picker outranks whatever the server remembers, which
+    // is what lets "Whatever's playing" mean it.
+    pickerUsed = true;
+    load(false);
+  });
 
   /*
    * NOTHING REDRAWS THE CARD BUT THE REFRESH BUTTON.
