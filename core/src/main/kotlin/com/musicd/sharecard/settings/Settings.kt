@@ -3,21 +3,22 @@ package com.musicd.sharecard.settings
 /**
  * What the person running this has turned on and off.
  *
- * THE TWO SETS ARE OPPOSITE WAYS ROUND, AND THAT IS THE WHOLE DESIGN. Each
- * one stores the EXCEPTION to its default, so an empty file means "the
- * defaults" and a thing this version has never heard of gets the default
- * rather than whatever the file happens not to mention:
+ * BOTH SETS HOLD WHAT IS SWITCHED ON, AND BOTH DEFAULT TO NOTHING. This app
+ * shows what it has been asked to show and nothing else — a room appears in
+ * the picker because somebody chose it, a streaming service is linked because
+ * somebody wanted it.
  *
- *  - SERVICES default ON. A streaming service added in a later version
- *    appears by itself, which is what somebody who never opened Settings
- *    expects. So the set holds the ones switched OFF.
- *  - ZONES default OFF. A television powered on next week arrives silent and
- *    stays out of the picker until it is asked for, which is the entire point
- *    of the zones screen. So the set holds the ones switched ON.
+ * SERVICES USED TO DEFAULT ON, on the reasoning that a service added in a
+ * later version should appear by itself. Reported as a bug on the first run
+ * ("the services show enabled already — said disabled"), and the report is
+ * right: an app whose rooms are opt-in and whose services are opt-out is one
+ * rule wearing two faces. A service added in a later version now arrives
+ * switched off like everything else, which is the duller and more predictable
+ * half of that trade.
  *
- * Stored the other way round, each default would invert the moment the file
- * was written: every service would need re-enabling after an upgrade, and
- * every new device would appear unasked.
+ * The older file wrote `disabledServices` and is simply not read: everything
+ * it named is off now anyway, which is the new default, so the worst an
+ * upgrade costs is switching a service back on.
  *
  * IT IS SERVER-SIDE, unlike the preferred-service tick, which lives in
  * `localStorage` because it changes nothing but a link. These change what the
@@ -26,13 +27,13 @@ package com.musicd.sharecard.settings
  * has to survive a restart.
  */
 data class Settings(
-    /** Streaming services switched OFF. Everything not named here is on. */
-    val disabledServices: Set<String> = emptySet(),
+    /** Streaming services switched ON. Everything not named here is off. */
+    val enabledServices: Set<String> = emptySet(),
     /** Zones switched ON. Everything not named here is off. */
     val enabledZones: Set<String> = emptySet()
 ) {
 
-    fun serviceEnabled(id: String): Boolean = id !in disabledServices
+    fun serviceEnabled(id: String): Boolean = id in enabledServices
 
     fun zoneEnabled(id: String): Boolean = id in enabledZones
 
@@ -40,7 +41,7 @@ data class Settings(
     val noZonesChosen: Boolean get() = enabledZones.isEmpty()
 
     fun withService(id: String, enabled: Boolean): Settings = copy(
-        disabledServices = if (enabled) disabledServices - id else disabledServices + id
+        enabledServices = if (enabled) enabledServices + id else enabledServices - id
     )
 
     fun withZone(id: String, enabled: Boolean): Settings = copy(

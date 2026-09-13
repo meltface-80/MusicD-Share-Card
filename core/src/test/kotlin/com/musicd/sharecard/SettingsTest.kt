@@ -29,10 +29,13 @@ class SettingsTest {
     // ------------------------------------------------------------ defaults
 
     @Test
-    fun `a fresh install has every service on and no zones`() {
+    fun `a fresh install has nothing switched on at all`() {
         val fresh = Settings()
-        assertTrue(fresh.serviceEnabled("qobuz"))
-        assertTrue(fresh.serviceEnabled("bandcamp"))
+        // SERVICES USED TO DEFAULT ON and were reported as a bug on first run:
+        // rooms that are opt-in beside services that are opt-out is one rule
+        // wearing two faces. Both are opt-in now.
+        assertFalse(fresh.serviceEnabled("qobuz"))
+        assertFalse(fresh.serviceEnabled("bandcamp"))
         // The whole reason the zones screen exists: nothing answers until it
         // is asked for, so a first run says so rather than showing a card.
         assertFalse(fresh.zoneEnabled("sonos:RINCON_1"))
@@ -40,22 +43,24 @@ class SettingsTest {
     }
 
     @Test
-    fun `a service nobody has heard of is on, a zone nobody has heard of is off`() {
+    fun `anything nobody has heard of is off`() {
         val configured = Settings(
-            disabledServices = setOf("tidal"),
+            enabledServices = setOf("tidal"),
             enabledZones = setOf("sonos:RINCON_1")
         )
-        // Added in a later version, named in neither set.
-        assertTrue(configured.serviceEnabled("newthing"))
+        // Added in a later version, named in neither set: it arrives switched
+        // off like everything else, which is the duller and more predictable
+        // half of the trade made when services became opt-in.
+        assertFalse(configured.serviceEnabled("newthing"))
         assertFalse(configured.zoneEnabled("upnp:tv-that-was-off"))
-        // And the ones that ARE named still say what they were told to.
-        assertFalse(configured.serviceEnabled("tidal"))
+        // And the ones that ARE named say what they were told to.
+        assertTrue(configured.serviceEnabled("tidal"))
         assertTrue(configured.zoneEnabled("sonos:RINCON_1"))
     }
 
     @Test
     fun `switching back and forth leaves no trace`() {
-        val once = Settings().withService("qobuz", false).withService("qobuz", true)
+        val once = Settings().withService("qobuz", true).withService("qobuz", false)
         assertEquals(Settings(), once)
         val room = Settings().withZone("roon:1", true).withZone("roon:1", false)
         assertEquals(Settings(), room)
@@ -67,10 +72,10 @@ class SettingsTest {
     fun `choices survive a restart`() {
         val file = File(temp.root, "settings.json")
         FileSettingsStore(file).write(
-            Settings(disabledServices = setOf("amazon"), enabledZones = setOf("roon:1", "sonos:2"))
+            Settings(enabledServices = setOf("amazon"), enabledZones = setOf("roon:1", "sonos:2"))
         )
         val reopened = FileSettingsStore(file).read()
-        assertEquals(setOf("amazon"), reopened.disabledServices)
+        assertEquals(setOf("amazon"), reopened.enabledServices)
         assertEquals(setOf("roon:1", "sonos:2"), reopened.enabledZones)
     }
 
@@ -97,10 +102,10 @@ class SettingsTest {
         // Android's org.json hands back the literal text "null" here, which
         // would enable a room named after it.
         val file = File(temp.root, "settings.json")
-        file.writeText("""{"enabledZones":["roon:1",null,"  "],"disabledServices":null}""")
+        file.writeText("""{"enabledZones":["roon:1",null,"  "],"enabledServices":null}""")
         val read = FileSettingsStore(file).read()
         assertEquals(setOf("roon:1"), read.enabledZones)
-        assertTrue(read.disabledServices.isEmpty())
+        assertTrue(read.enabledServices.isEmpty())
     }
 
     @Test

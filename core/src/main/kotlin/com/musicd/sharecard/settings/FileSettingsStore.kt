@@ -64,7 +64,7 @@ open class FileSettingsStore(private val file: File) : SettingsStore {
         else {
             val json = JSONObject(file.readText())
             Settings(
-                disabledServices = strings(json.optJSONArray("disabledServices")),
+                enabledServices = strings(json.optJSONArray("enabledServices")),
                 enabledZones = strings(json.optJSONArray("enabledZones"))
             )
         }
@@ -91,7 +91,7 @@ open class FileSettingsStore(private val file: File) : SettingsStore {
     }
 
     private fun encode(settings: Settings) = JSONObject()
-        .put("disabledServices", JSONArray(settings.disabledServices.toList()))
+        .put("enabledServices", JSONArray(settings.enabledServices.toList()))
         .put("enabledZones", JSONArray(settings.enabledZones.toList()))
         .toString()
 

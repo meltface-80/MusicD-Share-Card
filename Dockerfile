@@ -35,7 +35,13 @@ FROM eclipse-temurin:17-jre
 # quietly forgetting everything on each restart.
 RUN useradd --system --uid 10001 --create-home --home-dir /home/sharecard sharecard
 
-COPY --from=build /src/server/build/install/server /opt/sharecard
+# THE DIRECTORY IS NAMED AFTER THE DISTRIBUTION, NOT THE MODULE, and that
+# caught me out: setting `distributionBaseName` so the published archive is
+# called musicd-share-card-server-<version>.zip ALSO moved installDist from
+# build/install/server to build/install/musicd-share-card-server. The old path
+# lingered in the build directory here, so a stale copy kept running and kept
+# looking fine; in a clean image build this COPY would simply have failed.
+COPY --from=build /src/server/build/install/musicd-share-card-server /opt/sharecard
 # The launcher decides which build runs: the one in this image, or a newer one
 # the app has downloaded into /data. See the script for the rollback.
 COPY server/docker/launch.sh /opt/sharecard/launch.sh

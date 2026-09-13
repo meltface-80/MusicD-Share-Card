@@ -1341,9 +1341,15 @@
    * reads it without needing to know which screen asked.
    */
   function backRow() {
+    // Redrawn WITH what was typed, for the reason in [heldPin]: a field that
+    // empties itself on every change is one that stops working after the
+    // first, silently.
     const pinField = setup.mayConfigure ? "" :
-      '<input class="wh-input" id="wh-pin" inputmode="numeric" placeholder="PIN from the device">';
-    return '<div class="wh-row">' + pinField + "</div>" +
+      '<p class="wh-note">Changes need the PIN from the device running Share Card' +
+      " \u2014 in Docker it is printed once to the log.</p>" +
+      '<div class="wh-row"><input class="wh-input" id="wh-pin" inputmode="numeric"' +
+      ' placeholder="PIN from the device" value="' + escapeHtml(heldPin) + '"></div>';
+    return pinField +
       '<div class="wh-buttons"><button id="set-back">Back</button></div>' +
       (setup.onDevice && setup.pin
         ? '<p class="wh-note">PIN for other devices: <b>' + escapeHtml(setup.pin) + "</b></p>"
@@ -1394,12 +1400,24 @@
       const answer = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(answer.error || ("Refused (" + response.status + ")"));
       settings = answer;
-      redraw();
+      await redraw();
     } catch (e) {
+      /*
+       * THE MESSAGE IS SET AFTER THE REDRAW, NOT BEFORE IT, AND THAT WAS THE
+       * WHOLE BUG.
+       *
+       * The switch has to go back — leaving it flipped would be a lie about
+       * what is switched on — and putting it back means redrawing the screen.
+       * But every screen clears the error line as it opens, so setting the
+       * message first and redrawing second wiped the one explanation there
+       * was. What a person actually saw was a switch that flicked back and
+       * said nothing at all, which reads as an app that ignores you.
+       *
+       * Exactly the shape of `buildActions` clearing `hintEl` unconditionally
+       * and silencing a Roon notice a moment after it was set.
+       */
+      await redraw();
       errEl.textContent = e.message || String(e);
-      // Redraw anyway: the switch flipped under the finger and the server did
-      // not agree, so leaving it flipped would be a lie about what is on.
-      redraw();
     }
   }
 
@@ -1561,10 +1579,23 @@
     });
   }
 
+  /**
+   * The PIN typed on this page, kept for as long as it is open.
+   *
+   * IT USED TO BE READ STRAIGHT OFF THE FIELD, and that was a bug with a nasty
+   * shape: every settings change redraws the screen from the server's answer,
+   * which recreates the field EMPTY — so the first switch after typing the PIN
+   * worked and every one after it was refused. Reported as changes that would
+   * not stick on Docker, where every browser is a remote one and the PIN is
+   * always required. Measured in a real browser: Spotify off succeeded, Deezer
+   * off a moment later did not.
+   */
+  let heldPin = "";
+
   function pinParam() {
     const field = document.getElementById("wh-pin");
-    const pin = field && field.value ? field.value.trim() : "";
-    return pin ? "?pin=" + encodeURIComponent(pin) : "";
+    if (field && field.value) heldPin = field.value.trim();
+    return heldPin ? "?pin=" + encodeURIComponent(heldPin) : "";
   }
 
   async function addWebhook() {

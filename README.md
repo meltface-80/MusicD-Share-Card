@@ -42,9 +42,13 @@ what is on somewhere else.
 none of it: open **Settings → Zones** and switch on the ones you want. Anything
 that was powered off — a TV, an amp — joins that list the next time it answers,
 switched off, so nothing appears in your picker unasked. The cog beside the
-title also holds **Services**, where a streaming service you do not use can be
-switched off (it then gets no link under the card and is not looked up), and
-the Discord webhook setup, which used to live under the card.
+title also holds **Services** — which work the same way, switched off until you
+ask for them, so the links under the card are the ones you actually use and
+nothing is looked up that you don't — and the Discord webhook setup, which used
+to live under the card.
+
+From another device, changing any of this asks for a PIN. The Android app shows
+it on its own screen; the container prints it once to the log.
 
 <p>
   <img src="docs/screenshots/rooms.jpg" width="330" alt="Whatever's playing: a grid of album covers, one per room, with the rooms that are silent listed underneath">

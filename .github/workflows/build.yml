@@ -80,6 +80,14 @@ jobs:
       - name: Build the container's server
         run: ./gradlew :server:installDist -Psharecard.serverOnly=true --no-daemon --stacktrace
 
+      # The image copies one path out of that build, and the two have already
+      # disagreed once: renaming the published archive moved the directory
+      # installDist writes to, the old one lingered in a local build tree, and
+      # the break only showed up in the image job minutes later. Checked here,
+      # where it costs nothing and fails with the answer in the message.
+      - name: Check the image copies a path the build produces
+        run: sh tools/check-docker-paths.sh
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4

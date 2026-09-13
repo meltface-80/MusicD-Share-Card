@@ -124,12 +124,13 @@ class SettingsApiTest {
     }
 
     @Test
-    fun `every streaming service is listed and on`() {
+    fun `every streaming service is listed and off`() {
+        // Opt-in, like the rooms. Reported as a bug when they defaulted on.
         val services = get(api(), "/api/settings").getJSONArray("services")
         assertTrue(services.length() >= 7)
         for (i in 0 until services.length()) {
-            assertTrue(
-                services.getJSONObject(i).getString("id"),
+            assertFalse(
+                services.getJSONObject(i).getString("id") + " should start switched off",
                 services.getJSONObject(i).getBoolean("enabled")
             )
         }
@@ -176,11 +177,11 @@ class SettingsApiTest {
     fun `naming only one thing leaves the rest alone`() {
         // Partial on purpose: two devices with the page open must not
         // overwrite each other with a stale snapshot of everything.
-        val api = api(Settings(enabledZones = setOf(loungeId), disabledServices = setOf("tidal")))
+        val api = api(Settings(enabledZones = setOf(loungeId), enabledServices = setOf("tidal")))
         post(api, "/api/settings", """{"zones":{"$kitchenId":true}}""", "127.0.0.1")
 
         assertEquals(setOf(loungeId, kitchenId), store.read().enabledZones)
-        assertEquals(setOf("tidal"), store.read().disabledServices)
+        assertEquals(setOf("tidal"), store.read().enabledServices)
     }
 
     // ------------------------------------------------------------ the gate
@@ -206,7 +207,14 @@ class SettingsApiTest {
 
     @Test
     fun `a switched-off service loses its link`() {
-        val api = api(Settings(enabledZones = setOf(kitchenId), disabledServices = setOf("tidal")))
+        val api = api(
+            Settings(
+                enabledZones = setOf(kitchenId),
+                // Everything on EXCEPT tidal, so the assertion below is about
+                // the switch and not about the default.
+                enabledServices = setOf("qobuz", "spotify", "apple", "amazon", "deezer", "bandcamp")
+            )
+        )
         val links = get(
             api, "/api/extras",
             mapOf("album" to "Spiderland", "artist" to "Slint", "fast" to "1")
@@ -227,7 +235,7 @@ class SettingsApiTest {
          * means something here and nowhere else, and hiding the chip in the
          * page would have left the request running.
          */
-        val api = api(Settings(enabledZones = setOf(kitchenId), disabledServices = setOf("qobuz")))
+        val api = api(Settings(enabledZones = setOf(kitchenId), enabledServices = setOf("tidal")))
         val answer = get(
             api, "/api/qobuz",
             mapOf("album" to "Spiderland", "artist" to "Slint")

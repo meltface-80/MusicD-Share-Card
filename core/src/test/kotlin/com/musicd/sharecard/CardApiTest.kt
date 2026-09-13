@@ -13,6 +13,7 @@ import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.sonos.Household
 import com.musicd.sharecard.sonos.SonosSource
 import com.musicd.sharecard.settings.Settings
+import com.musicd.sharecard.meta.StreamingLinks
 import com.musicd.sharecard.settings.SettingsStore
 import com.musicd.sharecard.source.Sources
 import com.musicd.sharecard.sonos.NowPlaying
@@ -61,7 +62,7 @@ class CardApiTest {
     }
 
     /**
-     * EVERY ROOM SWITCHED ON, which is not the default and is deliberate here.
+     * EVERYTHING SWITCHED ON, which is not the default and is deliberate here.
      *
      * Zones are opt-in, so a CardApi built with no settings can answer about
      * nothing at all — and when that landed, every test in this file failed at
@@ -71,11 +72,18 @@ class CardApiTest {
      * DEFAULT is asserted on its own, once, in `a fresh install shows nothing
      * until a room is chosen`.
      */
-    private fun allZonesOn(sources: Sources): SettingsStore {
+    private fun everythingOn(sources: Sources): SettingsStore {
         val store = SettingsStore.inMemory()
-        // Read through the unfiltered list: zones() is already filtered by the
+        // Read through the UNFILTERED list: zones() is already filtered by the
         // very setting being written here.
-        store.write(Settings(enabledZones = sources.allZones().map { it.id }.toSet()))
+        store.write(
+            Settings(
+                enabledZones = sources.allZones().map { it.id }.toSet(),
+                // Services are opt-in too, so a link-row test that did not say
+                // this would be asserting the default rather than the row.
+                enabledServices = StreamingLinks.services().map { it.service }.toSet()
+            )
+        )
         return store
     }
 
@@ -96,7 +104,7 @@ class CardApiTest {
             assets,
             "1.0.0",
             qobuz = com.musicd.sharecard.meta.QobuzAlbum(http, "test"),
-            settingsStore = allZonesOn(sources)
+            settingsStore = everythingOn(sources)
         )
     }
 
@@ -129,7 +137,7 @@ class CardApiTest {
             "1.0.0",
             qobuz = com.musicd.sharecard.meta.QobuzAlbum(http, "test"),
             similar = similar,
-            settingsStore = allZonesOn(sources)
+            settingsStore = everythingOn(sources)
         )
     }
 
