@@ -53,7 +53,7 @@ class ServerReleaseTest {
         val dir = File(temp.root, "updates")
         val out = ServerRelease.unpack(ordinary(), dir, "9.9.9")
 
-        assertEquals(File(dir, "9.9.9"), out)
+        assertEquals(File(File(dir, ServerRelease.VERSIONS), "9.9.9"), out)
         // bin/server, not server-9.9.9/bin/server: the launcher looks at a
         // fixed path and must not have to know what the archive called itself.
         assertTrue(File(out, "bin/server").isFile)
@@ -94,6 +94,7 @@ class ServerReleaseTest {
         assertTrue("an entry walking out of the target must be refused", threw)
         // And it must not have landed on the way to being refused.
         assertFalse(File(dir, "escaped").exists())
+        assertFalse(File(File(dir, ServerRelease.VERSIONS), "escaped").exists())
         assertFalse(File(temp.root, "escaped").exists())
     }
 
@@ -171,5 +172,56 @@ class ServerReleaseTest {
         val dir = temp.newFolder("updates")
         ServerRelease.markPending(dir, "9.9.9")
         assertEquals("9.9.9", File(dir, ServerRelease.PENDING).readText())
+    }
+
+    @Test
+    fun `a version named after a marker cannot collide with it`() {
+        /*
+         * THE BUG THIS PINS, WHICH ONLY A REAL UPDATE FOUND.
+         *
+         * The container's installer used to read the version out of the
+         * downloaded file's NAME — and the downloader writes one fixed name
+         * that has never carried a version. So the parse produced nothing and
+         * fell back to a placeholder, and the placeholder was the word
+         * "pending", which is also the marker file sitting beside it. unpack
+         * made a DIRECTORY called pending, markPending then tried to write a
+         * FILE of the same name, and the whole update died with "pending (Is a
+         * directory)".
+         *
+         * The real fix is that the version is passed in from the release
+         * rather than guessed. This is the belt to that braces: whatever a
+         * version is called, unpacking it must not make the markers
+         * unwritable.
+         */
+        val dir = File(temp.root, "updates")
+        for (name in listOf(ServerRelease.PENDING, ServerRelease.TRYING, ServerRelease.ACTIVE)) {
+            ServerRelease.unpack(ordinary(), dir, name)
+            ServerRelease.markPending(dir, name)
+            assertTrue(
+                "the $name marker must still be a writable file",
+                File(dir, ServerRelease.PENDING).isFile
+            )
+        }
+    }
+
+    @Test
+    fun `the download directory is not the one holding the builds`() {
+        /*
+         * The downloader empties its own directory before every attempt, so
+         * pointing it at the directory that also holds the unpacked versions
+         * and the markers would have it deleting them. Asserted on the SHAPE
+         * the container uses: the scratch directory sits below, not beside.
+         */
+        val updates = temp.newFolder("updates")
+        val out = ServerRelease.unpack(ordinary(), updates, "9.9.9")
+        ServerRelease.markPending(updates, "9.9.9")
+
+        val download = File(updates, "download").apply { mkdirs() }
+        File(download, "update.zip").writeText("a part-finished download")
+        // What the downloader does at the start of the next attempt.
+        download.listFiles()?.forEach { it.delete() }
+
+        assertTrue("the unpacked build was deleted by a download", File(out, "bin/server").isFile)
+        assertTrue("the marker was deleted by a download", File(updates, ServerRelease.PENDING).isFile)
     }
 }

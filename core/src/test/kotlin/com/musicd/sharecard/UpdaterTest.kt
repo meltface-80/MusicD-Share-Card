@@ -31,7 +31,7 @@ class UpdaterTest {
     private fun updater(
         current: String,
         variant: Updater.Variant = Updater.Variant.ANDROID,
-        onInstall: (File) -> Unit = {
+        onInstall: (File, String) -> Unit = { _, _ ->
             throw AssertionError("no install should happen in these tests")
         }
     ) = Updater(
@@ -271,7 +271,7 @@ class UpdaterTest {
             currentVersion = "0.13.0",
             manifestUrl = server.url("/dist/latest.json").toString(),
             downloadDir = Files.createTempDirectory("updater-unsigned").toFile(),
-            install = { installed = it }
+            install = { file, _ -> installed = file }
         )
         try {
             val before = u.check()
@@ -296,7 +296,7 @@ class UpdaterTest {
     @Test
     fun `apply refuses a version that is not newer`() {
         var installed: File? = null
-        val u = updater("0.13.0") { installed = it }
+        val u = updater("0.13.0") { file, _ -> installed = file }
         u.accept(u.parseManifest(manifest(version = "0.13.0")))
         val after = u.apply { it.run() }
         assertEquals("error", after.getJSONObject("phase").getString("name"))
@@ -331,7 +331,7 @@ class UpdaterTest {
             currentVersion = "0.13.0",
             manifestUrl = server.url("/dist/latest.json").toString(),
             downloadDir = Files.createTempDirectory("updater-ok").toFile(),
-            install = { installed = it }
+            install = { file, _ -> installed = file }
         )
         try {
             assertTrue(u.check().getBoolean("available"))
@@ -370,7 +370,7 @@ class UpdaterTest {
             currentVersion = "0.13.0",
             manifestUrl = server.url("/dist/latest.json").toString(),
             downloadDir = dir,
-            install = { installed = it }
+            install = { file, _ -> installed = file }
         )
         try {
             u.check()
