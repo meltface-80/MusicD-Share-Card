@@ -77,6 +77,41 @@ class ChooserDrawnTest {
     }
 
     @Test
+    fun `the grid stays reachable, because an empty picker is a CHOICE`() {
+        // REPORTED FROM THE FIELD: every individual room could be reached and
+        // the grid never could. loadZones took
+        //     zoneSel.value || data.selected
+        // and "Whatever's playing" IS the empty string, which is falsy — so
+        // choosing it fell through to the room the server still remembered,
+        // the picker snapped back, and load() then sent that room. The server
+        // never saw a request without a zone, so it never cleared its memory,
+        // and the state latched permanently.
+        // The invariant is not "never mention data.selected" — the seed is
+        // still wanted for a page that has just opened. It is that EVERY use
+        // of it is gated, so a used picker wins outright.
+        // CODE lines only. The comment above the fix quotes the broken
+        // expression on purpose, and a scan that reads prose as code fails on
+        // the very explanation of what it is guarding.
+        val uses = page.lines()
+            .filter { it.contains("data.selected") }
+            .filterNot { it.trimStart().startsWith("//") || it.trimStart().startsWith("*") }
+        assertTrue("data.selected is no longer read at all — has loadZones changed?", uses.isNotEmpty())
+        for (line in uses) {
+            assertTrue(
+                "data.selected must be gated by pickerUsed, or choosing " +
+                    "Whatever's playing falls through to the remembered room: $line",
+                line.contains("pickerUsed")
+            )
+        }
+        // And the flag has to be SET, or it is decoration.
+        val handler = page.substringAfter("zoneSel.addEventListener").substringBefore("}")
+        assertTrue(
+            "choosing in the picker must mark it used",
+            handler.contains("pickerUsed = true")
+        )
+    }
+
+    @Test
     fun `room names and albums are escaped, because they come off the network`() {
         val fn = page.substringAfter("function showChooser").substringBefore("function escapeHtml")
         // A speaker names its own room and a stream names its own track. Both
