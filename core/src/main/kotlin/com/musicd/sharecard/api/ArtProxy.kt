@@ -48,6 +48,12 @@ class ArtProxy(
     fun fetch(url: String): Art? {
         if (!isAllowed(url)) {
             Log.w(TAG, "refusing to fetch $url")
+            // NAMED, because "no cover" has four causes that look identical on
+            // a card and it has now cost two rounds of diagnosis: the source
+            // sent no art url at all, the proxy refused the host, the server
+            // answered 404, or the bytes were not an image. Only this one and
+            // the source's own empty string are visible anywhere else.
+            note("$url -> REFUSED: not a known player, and not public https")
             return null
         }
         cache.peek(url)?.let { return it }
@@ -57,23 +63,46 @@ class ArtProxy(
             http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     Log.d(TAG, "$url -> ${response.code}")
+                    note("$url -> HTTP ${response.code}")
                     return null
                 }
                 val body = response.body ?: return null
                 val bytes = body.bytes()
                 if (bytes.isEmpty() || bytes.size > MAX_BYTES) {
                     Log.d(TAG, "$url -> ${bytes.size} bytes, ignored")
+                    note("$url -> ${bytes.size} bytes, ignored")
                     return null
                 }
                 val type = body.contentType()?.toString()?.takeIf { it.startsWith("image/") }
                     ?: "image/jpeg"
+                note("$url -> ${bytes.size} bytes, $type")
                 Art(bytes, type).also { cache.put(url, it) }
             }
         } catch (e: Exception) {
             Log.d(TAG, "$url failed: ${e.message}")
+            note("$url -> ${e.javaClass.simpleName}: ${e.message}")
             null
         }
     }
+
+    /**
+     * The last few covers asked for and what became of them, for /api/debug.
+     *
+     * A card with no sleeve says nothing about WHY, and the four reasons want
+     * four different fixes. This is the same device as `Pitchfork.attempts()`
+     * and for the same reason: the machine is in another room with no adb
+     * attached, so the debug page read off its screen IS the bug report.
+     */
+    fun attempts(): List<String> = synchronized(notes) { notes.toList() }
+
+    private fun note(line: String) {
+        synchronized(notes) {
+            notes += line
+            while (notes.size > MAX_NOTES) notes.removeAt(0)
+        }
+    }
+
+    private val notes = ArrayList<String>()
 
     /**
      * TWO WAYS IN, AND THE OLD RULE WAS BACKWARDS.
@@ -199,5 +228,8 @@ class ArtProxy(
 
         /** A sleeve. Anything larger is not one. */
         const val MAX_BYTES = 12 * 1024 * 1024
+
+        /** Enough to cover a card and the grid behind it. */
+        const val MAX_NOTES = 12
     }
 }

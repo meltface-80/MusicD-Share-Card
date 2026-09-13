@@ -117,6 +117,44 @@ class LmsStatusTest {
     }
 
     @Test
+    fun `a hex coverid is a cover, not a reason to give up`() {
+        // REPORTED: Lyrion zones detected, album, artist and blurb all right,
+        // and no cover at all on any of them. coverid is an OPAQUE token and
+        // current Lyrion writes it as hex — the first rule here demanded
+        // digits, so every local track lost its cover.
+        val track = JSONObject().put("coverid", "8f3a2b1c")
+        assertEquals(
+            "http://attic:9000/music/8f3a2b1c/cover.jpg",
+            LmsStatus.artUrl("http://attic:9000", track)
+        )
+    }
+
+    @Test
+    fun `an unusable coverid falls through to the next candidate`() {
+        // AND THIS IS THE HALF THAT MADE IT TOTAL. The old code took the first
+        // PRESENT of the three keys and then checked it, so a coverid it could
+        // not use ended the search there — with artwork_track_id sitting right
+        // beside it, never looked at.
+        val track = JSONObject()
+            .put("coverid", "-140455328")
+            .put("artwork_track_id", 99321)
+        assertEquals(
+            "http://attic:9000/music/99321/cover.jpg",
+            LmsStatus.artUrl("http://attic:9000", track)
+        )
+    }
+
+    @Test
+    fun `a cover id may not walk out of its own path`() {
+        for (bad in listOf("../../etc/passwd", "a/b", "a.b", "-1", "", " ")) {
+            assertFalse(bad, LmsStatus.usableCoverId(bad))
+        }
+        for (good in listOf("12345", "8f3a2b1c", "abcDEF123")) {
+            assertTrue(good, LmsStatus.usableCoverId(good))
+        }
+    }
+
+    @Test
     fun `no artwork at all is empty, not a broken path`() {
         assertEquals("", LmsStatus.artUrl("http://attic:9000", JSONObject()))
     }

@@ -103,12 +103,40 @@ object LmsStatus {
             if (declared.startsWith("http://") || declared.startsWith("https://")) return declared
             return base.trimEnd('/') + "/" + declared.removePrefix("/")
         }
-        val id = firstOf(track, "coverid", "artwork_track_id", "id")
-        if (id.isNotEmpty() && id.all { it in '0'..'9' }) {
-            return base.trimEnd('/') + "/music/" + id + "/cover.jpg"
+        // THE FIRST USABLE ONE, NOT THE FIRST PRESENT ONE. This asked
+        // firstOf() for the first non-empty of the three and then checked
+        // whether it was any good — so a `coverid` that was present but not a
+        // plain number ended the search THERE, and artwork_track_id sitting
+        // right beside it was never looked at. Every local track came back
+        // with no cover. A fallback chain that stops at the first candidate is
+        // not a fallback chain.
+        for (key in COVER_KEYS) {
+            val id = track.str(key).trim()
+            if (usableCoverId(id)) return base.trimEnd('/') + "/music/" + id + "/cover.jpg"
         }
         return ""
     }
+
+    /**
+     * An id that may be pasted into `/music/<id>/cover.jpg`.
+     *
+     * NOT "digits", which was the first rule here and was too narrow: a
+     * coverid is an OPAQUE token and current Lyrion writes it as hex, so
+     * digits-only threw away a perfectly good cover on every local track. What
+     * actually has to be refused is a NEGATIVE id — Lyrion numbers everything
+     * remote that way, and a minus sign in a path builds a URL that 404s on
+     * every card. Requiring plain ASCII letters and digits refuses that, and
+     * refuses a slash or a dot walking out of the path with it.
+     */
+    internal fun usableCoverId(id: String): Boolean =
+        id.isNotEmpty() && id.length <= MAX_ID &&
+            id.all { it in '0'..'9' || it in 'a'..'z' || it in 'A'..'Z' }
+
+    /** Where a cover id hides, best first. */
+    private val COVER_KEYS = listOf("coverid", "artwork_track_id", "id")
+
+    /** Long enough for any token Lyrion writes, short enough to be a sanity check. */
+    private const val MAX_ID = 64
 
     /** A whole `status` result, flattened. */
     fun read(result: JSONObject?, base: String): Now {

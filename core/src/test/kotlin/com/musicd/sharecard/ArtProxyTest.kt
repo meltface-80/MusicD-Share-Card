@@ -3,6 +3,7 @@ package com.musicd.sharecard
 import com.musicd.sharecard.api.ArtProxy
 import com.musicd.sharecard.meta.metadataHttpClient
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -119,5 +120,32 @@ class ArtProxyTest {
         assertTrue(proxy.isPrivateHost("169.254.169.254"))
         assertFalse(proxy.isPrivateHost("172.32.0.1"))
         assertFalse(proxy.isPrivateHost("93.184.216.34"))
+    }
+
+    @Test
+    fun `a refusal is written down, because a blank sleeve says nothing`() {
+        val proxy = ArtProxy(metadataHttpClient()) { setOf("192.168.0.93") }
+        assertNull(proxy.fetch("http://192.168.0.57:3400/art/abc"))
+        val notes = proxy.attempts()
+        assertTrue(notes.toString(), notes.any { it.contains("192.168.0.57") })
+        // Named, not just logged: "no cover" has four causes that look the
+        // same on a card, and only /api/debug can tell them apart.
+        assertTrue(notes.toString(), notes.any { it.contains("REFUSED") })
+    }
+
+    @Test
+    fun `the note says WHICH failure it was`() {
+        val proxy = ArtProxy(metadataHttpClient()) { emptySet() }
+        proxy.fetch("http://10.1.2.3/art.jpg")
+        // A refusal and a 404 want different fixes, so they must not share a
+        // line. This one never reached the network at all.
+        assertTrue(proxy.attempts().none { it.contains("HTTP ") })
+    }
+
+    @Test
+    fun `the log is bounded, because this runs for months`() {
+        val proxy = ArtProxy(metadataHttpClient()) { emptySet() }
+        repeat(40) { proxy.fetch("http://10.1.2.3/art-$it.jpg") }
+        assertTrue(proxy.attempts().size.toString(), proxy.attempts().size <= 12)
     }
 }

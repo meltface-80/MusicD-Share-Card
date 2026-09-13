@@ -1049,6 +1049,10 @@
     // An empty row has three causes that look identical from the page, and
     // only one of them is not a bug — see Similar.attempts().
     section("Similar artists", d.similar);
+    // What became of each cover. A card with no sleeve says nothing about why,
+    // and the four causes — no art url, a refused host, a 404, or bytes that
+    // were not an image — want four different fixes.
+    section("Album art", d.art);
     // Each source in its own words. Roon's line is where "not approved yet"
     // appears, and that is not a network problem however much it looks like one.
     section("Sources", d.sources);

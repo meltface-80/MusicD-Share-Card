@@ -45,7 +45,15 @@ class Diagnostics(
      * and Deezer genuinely not knowing the act — and the first of those is the
      * only one that is not a bug. Same lesson as [reviewNotes].
      */
-    private val similarNotes: () -> List<String> = { emptyList() }
+    private val similarNotes: () -> List<String> = { emptyList() },
+    /**
+     * The last few covers fetched, and what became of each.
+     *
+     * "No cover" has four causes that look identical on a card — no art url at
+     * all, a host the proxy refused, a 404, or bytes that were not an image —
+     * and telling them apart had already cost two rounds of diagnosis.
+     */
+    private val artNotes: () -> List<String> = { emptyList() }
 ) {
 
     fun run(): JSONObject {
@@ -61,6 +69,8 @@ class Diagnostics(
 
         val similar = runCatching { similarNotes() }.getOrDefault(emptyList())
         if (similar.isNotEmpty()) report.put("similar", Json.strings(similar))
+        val art = runCatching { artNotes() }.getOrDefault(emptyList())
+        if (art.isNotEmpty()) report.put("art", Json.strings(art))
 
         // 1. What this device thinks it is attached to. An empty list here is
         //    the whole answer: no network, no speakers.
