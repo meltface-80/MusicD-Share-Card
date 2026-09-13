@@ -24,17 +24,20 @@ It works out what's playing by asking whoever actually knows:
 - **UPnP / DLNA** — any other renderer on the network
 
 Every room it can see is in one list, whichever source found it. Leave it on
-**Whatever's playing** and it picks the room that is actually playing — and when
-two sources see the same room, the one that knows the most about the record
-wins. If more than one room is playing it shows them as a grid of covers
-instead of choosing for you, with the silent rooms listed underneath; tap one
-for its card.
+**Whatever's playing** and one room playing goes straight to its card. More than
+one and it shows them as a grid of covers instead of choosing for you — the
+silent rooms listed underneath, tap either for its card. When two sources see
+the same room they collapse to one tile, and the one that knows the most about
+the record supplies it.
 
 Pick a room by name and you get that room, silence included. Each zone is
 independent, so a room that is not playing says so rather than showing you
 what is on somewhere else.
 
-<img src="docs/screenshots/zones.jpg" width="360" alt="The room picker, listing rooms from Roon, Sonos and UPnP together">
+<p>
+  <img src="docs/screenshots/rooms.jpg" width="330" alt="Whatever's playing: a grid of album covers, one per room, with the rooms that are silent listed underneath">
+  <img src="docs/screenshots/zones.jpg" width="330" alt="The room picker open, listing rooms from Roon, Sonos and UPnP together with the source named beside each">
+</p>
 
 ## Install
 
