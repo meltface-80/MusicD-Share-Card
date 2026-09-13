@@ -118,8 +118,23 @@ Three things worth knowing before you run it:
   musicd-share-card`. Set `SHARECARD_PIN` to a six-digit number of your own to
   skip that.
 
-Updating is `docker compose pull && docker compose up -d`. The in-app update
-button is Android-only and the page hides it here.
+**Updating is done in the app**, the same as on Android: when a newer version
+is published the page says so at the top, and **Update** downloads it, checks
+it and restarts into it. Any device on the network can press it — unlike the
+Android build, where the APK installs on the device running the app — and from
+anywhere but the machine itself it asks for the PIN.
+
+What that does and does not replace: the app's own code updates, the image
+underneath does not. The new build is unpacked into your data directory and the
+container restarts into it, because the alternative is handing this app the
+Docker socket, which is root on the host, and that is not a trade worth making
+for an app that answers the whole LAN. **Pull a new image now and then** —
+`docker compose pull && docker compose up -d` — to pick up JRE and OS updates;
+that also clears out any build the app downloaded.
+
+An update that will not start cannot strand you: the container records what it
+is trying before it runs it, and a build that never gets as far as serving is
+thrown away on the next restart and the previous one comes back.
 
 Everything the container reads:
 
@@ -128,7 +143,7 @@ Everything the container reads:
 | `SHARECARD_HOSTS` | Player or server addresses to try before searching, comma separated. IPv4 only. |
 | `SHARECARD_PIN` | Six digits. Adding or removing a Discord webhook from another device asks for it. |
 | `SHARECARD_PORT` | Default `8747`. Only if that one is taken. |
-| `SHARECARD_DATA` | Default `/data`. Where the pairing, the webhooks and the cache are kept. |
+| `SHARECARD_DATA` | Default `/data`. Where the pairing, the webhooks, the cache and downloaded updates are kept. |
 | `SHARECARD_BIND` | Default `0.0.0.0`. |
 | `SHARECARD_DEBUG` | `false` quietens the log. On by default, because the log is the only diagnostic a container has. |
 

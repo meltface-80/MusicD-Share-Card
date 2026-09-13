@@ -1,6 +1,7 @@
 package com.musicd.sharecard.meta
 
 import com.musicd.sharecard.Log
+import com.musicd.sharecard.bool
 import com.musicd.sharecard.str
 import com.musicd.sharecard.strOrNull
 import okhttp3.OkHttpClient
@@ -41,9 +42,32 @@ class Updater(
     private val currentVersion: String,
     private val manifestUrl: String,
     private val downloadDir: File,
-    /** Hands the finished file to the system installer. */
-    private val install: (File) -> Unit
+    /** Hands the finished file to whatever installs it on this host. */
+    private val install: (File) -> Unit,
+    /** Which build this host runs, and therefore which half of the manifest. */
+    private val variant: Variant = Variant.ANDROID
 ) {
+
+    /**
+     * The two things this app ships as, out of ONE manifest.
+     *
+     * ONE FILE AND NOT TWO, because they are published by one run from one
+     * version number and a second manifest is a second thing to fall out of
+     * step — which this repo has already watched happen once, when a branch
+     * build left main's manifest naming an APK on a branch url.
+     *
+     * What differs is only which half is read and which rules apply:
+     *
+     *  - ANDROID reads the top level and is subject to the SIGNING rule. The
+     *    system installer refuses an APK signed with a different certificate
+     *    and says only "App not installed", so an unsigned build is refused
+     *    here with a reason instead.
+     *  - SERVER reads the `server` block and has no signing rule to apply,
+     *    because nothing is being installed over anything: the container
+     *    unpacks a build beside its own and restarts into it. Its guard is the
+     *    sha256 and the same-host rule, which both variants share.
+     */
+    enum class Variant(val wire: String) { ANDROID("android"), SERVER("server") }
 
     /**
      * What the page shows while this is running.
@@ -98,6 +122,8 @@ class Updater(
      */
     private fun blockedReason(release: Release?): String? = when {
         release == null -> null
+        // Android's alone: there is no certificate to match on a server build.
+        variant == Variant.SERVER -> null
         !release.signed ->
             "This build isn't signed with a release key, so Android can't install " +
                 "it over the top — uninstall the app first, then install ${release.version}."
@@ -115,6 +141,19 @@ class Updater(
             .put("url", latest?.url ?: JSONObject.NULL)
             // False means "downloading it would end in App not installed".
             .put("installable", latest != null && latest.signed)
+            /*
+             * WHO MAY PRESS UPDATE, and the two builds genuinely differ.
+             *
+             * The APK installs on THIS device, so a page open on an iPad across
+             * the house is looking at software it cannot replace — that bar was
+             * reported as "shows the update button, does nothing" and is hidden
+             * off the socket address. A server update replaces the machine
+             * serving the page, which is the same machine whichever browser
+             * asked, so there is nothing device-specific to hide. The gate
+             * still applies: from anywhere but loopback it wants the PIN.
+             */
+            .put("fromAnyDevice", variant == Variant.SERVER)
+            .put("variant", variant.wire)
             .put("blocked", blockedReason(latest) ?: JSONObject.NULL)
             .put(
                 "phase", JSONObject()
@@ -159,20 +198,31 @@ class Updater(
      */
     internal fun parseManifest(json: JSONObject): Release? {
         val version = json.strOrNull("version") ?: return null
-        val url = json.strOrNull("url") ?: return null
+
+        // WHICH HALF. A manifest written before the server build existed has no
+        // `server` block at all, and the honest reading of that is "there is no
+        // server update here" rather than an error or, worse, the APK's URL.
+        val part = when (variant) {
+            Variant.ANDROID -> json
+            Variant.SERVER -> json.optJSONObject("server") ?: return null
+        }
+
+        val url = part.strOrNull("url") ?: return null
         if (!url.startsWith("https://")) return null
         if (!sameHost(url, manifestUrl)) {
-            Log.w(TAG, "manifest names an APK on another host: $url")
+            Log.w(TAG, "manifest names a download on another host: $url")
             return null
         }
         return Release(
             version = version,
             url = url,
-            sha256 = json.strOrNull("sha256"),
+            sha256 = part.strOrNull("sha256"),
             notes = json.strOrNull("notes"),
             // Absent means "an older manifest that predates the flag", and the
-            // safe reading of that is unsigned.
-            signed = json.optBoolean("signed", false)
+            // safe reading of that is unsigned. The SERVER build has no
+            // certificate to match, so the flag does not apply to it and is
+            // not allowed to block it.
+            signed = variant == Variant.SERVER || json.bool("signed")
         )
     }
 

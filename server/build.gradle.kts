@@ -42,6 +42,18 @@ val shareCardVersion: String =
 
 version = shareCardVersion
 
+/*
+ * THE ARCHIVE IS NAMED AFTER THE PRODUCT, NOT THE MODULE.
+ *
+ * Gradle would call it `server-0.45.0.zip`, which says nothing in a dist/
+ * directory beside an APK — and the in-app updater reads the version back OUT
+ * of this filename when it unpacks. `musicd-share-card-server-<version>.zip`
+ * is what CI publishes and what `applyServerUpdate` parses.
+ */
+distributions {
+    main { distributionBaseName.set("musicd-share-card-server") }
+}
+
 application {
     mainClass.set("com.musicd.sharecard.server.MainKt")
     // Baked into the generated start script, which is what the image runs.

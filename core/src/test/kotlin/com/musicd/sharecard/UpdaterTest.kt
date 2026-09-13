@@ -24,15 +24,121 @@ class UpdaterTest {
 
     private val manifestUrl = "https://raw.githubusercontent.com/o/r/main/dist/latest.json"
 
-    private fun updater(current: String, onInstall: (File) -> Unit = {
-        throw AssertionError("no install should happen in these tests")
-    }) = Updater(
+    // `variant` comes BEFORE `onInstall` so that the trailing-lambda calls
+    // below still bind their lambda to the install callback. Putting a new
+    // parameter after a function parameter silently re-points every one of
+    // them, which is how this first failed to compile.
+    private fun updater(
+        current: String,
+        variant: Updater.Variant = Updater.Variant.ANDROID,
+        onInstall: (File) -> Unit = {
+            throw AssertionError("no install should happen in these tests")
+        }
+    ) = Updater(
         http = OkHttpClient(),
         currentVersion = current,
         manifestUrl = manifestUrl,
         downloadDir = Files.createTempDirectory("updater-test").toFile(),
-        install = onInstall
+        install = onInstall,
+        variant = variant
     )
+
+    // ------------------------------------------------- the two halves of it
+
+    /** A manifest carrying both an APK and a server build. */
+    private fun bothHalves(version: String = "9.9.9") = JSONObject(
+        """
+        {
+          "version": "$version",
+          "url": "https://raw.githubusercontent.com/o/r/dist/app-$version.apk",
+          "sha256": "aa",
+          "signed": true,
+          "notes": "both",
+          "server": {
+            "url": "https://raw.githubusercontent.com/o/r/dist/server-$version.zip",
+            "sha256": "bb"
+          }
+        }
+        """
+    )
+
+    @Test
+    fun `each variant reads its own half of one manifest`() {
+        // ONE FILE, TWO PRODUCTS. A second manifest is a second thing to fall
+        // out of step, which this repo has already watched happen once.
+        val apk = updater("1.0.0").parseManifest(bothHalves())
+        val server = updater("1.0.0", variant = Updater.Variant.SERVER)
+            .parseManifest(bothHalves())
+
+        assertTrue(apk!!.url.endsWith("app-9.9.9.apk"))
+        assertEquals("aa", apk.sha256)
+        assertTrue(server!!.url.endsWith("server-9.9.9.zip"))
+        assertEquals("bb", server.sha256)
+        // The version is the manifest's, so both halves always agree on it.
+        assertEquals("9.9.9", apk.version)
+        assertEquals("9.9.9", server.version)
+    }
+
+    @Test
+    fun `a manifest with no server block offers the container nothing`() {
+        // Every version published before the container could update itself.
+        // "Nothing here for you" is the honest reading — NOT the APK's url,
+        // which a container would download and fail to unpack.
+        val old = JSONObject(
+            """{"version":"9.9.9","url":"https://raw.githubusercontent.com/o/r/a.apk",
+                "sha256":"aa","signed":true}"""
+        )
+        assertNull(updater("1.0.0", variant = Updater.Variant.SERVER).parseManifest(old))
+        // And the APK half of that same manifest still works, so an old phone
+        // is not held back by a container feature it knows nothing about.
+        assertNotNull(updater("1.0.0").parseManifest(old))
+    }
+
+    @Test
+    fun `the signing flag does not block a server build`() {
+        /*
+         * THE FLAG IS ABOUT A CERTIFICATE, and only Android has one to match.
+         * Left applying to both, an unsigned-APK build — which is every build
+         * until the keystore secret exists — would also have refused to update
+         * a container, for a reason that has nothing to do with it.
+         */
+        val unsigned = JSONObject(
+            """
+            {
+              "version": "9.9.9",
+              "url": "https://raw.githubusercontent.com/o/r/a.apk",
+              "sha256": "aa",
+              "signed": false,
+              "server": {
+                "url": "https://raw.githubusercontent.com/o/r/s.zip",
+                "sha256": "bb"
+              }
+            }
+            """
+        )
+        val server = updater("1.0.0", variant = Updater.Variant.SERVER)
+        assertTrue(server.parseManifest(unsigned)!!.signed)
+        // Android still refuses it, and still says why.
+        assertFalse(updater("1.0.0").parseManifest(unsigned)!!.signed)
+    }
+
+    @Test
+    fun `a server url on another host is refused like any other`() {
+        // The same-host rule is the one guard both halves share, and it is the
+        // one that matters: this file is downloaded and then EXECUTED.
+        val elsewhere = JSONObject(
+            """
+            {
+              "version": "9.9.9",
+              "url": "https://raw.githubusercontent.com/o/r/a.apk",
+              "sha256": "aa",
+              "signed": true,
+              "server": { "url": "https://example.com/evil.zip", "sha256": "bb" }
+            }
+            """
+        )
+        assertNull(updater("1.0.0", variant = Updater.Variant.SERVER).parseManifest(elsewhere))
+    }
 
     /**
      * A MockWebServer speaking https, with a client that trusts exactly it.
