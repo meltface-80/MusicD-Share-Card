@@ -47,8 +47,12 @@ ask for them, so the links under the card are the ones you actually use and
 nothing is looked up that you don't — and the Discord webhook setup, which used
 to live under the card.
 
-From another device, changing any of this asks for a PIN. The Android app shows
-it on its own screen; the container prints it once to the log.
+On **Android**, changing any of this from another device asks for a PIN, shown
+on the app's own screen — the device itself never needs it. The **Docker** build
+asks for nothing by default, because a server in a cupboard has no screen to
+show a PIN on and every browser is a remote one; set `SHARECARD_PIN` if you want
+the gate. With it off, anyone who can reach the port can also change your
+webhooks — the URLs themselves are still never handed out, only changed.
 
 <p>
   <img src="docs/screenshots/rooms.jpg" width="330" alt="Whatever's playing: a grid of album covers, one per room, with the rooms that are silent listed underneath">
@@ -145,8 +149,8 @@ Everything the container reads:
 | | |
 | --- | --- |
 | `SHARECARD_HOSTS` | Player or server addresses to try before searching, comma separated. IPv4 only. |
-| `SHARECARD_PIN` | Six digits. Adding or removing a Discord webhook from another device asks for it. |
-| `SHARECARD_PORT` | Default `8747`. Only if that one is taken. |
+| `SHARECARD_PIN` | Six digits. **Unset by default, and unset means no PIN is asked for at all.** Set it to require one for changing settings, webhooks or updates. |
+| `SHARECARD_PORT` | Default `8747`. The Android build uses 8748, so the two can run side by side. |
 | `SHARECARD_DATA` | Default `/data`. Where the pairing, the webhooks, the cache and downloaded updates are kept. |
 | `SHARECARD_BIND` | Default `0.0.0.0`. |
 | `SHARECARD_DEBUG` | `false` quietens the log. On by default, because the log is the only diagnostic a container has. |
@@ -171,12 +175,14 @@ Whichever build you run, anything else in the house can open the same card in a
 browser:
 
 ```
-http://<the machine running it>:8747
+http://<the Android device>:8748
+http://<the machine running Docker>:8747
 ```
 
-On Android — a FiiO R7, a tablet in a dock, an old phone on a charger — the app
-shows that address on screen and in its notification. In Docker it is printed to
-the log at startup. Nothing extra is installed on the iPad or the phone; it's
+**The two use different ports on purpose**, so you can run both and tell them
+apart by their URL. On Android — a FiiO R7, a tablet in a dock, an old phone on
+a charger — the app shows its address on screen and in its notification. In
+Docker it is printed to the log at startup. Nothing extra is installed on the iPad or the phone; it's
 just a web page, and it is the same page either way.
 
 | | |

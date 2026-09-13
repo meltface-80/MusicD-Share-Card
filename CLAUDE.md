@@ -451,6 +451,26 @@ was simply not there, however carefully the DIDL was parsed.
   cannot be read back: `toBlob` throws and there is no card. Sonos sends no CORS
   header, so pointing the page at a player directly can never work, however much
   simpler it looks. See `ArtProxy`.
+- **THE TWO SHELLS SERVE ON DIFFERENT PORTS: ANDROID 8748, THE CONTAINER
+  8747.** Both answered on 8747, which is fine right up until somebody runs
+  both — and running both is the ordinary case while a phone in a dock and a
+  box in a cupboard are being compared. Same port on two addresses is not a
+  clash any OS reports; it is a bookmark that quietly starts answering for the
+  wrong one. `ShareCardApp.ANDROID_PORT` is what `CardService` passes; the
+  container keeps `DEFAULT_PORT` and `SHARECARD_PORT` still overrides it.
+- **THE CONTAINER ASKS FOR NO PIN BY DEFAULT, AND THAT NARROWS THE RULE
+  BELOW.** The gate trusts loopback and challenges everything else, which is
+  right on Android: loopback IS the app's own WebView, held by somebody
+  standing at the device, and the PIN is on that screen. A container usually
+  has no browser on it at all, so every visit is a remote one — the gate
+  applied to everybody, for switching a room on, with the PIN only obtainable
+  from `docker logs`. Asked for directly, and implemented as `requirePin`:
+  unset `SHARECARD_PIN` means no gate, setting it turns the gate on. WHAT IT
+  COSTS IS STATED IN THE README rather than hidden: with the gate off, anyone
+  who can reach the port can change webhooks and start an update. What does
+  NOT change either way is that no route ever returns a webhook URL — a test
+  asserts that with the gate off, because widening who may CHANGE things must
+  never widen what can be READ.
 - **Reads are open; the few writes are gated, and the gate is in [Access].**
   This server answered the whole LAN without a password because it held no
   secrets. A Discord webhook URL is a credential — whoever has it can post to

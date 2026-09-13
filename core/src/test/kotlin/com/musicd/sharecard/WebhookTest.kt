@@ -121,14 +121,14 @@ class WebhookTest {
     fun `the device itself needs no PIN`() {
         // Standing in front of the device is a stronger claim than a PIN typed
         // from across the house.
-        val access = Access { "123456" }
+        val access = Access(pin = { "123456" })
         assertTrue(access.mayConfigure(request("127.0.0.1")))
         assertTrue(access.mayConfigure(request("::1")))
     }
 
     @Test
     fun `another device needs the right PIN`() {
-        val access = Access { "123456" }
+        val access = Access(pin = { "123456" })
         assertFalse(access.mayConfigure(request("192.168.0.50")))
         assertFalse(access.mayConfigure(request("192.168.0.50", pin = "")))
         assertFalse(access.mayConfigure(request("192.168.0.50", pin = "000000")))
@@ -139,7 +139,7 @@ class WebhookTest {
     @Test
     fun `an empty PIN on the server does not open the gate`() {
         // A store that has not minted one yet must not accept "" as a match.
-        val access = Access { "" }
+        val access = Access(pin = { "" })
         assertFalse(access.mayConfigure(request("192.168.0.50", pin = "")))
         assertFalse(access.mayConfigure(request("192.168.0.50", pin = "000000")))
     }

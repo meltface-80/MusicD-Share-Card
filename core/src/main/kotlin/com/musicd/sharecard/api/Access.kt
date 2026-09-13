@@ -29,9 +29,31 @@ import com.musicd.sharecard.http.Request
  * the app's own WebView on the device itself — and standing in front of the
  * device is a stronger claim than any PIN typed from across the house.
  */
-class Access(private val pin: () -> String) {
+class Access(
+    private val pin: () -> String,
+    /**
+     * Whether a request from anywhere but this machine has to prove itself.
+     *
+     * FALSE IS A DELIBERATE CHOICE AND ONLY THE CONTAINER MAKES IT. On Android
+     * loopback means the app's own WebView, held by somebody standing at the
+     * device, so the gate costs nothing and the PIN is shown on that screen. A
+     * container usually has no browser on it at all: every visit is a remote
+     * one, so the gate applies to everybody and the PIN has to be dug out of
+     * `docker logs` — for switching a room on, which is the first thing anyone
+     * does. Asked for directly ("I don't want the docker version to need a PIN
+     * code"), so the container trusts its own network unless SHARECARD_PIN is
+     * set, and setting it turns the gate back on.
+     *
+     * WHAT THAT COSTS, PLAINLY: with it off, anyone who can reach the port can
+     * also add or remove a Discord webhook and start an update. Webhook URLs
+     * still never leave the process — no route returns one — so the exposure
+     * is to changes, not to the credential itself.
+     */
+    private val requirePin: Boolean = true
+) {
 
     fun mayConfigure(request: Request): Boolean {
+        if (!requirePin) return true
         if (isLoopback(request.remoteAddress)) return true
         val supplied = request.param("pin")?.trim().orEmpty()
         val expected = pin().trim()

@@ -65,6 +65,21 @@ fun main() {
     val cache = FileCacheStore(File(data, "cache"))
     val webhooks = webhookStore(File(data, "webhooks.json"))
 
+    /*
+     * NO PIN UNLESS ONE IS ASKED FOR, AND THAT IS THE OPPOSITE OF ANDROID.
+     *
+     * The gate trusts loopback and challenges everything else, which on a
+     * phone means the app's own WebView is free and a browser across the house
+     * is not. In a container there is usually no browser on the machine at
+     * all, so EVERY visit is a remote one and the gate applied to everybody —
+     * for switching a room on, which is the first thing anyone does, with the
+     * PIN only obtainable from `docker logs`. Asked for directly.
+     *
+     * Setting SHARECARD_PIN turns it back on, which is the answer for anyone
+     * whose network is not one they trust.
+     */
+    val requirePin = env("SHARECARD_PIN") != null
+
     val app = try {
         ShareCardApp(
             assets = classpathAssets(),
@@ -79,6 +94,7 @@ fun main() {
             // so a first run here shows the empty state and points at
             // Settings rather than drawing a card nobody asked for.
             settingsStore = FileSettingsStore(File(data, "settings.json")),
+            requirePin = requirePin,
             /*
              * UPDATING FROM THE APP, THE SAME WAY ANDROID DOES.
              *
@@ -127,7 +143,8 @@ fun main() {
     ServerRelease.promote(updates, version)
 
     for (url in app.lanUrls()) Log.i(TAG, "open $url on any device on this network")
-    announcePin(webhooks.pin())
+    if (requirePin) announcePin(webhooks.pin())
+    else Log.i(TAG, "no PIN needed on this network; set SHARECARD_PIN to require one")
 
     // Every thread the server owns is a daemon, so without this the process
     // would start the socket and immediately exit.

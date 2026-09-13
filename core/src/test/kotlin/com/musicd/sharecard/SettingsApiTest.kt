@@ -242,4 +242,70 @@ class SettingsApiTest {
         )
         assertTrue("a switched-off Qobuz must resolve nothing", answer.isNull("url"))
     }
+
+    // ------------------------------------------------- the gate, turned off
+
+    private fun openApi(settings: Settings = Settings()): CardApi {
+        source = FakeSource("Sonos", mapOf("Kitchen" to playing("Kitchen", "Spiderland")))
+        store = SettingsStore.inMemory(settings)
+        val http = metadataHttpClient()
+        return CardApi(
+            Sources(listOf(source)),
+            Metadata(http, "test"),
+            Pitchfork(http, "test"),
+            ArtProxy(http),
+            Assets { null },
+            "1.0.0",
+            settingsStore = store,
+            // What the container does unless SHARECARD_PIN is set.
+            requirePin = false
+        )
+    }
+
+    @Test
+    fun `with the gate off any device on the network may configure`() {
+        /*
+         * THE CONTAINER'S DEFAULT, AND IT IS THE OPPOSITE OF ANDROID'S. On a
+         * phone loopback is somebody standing at the device and the PIN is on
+         * that screen; a container usually has no browser on it at all, so the
+         * gate applied to everybody and the PIN had to be dug out of the log
+         * to switch a room on. Asked for directly.
+         */
+        val api = openApi()
+        val answer = post(api, "/api/settings", """{"zones":{"$kitchenId":true}}""", "10.0.0.99")
+        assertEquals(200, answer.status)
+        assertEquals(setOf(kitchenId), store.read().enabledZones)
+    }
+
+    @Test
+    fun `and the page is told there is nothing to type`() {
+        // Otherwise every settings screen draws a PIN box that does nothing.
+        val open = get(openApi(), "/api/setup")
+        assertFalse(open.getBoolean("needsPin"))
+        assertTrue(open.getBoolean("mayConfigure"))
+
+        // The Android build is unchanged: a browser that is not the device
+        // still has to prove itself.
+        val gated = get(api(), "/api/setup")
+        assertTrue(gated.getBoolean("needsPin"))
+        assertFalse(gated.getBoolean("mayConfigure"))
+    }
+
+    @Test
+    fun `the gate being off does not hand out a webhook url`() {
+        /*
+         * The rule that survives regardless: no route returns a webhook URL,
+         * only its mask. Turning the gate off widens who may CHANGE things; it
+         * must not widen what can be READ back.
+         */
+        val api = openApi()
+        post(
+            api, "/api/webhooks",
+            """{"name":"Music","url":"https://discord.com/api/webhooks/1/""" +
+                "a".repeat(68) + """"}""",
+            "10.0.0.99"
+        )
+        val listed = get(api, "/api/webhooks").toString()
+        assertFalse("a webhook URL escaped: $listed", listed.contains("a".repeat(68)))
+    }
 }

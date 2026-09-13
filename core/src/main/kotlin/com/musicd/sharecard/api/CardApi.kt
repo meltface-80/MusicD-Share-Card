@@ -56,10 +56,15 @@ class CardApi(
      * What the household has switched on. Defaults to remembering nothing,
      * which for a test means every service on and, deliberately, no zones.
      */
-    private val settingsStore: SettingsStore = SettingsStore.inMemory()
+    private val settingsStore: SettingsStore = SettingsStore.inMemory(),
+    /**
+     * Whether a device that is not this one needs the PIN to change anything.
+     * The container turns this off unless a PIN is configured — see [Access].
+     */
+    private val requirePin: Boolean = true
 ) : HttpServer.Handler {
 
-    private val access = Access { webhooks.pin() }
+    private val access = Access({ webhooks.pin() }, requirePin)
 
     init {
         /*
@@ -681,6 +686,9 @@ class CardApi(
                 .put("onDevice", onDevice)
                 .put("mayConfigure", access.mayConfigure(request))
                 .put("pin", if (onDevice) webhooks.pin() else JSONObject.NULL)
+                // So the page can leave the PIN field out entirely rather than
+                // drawing an input nobody needs to fill in.
+                .put("needsPin", requirePin)
         )
     }
 
