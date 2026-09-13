@@ -7,9 +7,15 @@
 services:
   sharecard:
     image: ghcr.io/meltface-80/musicd-share-card:latest
-    # Build it yourself instead of pulling:
-    #   docker compose build
-    # build: .
+
+    # BUILD IS LEFT ON, and the reason is a failure mode rather than a
+    # preference. A GHCR package is PRIVATE the first time it is published and
+    # there is no API to change that — it is a click in the repository's
+    # package settings — so an unauthenticated pull answers "denied", which
+    # reads as "there is no such image" and is not that at all. With `build`
+    # here, Compose falls back to building from this checkout when the pull
+    # cannot be done, and `docker compose build` works on purpose.
+    build: .
     container_name: musicd-share-card
     restart: unless-stopped
 

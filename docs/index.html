@@ -265,6 +265,11 @@
            SSDP, Roon’s SOOD and Lyrion’s broadcast are all multicast, and none of them
            cross a Docker bridge — on one, the container comes up healthy and finds nothing
            at all.</p>
+        <p><b>If that answers <code>denied</code>, the image is private, not
+           missing.</b> GitHub makes every package private the first time it is
+           published and only the owner can change it. Until then, clone the repo
+           and <code>docker compose up -d --build</code> — the same Dockerfile,
+           built on your own machine.</p>
         <div class="fp">
           <b>Compose</b><br>
           docker-compose.yml is in the repo, commented, and does the same thing.
