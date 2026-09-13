@@ -308,4 +308,85 @@ class SettingsApiTest {
         val listed = get(api, "/api/webhooks").toString()
         assertFalse("a webhook URL escaped: $listed", listed.contains("a".repeat(68)))
     }
+
+    // ---------------------------------------------------------- the reviews
+
+    @Test
+    fun `the reviews screen lists both kinds with their own defaults`() {
+        val reviews = get(api(), "/api/settings").getJSONArray("reviews")
+        val byId = (0 until reviews.length()).associate {
+            val r = reviews.getJSONObject(it)
+            r.getString("id") to r
+        }
+        assertTrue("the album sources start on", byId.getValue("wikipedia").getBoolean("enabled"))
+        assertTrue(byId.getValue("pitchfork").getBoolean("enabled"))
+        assertTrue(byId.getValue("allmusic").getBoolean("enabled"))
+        // Asked for, rather than arriving unasked.
+        assertFalse(byId.getValue("wikipedia-artist").getBoolean("enabled"))
+        assertFalse(byId.getValue("allmusic-artist").getBoolean("enabled"))
+        // The page groups on this.
+        assertEquals("album", byId.getValue("wikipedia").getString("kind"))
+        assertEquals("artist", byId.getValue("wikipedia-artist").getString("kind"))
+    }
+
+    @Test
+    fun `switching a review source off is remembered without disturbing the rest`() {
+        val api = api()
+        post(api, "/api/settings", """{"reviews":{"pitchfork":false}}""", "127.0.0.1")
+        assertFalse(store.read().reviewEnabled("pitchfork"))
+        assertTrue("switching a score off must not take the blurb with it",
+            store.read().reviewEnabled("wikipedia"))
+    }
+
+    @Test
+    fun `a review source this version has never heard of is refused`() {
+        val api = api()
+        post(api, "/api/settings", """{"reviews":{"not-a-source":true}}""", "127.0.0.1")
+        assertFalse(store.read().enabledReviews.orEmpty().contains("not-a-source"))
+    }
+
+    @Test
+    fun `switching AllMusic on puts a chip in the reading row`() {
+        val api = api(Settings(enabledZones = setOf(kitchenId)))
+        val reading = get(
+            api, "/api/extras",
+            mapOf("album" to "Spiderland", "artist" to "Slint", "fast" to "1")
+        ).getJSONArray("reading")
+
+        val names = (0 until reading.length()).map { reading.getJSONObject(it).getString("name") }
+        assertTrue("AllMusic is on by default and should be offered: $names",
+            names.any { it == "AllMusic" })
+        // The artist sources are off, so nothing about Slint-the-band appears.
+        assertFalse(names.any { it.startsWith("AllMusic: ") })
+        assertFalse(names.any { it.startsWith("Wikipedia: ") })
+    }
+
+    @Test
+    fun `switching the artist sources on adds them and nothing else`() {
+        val api = api(
+            Settings(enabledZones = setOf(kitchenId))
+                .withReview("allmusic-artist", true)
+        )
+        val reading = get(
+            api, "/api/extras",
+            mapOf("album" to "Spiderland", "artist" to "Slint", "fast" to "1")
+        ).getJSONArray("reading")
+        val names = (0 until reading.length()).map { reading.getJSONObject(it).getString("name") }
+        assertTrue("the artist chip names who it is about: $names",
+            names.any { it == "AllMusic: Slint" })
+    }
+
+    @Test
+    fun `switching every review source off leaves the reading row empty`() {
+        var settings = Settings(enabledZones = setOf(kitchenId))
+        for (id in com.musicd.sharecard.meta.Reviews.IDS) settings = settings.withReview(id, false)
+        val answer = get(
+            api(settings), "/api/extras",
+            mapOf("album" to "Spiderland", "artist" to "Slint", "fast" to "1")
+        )
+        assertEquals(0, answer.getJSONArray("reading").length())
+        // And the words that would have gone ON the card are gone with them.
+        assertTrue(answer.isNull("bio"))
+        assertTrue(answer.isNull("score"))
+    }
 }

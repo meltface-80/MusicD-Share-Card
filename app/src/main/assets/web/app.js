@@ -413,7 +413,7 @@
 
   const EMPTY = {
     release: "", bio: "", bioSource: "", bioUrl: "", score: null,
-    isBestNewMusic: false, reviewUrl: "", links: []
+    isBestNewMusic: false, reviewUrl: "", links: [], reading: []
   };
 
   function extrasOf(j) {
@@ -425,6 +425,7 @@
       score: j && typeof j.score === "number" ? j.score : null,
       isBestNewMusic: !!(j && j.isBestNewMusic),
       reviewUrl: (j && j.reviewUrl) || "",
+      reading: (j && j.reading) || [],
       links: (j && Array.isArray(j.links)) ? j.links : []
     };
   }
@@ -438,6 +439,7 @@
       score: b.score != null ? b.score : a.score,
       isBestNewMusic: b.isBestNewMusic || a.isBestNewMusic,
       reviewUrl: b.reviewUrl || a.reviewUrl,
+      reading: (b.reading && b.reading.length) ? b.reading : a.reading,
       // The fast path already carries these — they need no lookup — so a slow
       // answer that came back empty must not wipe them.
       links: (b.links && b.links.length) ? b.links : a.links
@@ -624,7 +626,8 @@
     // has one. The card already credits it in small type under the words; this
     // is the same credit made followable.
     const article = extras && extras.bioUrl;
-    const reading = !!(review || article);
+    const extraReading = ((extras && extras.reading) || []).length > 0;
+    const reading = !!(review || article || extraReading);
     if (!services.length && !reading) {
       linksEl.classList.add("hidden");
       return;
@@ -645,6 +648,18 @@
       // second source added later labels its own chip.
       const source = (extras && extras.bioSource) || "Wikipedia";
       linksEl.appendChild(link(article, source, "links-review"));
+    }
+    /*
+     * Whatever else Reviews is switched on for — AllMusic, an artist's
+     * article. The SERVER names them and this draws what it is given, so a
+     * source added later needs no change here. They sit with the review chips
+     * rather than the services because they go to a page ABOUT the record or
+     * the act, not a search for somewhere to play it.
+     */
+    for (const extra of (extras && extras.reading) || []) {
+      if (extra && extra.url && extra.name) {
+        linksEl.appendChild(link(extra.url, extra.name, "links-review"));
+      }
     }
     for (const svc of services) {
       if (!svc || !svc.url || !svc.name) continue;
@@ -1350,7 +1365,7 @@
     // a box that does nothing sitting under every settings screen.
     const pinField = (setup.mayConfigure || setup.needsPin === false) ? "" :
       '<p class="wh-note">Changes need the PIN from the device running Share Card' +
-      " \u2014 in Docker, set SHARECARD_PIN or read it from the log.</p>" +
+      " — in Docker, set SHARECARD_PIN or read it from the log.</p>" +
       '<div class="wh-row"><input class="wh-input" id="wh-pin" inputmode="numeric"' +
       ' placeholder="PIN from the device" value="' + escapeHtml(heldPin) + '"></div>';
     return pinField +
@@ -1467,14 +1482,35 @@
     claimStage();
     errEl.textContent = "";
     await refreshSetup();
-    // EMPTY ON PURPOSE, and it says so. A screen that is blank with no
-    // explanation reads as one that failed to load.
+    await loadSettings(false);
+
+    const all = settings.reviews || [];
+    const group = (kind) => all.filter((r) => r.kind === kind)
+      .map((r) => toggleRow(r.id, r.name, "", r.enabled))
+      .join("");
+
+    /*
+     * TWO GROUPS, AND THEY DEFAULT DIFFERENTLY. The album sources are what the
+     * card has always drawn — the blurb under the cover and the score in
+     * the corner — so they start on; switching them off by default would
+     * empty every card in the house to make this screen tidy. The artist ones
+     * are about whoever made the record rather than the record itself, so they
+     * are asked for.
+     */
     panel(
-      '<p class="wh-note">Nothing to set here yet. Album reviews and scores ' +
-      "come from Pitchfork and are always on.</p>",
+      '<p class="wh-note">About the record. Switched off, a source is not ' +
+      "looked up and its words do not appear on the card.</p>",
+      group("album"),
+      '<h3 class="set-group">About the artist</h3>',
+      '<p class="wh-note">Links only — the card stays about the record.</p>',
+      group("artist"),
       backRow()
     );
     bind("set-back", showSettings);
+    for (const box of document.querySelectorAll(".set-toggle input[data-key]")) {
+      box.onchange = () =>
+        writeSetting("reviews", box.getAttribute("data-key"), box.checked, showReviews);
+    }
   }
 
   async function showZones() {

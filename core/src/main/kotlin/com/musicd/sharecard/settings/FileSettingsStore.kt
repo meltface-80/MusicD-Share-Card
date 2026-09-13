@@ -65,7 +65,13 @@ open class FileSettingsStore(private val file: File) : SettingsStore {
             val json = JSONObject(file.readText())
             Settings(
                 enabledServices = strings(json.optJSONArray("enabledServices")),
-                enabledZones = strings(json.optJSONArray("enabledZones"))
+                enabledZones = strings(json.optJSONArray("enabledZones")),
+                // ABSENT IS NOT EMPTY. No key at all means nobody has chosen a
+                // review source yet, which is what keeps the card's blurb and
+                // score on for an install that predates this screen.
+                enabledReviews =
+                    if (!json.has("enabledReviews") || json.isNull("enabledReviews")) null
+                    else strings(json.optJSONArray("enabledReviews"))
             )
         }
     } catch (t: Throwable) {
@@ -93,6 +99,11 @@ open class FileSettingsStore(private val file: File) : SettingsStore {
     private fun encode(settings: Settings) = JSONObject()
         .put("enabledServices", JSONArray(settings.enabledServices.toList()))
         .put("enabledZones", JSONArray(settings.enabledZones.toList()))
+        .apply {
+            // Written only once something has been chosen, so that the absence
+            // of the key keeps meaning "the defaults".
+            settings.enabledReviews?.let { put("enabledReviews", JSONArray(it.toList())) }
+        }
         .toString()
 
     private companion object {

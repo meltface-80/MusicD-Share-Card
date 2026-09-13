@@ -10,6 +10,7 @@ import com.musicd.sharecard.http.Request
 import com.musicd.sharecard.http.Response
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
+import com.musicd.sharecard.meta.Reviews
 import com.musicd.sharecard.meta.QobuzAlbum
 import com.musicd.sharecard.meta.Similar
 import com.musicd.sharecard.meta.StreamingLinks
@@ -268,6 +269,21 @@ class CardApi(
                         }
                     )
                 )
+                .put(
+                    "reviews",
+                    JSONArray(
+                        Reviews.ALL.map {
+                            JSONObject()
+                                .put("id", it.id)
+                                .put("name", it.name)
+                                // The page groups on this: album sources are
+                                // about the record in front of you, artist
+                                // ones are about whoever made it.
+                                .put("kind", it.kind.name.lowercase())
+                                .put("enabled", settings.reviewEnabled(it.id))
+                        }
+                    )
+                )
                 // So the screen can say "nothing is switched on yet" rather
                 // than drawing an empty list that looks like a failed scan.
                 .put("anyZoneEnabled", !settings.noZonesChosen)
@@ -301,6 +317,15 @@ class CardApi(
         body.optJSONObject("zones")?.let { zones ->
             for (id in zones.keys()) {
                 settings = settings.withZone(id, zones.bool(id))
+            }
+        }
+        body.optJSONObject("reviews")?.let { reviews ->
+            for (id in reviews.keys()) {
+                // Only ids this version knows. A stored set is materialised
+                // from the defaults on first touch, so letting an unknown name
+                // in would put a source in the file that nothing can ever draw
+                // or switch off again.
+                if (id in Reviews.IDS) settings = settings.withReview(id, reviews.bool(id))
             }
         }
 
@@ -496,23 +521,69 @@ class CardApi(
         if (album.isEmpty()) return Json.error(400, "No album named.")
         val fast = request.param("fast") == "1"
 
+        val chosen = settingsStore.read()
+
+        /*
+         * A SWITCHED-OFF SOURCE IS NOT ASKED, not merely undrawn. Pitchfork is
+         * a page fetch behind a rate gate and the Wikipedia blurb is two more,
+         * so hiding the chip while still paying for it would be the cosmetic
+         * half of what the switch says it does — the same rule the services
+         * screen keeps for Qobuz.
+         *
+         * The metadata lookup is ONE call that returns the year, the album
+         * blurb and the artist blurb together, so it still runs when Wikipedia
+         * is off: the year is not a review and the card draws it regardless.
+         * What the switch controls is whether the words are used.
+         */
         val extras = if (fast) metadata.cachedExtras(album, artist)
         else metadata.extras(album, artist)
-        val review = if (fast) pitchfork.cachedReviewFor(album, artist)
-        else pitchfork.reviewFor(album, artist)
+        val albumBio = extras?.album?.takeIf { chosen.reviewEnabled(Reviews.WIKIPEDIA) }
+        val review = when {
+            !chosen.reviewEnabled(Reviews.PITCHFORK) -> null
+            fast -> pitchfork.cachedReviewFor(album, artist)
+            else -> pitchfork.reviewFor(album, artist)
+        }
+
+        /*
+         * The chips that are a LINK and nothing else — no lookup, no network,
+         * so they cost nothing on the fast path and are on screen with the
+         * first paint. The page draws whatever is in here rather than knowing
+         * the names, so a source added later labels its own chip.
+         */
+        val reading = JSONArray()
+        if (chosen.reviewEnabled(Reviews.ALLMUSIC)) {
+            Reviews.albumUrl(artist, album)?.let {
+                reading.put(JSONObject().put("name", "AllMusic").put("url", it))
+            }
+        }
+        if (chosen.reviewEnabled(Reviews.WIKIPEDIA_ARTIST)) {
+            // ALREADY FETCHED AND NEVER DRAWN. The metadata lookup has always
+            // brought back the artist's article because it comes with the same
+            // search; the card does not use it because a card is about a
+            // record. Offering it costs no request at all.
+            extras?.artist?.url?.let {
+                reading.put(JSONObject().put("name", "Wikipedia: $artist").put("url", it))
+            }
+        }
+        if (chosen.reviewEnabled(Reviews.ALLMUSIC_ARTIST)) {
+            Reviews.artistUrl(artist)?.let {
+                reading.put(JSONObject().put("name", "AllMusic: $artist").put("url", it))
+            }
+        }
 
         return Json.obj(
             JSONObject()
                 .put("release", extras?.year?.toString() ?: JSONObject.NULL)
-                .putOrNull("bio", extras?.album?.description)
-                .putOrNull("bioSource", extras?.album?.source)
+                .putOrNull("bio", albumBio?.description)
+                .putOrNull("bioSource", albumBio?.source)
                 // The article the blurb was taken from. It was already
                 // fetched — Metadata has carried this URL since the port and
                 // nothing ever offered it — and the card credits "Wikipedia"
                 // in type too small to be a link, which left the one source
                 // the words actually came from as the only thing on the page
                 // you could not follow.
-                .putOrNull("bioUrl", extras?.album?.url)
+                .putOrNull("bioUrl", albumBio?.url)
+                .put("reading", reading)
                 .put("score", review?.score ?: JSONObject.NULL)
                 .put("isBestNewMusic", review?.isBestNewMusic ?: false)
                 // The review this app just read the score off. It was already

@@ -1066,3 +1066,12 @@ body {
 .set-toggle input:checked + .set-switch { background: var(--accent); border-color: var(--accent); }
 .set-toggle input:checked + .set-switch::after { transform: translateX(16px); background: #12151a; }
 .set-toggle input:focus-visible + .set-switch { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* A heading inside a settings panel, for the one screen with two kinds of
+   thing on it. Quiet enough not to compete with the rows it introduces. */
+.set-group {
+  margin: 14px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
