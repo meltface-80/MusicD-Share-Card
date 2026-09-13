@@ -1,8 +1,6 @@
 # MusicD Share Card
 
-Makes a share card for whatever you're playing and using whatever music app, and posts it wherever you want it.
-
-https://meltface-80.github.io/MusicD-Share-Card/
+Makes a share card for whatever you're playing, and posts it wherever you want it.
 
 ![A share card: cover, title, artist, release year, Pitchfork score and a short description from Wikipedia](docs/screenshots/card.jpg)
 
@@ -28,13 +26,19 @@ It works out what's playing by asking whoever actually knows:
 Every room it can see is in one list, whichever source found it. Leave it on
 **Whatever's playing** and it picks the room that is actually playing — and when
 two sources see the same room, the one that knows the most about the record
-wins.
+wins. If more than one room is playing it shows them as a grid of covers
+instead of choosing for you, with the silent rooms listed underneath; tap one
+for its card.
+
+Pick a room by name and you get that room, silence included. Each zone is
+independent, so a room that is not playing says so rather than showing you
+what is on somewhere else.
 
 <img src="docs/screenshots/zones.jpg" width="360" alt="The room picker, listing rooms from Roon, Sonos and UPnP together">
 
 ## Install
 
-[**Download musicd-share-card-0.36.0.apk**](dist/musicd-share-card-0.36.0.apk)
+[**Download musicd-share-card-0.38.0.apk**](dist/musicd-share-card-0.38.0.apk)
 and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 

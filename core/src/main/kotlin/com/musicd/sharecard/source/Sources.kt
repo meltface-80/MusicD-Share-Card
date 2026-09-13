@@ -1,6 +1,7 @@
 package com.musicd.sharecard.source
 
 import com.musicd.sharecard.Log
+import com.musicd.sharecard.library.Normalize
 
 /**
  * Every source, and the one answer the card needs from them.
@@ -15,10 +16,16 @@ import com.musicd.sharecard.Log
  *   4. any zone with metadata at all, so a paused room still makes a card;
  *   5. nothing, and the page says so.
  *
- * A user's choice does NOT beat a room that is actually playing when the chosen
- * one has fallen silent. The app's purpose is a card for what is on, and
- * answering with an hour-old paused album because that room was picked once is
- * the wrong answer to the question being asked.
+ * THAT LADDER IS FOR "WHATEVER'S PLAYING" AND FOR NOTHING ELSE. Naming a zone
+ * goes through [inZone], which asks that room and answers for that room —
+ * silence included. The ladder used to run for a named zone too, and the
+ * result was a card headed "Playing in Stereo Fives · via Roon" while the
+ * picker said WiiM Pro Plus: the WiiM was idle, rung 2 found a room that was
+ * not, and the answer was about somewhere else entirely. Reported from the
+ * field, and it made /api/debug lie in the same breath — every zone in the
+ * report showed the same record, because the report asks per zone too.
+ *
+ * Each zone is independent. A room that is not playing says so.
  *
  * SOURCES ARE ASKED IN ORDER AND THE ORDER IS DELIBERATE. Roon first, because
  * when Roon is playing to a speaker it is the only one of the two that knows
@@ -141,6 +148,65 @@ class Sources(private val sources: List<Source>) {
         return best
     }
 
+    /**
+     * Every room and what each one is playing, for the chooser.
+     *
+     * ONE ROUND TRIP PER ROOM, and that is the honest cost of the question.
+     * "What is on in the house" answered as one card could stop at the first
+     * room that was playing; answered as a grid it has to ask them all. It is
+     * still asked ONLY when somebody opens the page or presses Refresh — see
+     * the rule against polling, which this does not weaken.
+     *
+     * TWO SOURCES CAN SEE ONE ROOM, and left alone that draws two tiles for
+     * one piece of music. Roon playing to a Sonos speaker is the case: both
+     * say "playing", and the Sonos side reports a session id where the title
+     * should be. So rooms that fold to the same NAME collapse to one, and the
+     * survivor is chosen by the same rule the ladder uses — playing first,
+     * then the fuller answer, then source order, which is why Roon wins and
+     * the tile says the album rather than a hash.
+     *
+     * WHAT IT CANNOT DO is spot the same speaker under two DIFFERENT names —
+     * a Roon zone called "Study" against a Sonos room called "Office" is two
+     * tiles, and no information here says otherwise. That is the right way to
+     * be wrong: a spare tile is visible and tappable, where wrongly merging
+     * two real rooms would hide one of them.
+     */
+    fun rooms(): List<Room> {
+        val all = zones().map { Room(it, inZone(it.id)) }
+        return all
+            .groupBy { Normalize.text(it.zone.name) }
+            .map { (_, sharing) -> sharing.minWith(bestFirst) }
+            .sortedBy { Normalize.text(it.zone.name) }
+    }
+
+    /**
+     * The ladder's tie-break, as a comparator over rooms. Lowest wins.
+     *
+     * It is built from [quality] and from the REAL position of each source in
+     * [sources], not from the source's name — Roon is first because it is
+     * listed first, and an alphabetical tie-break would only agree with that
+     * by accident.
+     */
+    private val bestFirst: Comparator<Room> = compareBy(
+        { room: Room -> if (room.playing?.state?.isPlaying == true) 0 else 1 },
+        { room: Room -> -(room.playing?.let { quality(it) } ?: -1) },
+        { room: Room ->
+            sources.indexOfFirst { it.name.equals(room.zone.source, ignoreCase = true) }
+                .let { if (it < 0) 99 else it }
+        }
+    )
+
+    /**
+     * What is playing IN ONE ROOM, and nothing else.
+     *
+     * No ladder, no fallback, no second source: the question is about that
+     * room, so an answer about a different one is wrong however much better it
+     * is. Null covers both "the room is idle" and "the room described
+     * nothing", which are the same thing to a card — see the rule that an
+     * answer describing nothing is never drawn.
+     */
+    fun inZone(zoneId: String): Playing? = ask(zoneId)?.takeIf { quality(it) >= 0 }
+
     /** Ask whichever source owns this prefixed id. */
     private fun ask(zoneId: String): Playing? {
         val owner = ZoneRef.sourceOf(zoneId) ?: return null
@@ -157,3 +223,12 @@ class Sources(private val sources: List<Source>) {
         const val FULL = 3
     }
 }
+
+/**
+ * One room and whatever it is playing, which may be nothing.
+ *
+ * A room with no answer is NOT dropped: "not playing" is a fact the chooser
+ * shows, and a grid that listed only the live rooms would look like the silent
+ * ones had gone off the network.
+ */
+data class Room(val zone: ZoneRef, val playing: Playing?)

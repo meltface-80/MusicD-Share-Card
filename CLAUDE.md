@@ -474,6 +474,84 @@ was simply not there, however carefully the DIDL was parsed.
   since the port with nothing ever offering it; `/api/extras` returns it as
   `bioUrl` and the chip is labelled from `bioSource`, so a second source added
   later names its own.
+- **MORE THAN ONE ROOM ON IS A CHOICE, AND THE APP DOES NOT MAKE IT.** Answered
+  as one card, "whatever's playing" had to pick a room and silently discard the
+  rest — which is the same complaint as the zone bug one step out. Two or more
+  rooms playing returns `choose` and a grid of covers instead; ONE room on
+  still draws the card, because a grid of one tile costs a tap and shows
+  nothing the card would not, and a house where everything is paused still
+  falls down the ladder as before.
+- **THE GRID RULE LIVES IN `:core`, NOT IN `app.js`.** The page branches on the
+  server's `choose` flag and never counts the playing rooms itself. Nothing on
+  the page can be tested here, and a second copy of the rule is a second place
+  for it to drift — `ChooserDrawnTest` asserts the page has not grown one.
+- **`Sources.rooms()` COLLAPSES ONE ROOM SEEN BY TWO SOURCES.** Roon playing to
+  a Sonos speaker is seen by both and both say "playing", so a grid that
+  counted zones drew two tiles for one record — one of them headed with a
+  session id. Rooms folding to the same name through `Normalize.text` collapse
+  to one, and the survivor is picked by the ladder's own tie-break, so Roon
+  supplies the tile and it says the album. What it CANNOT do is spot one
+  speaker under two DIFFERENT names, and `RoomsTest` asserts that limit rather
+  than pretending otherwise: a spare tile is visible and tappable, where
+  wrongly merging two real rooms would hide one of them.
+- **A SILENT ROOM IS LISTED, NEVER DROPPED.** A grid holding only the live
+  rooms reads as the others having gone off the network, which is a worse and
+  wronger statement than "not playing". They are tappable too — reaching a room
+  is how you find out it is silent rather than missing.
+- **THE CHOOSER IS THE SECOND EXCEPTION TO THE NO-SCROLL RULE, for the
+  diagnostics' reason.** A list of rooms exists to be read and tapped, so a
+  room clipped off the bottom is a room you cannot reach. `.stage.choosing`
+  keeps the base `flex: 0 1 auto` — growing to fill drew a tall panel with the
+  rooms huddled at the top — so the panel hugs them and only scrolls once a
+  house has more rooms than fit. Verified by measuring at 320, 360 and 390px:
+  three playing and three silent scroll nothing at all, and eight playing with
+  six silent scrolls the STAGE while the page stays put.
+- **THE ACTION ROW, THE LINKS AND THE SUGGESTIONS ARE NOT DRAWN ON THE GRID.**
+  There is no card, so they have nothing to act on, and `load()` already
+  empties and hides all three before every request — the chooser simply returns
+  before building them. That is also what gives the grid its height.
+- **A TILE DRIVES THE PICKER, it does not go around it.** Tapping one sets
+  `zoneSel.value` and re-loads, so the dropdown and the card can never disagree
+  about which room is being shown — and the named-zone lock below then applies
+  to it like any other choice.
+- **THE TILE NAMES ITS SOURCE on the same condition the dropdown does.** It was
+  sent and not drawn in the first cut, and `ChooserDrawnTest` caught it: the
+  scan is there because a field can be correct, served and invisible, which is
+  exactly how the `similar` diagnostic shipped.
+- **A NAMED ZONE IS A LOCK, AND THE FALLBACK LADDER IS FOR "WHATEVER'S PLAYING"
+  ALONE.** `Sources.nowPlaying` walks a ladder that ends at any room with
+  anything in it, and naming a zone used to walk it too — so selecting an idle
+  WiiM Pro Plus drew a card headed "Playing in Stereo Fives · via Roon". The
+  picker said one room and the card described another, which reads as the app
+  choosing for you. `Sources.inZone` asks that room and answers for that room,
+  silence included, and `/api/now-playing` uses it whenever a zone is named.
+  Each zone is independent; a room that is not playing says so, by name.
+- **Sonos was the ONE source walking that ladder for a named zone, one layer
+  further down.** Roon and UPnP have always treated a zone id as a filter
+  (`client.zone(zoneId) ?: return null`, `renderers.filter { it.udn == zoneId }`),
+  but `Household.nowPlaying(preferUid)` took the uid as a *preference* and fell
+  through to any playing group — so fixing `Sources` alone left the bug intact
+  for the source that had it. `Household.inGroup` is the locked form, and it
+  still resolves through `group()`, so a room that has since been grouped
+  follows to its coordinator rather than being refused.
+- **AN EMPTY `zone` PARAMETER IS NOT A ZONE.** "Whatever's playing" sends the
+  parameter blank, and a blank string that reaches `inZone` names no source, so
+  the room lookup returns null and the page says nothing is playing while music
+  is. `?.takeIf { it.isNotBlank() }` is what separates the two questions.
+- **AN UNNAMED CHOICE MUST NOT BE PINNED.** `/api/now-playing` wrote whoever
+  answered into `preferredZoneId`, so the first card silently converted
+  "whatever's playing" into that room for every request after it — and once the
+  named path became a lock, that turned into a card that stopped following the
+  house. It moved the PICKER too: `/api/zones` returns that field as
+  `selected`, and the page takes `zoneSel.value || data.selected`, so a reload
+  came back with a specific room chosen that the user never chose. Only an
+  explicitly named zone is remembered, which makes `selected` mean what its
+  name says.
+- **PER-ZONE DIAGNOSTICS MUST ASK PER ZONE.** `/api/debug` listed every room
+  with the same record on it, because it called `nowPlaying(zone.id)` and got
+  the fallback's answer five times over — the report contradicted the source
+  lines printed directly above it, and a report that disagrees with itself sent
+  two rounds of diagnosis the wrong way. It uses `inZone` now.
 - **Zone ids move.** A regroup in the Sonos app changes which player coordinates
   a room, and a card headed with the wrong room is the result. Resolve through
   `Household.group()`, which follows a member to its coordinator, never from a
