@@ -127,6 +127,43 @@ was simply not there, however carefully the DIDL was parsed.
   sets volume; this one makes a picture, so the browse tree, queue, transport
   verbs and settings panel are all left out, and `required_services` asks for
   TRANSPORT only.
+- **LYRION IS ASKED AT THE SERVER, NOT THE PLAYER, and it ranks with Roon.** A
+  Squeezebox, a piCorePlayer or a squeezelite process knows almost nothing about
+  what it is playing — the server holds the library, resolves the metadata and
+  owns the artwork. So `LmsSource` sits above Sonos and UPnP in the list for
+  exactly Roon's reason: asked about one room, the server is the one that knows
+  what the record is, and the endpoint sees a stream.
+- **A LYRION RADIO STREAM PUTS THE STATION IN `playlist_loop` AND THE SONG IN
+  `remoteMeta`.** The loop entry is what was QUEUED; `remoteMeta` is what is
+  PLAYING. So remoteMeta wins every field it has and the loop entry fills the
+  gaps behind it — the other way round draws a card headed "BBC Radio 6 Music"
+  while the server knows perfectly well it is playing Aphex Twin. Same shape as
+  reading Roon's `three_line` in the wrong order, and it looks almost right,
+  which is what makes it expensive. An EMPTY remoteMeta field is not an answer
+  and must not erase the station's artwork behind it.
+- **A LYRION ID IS ONLY A COVER PATH WHEN IT IS DIGITS.** Anything remote is
+  numbered with a NEGATIVE id, and pasting one into `/music/<id>/cover.jpg`
+  builds a URL that 404s on every card. `artwork_url` comes first regardless,
+  absolute for a station's CDN and relative for the server's own proxy.
+- **`optBoolean` READS THE NUMBER 1 AS FALSE.** LMS writes its booleans as 1 and
+  0, so reading `connected` with `optBoolean` marks a whole household asleep.
+  `LmsClient.truthy` takes a number, a string or a real boolean. Same family as
+  the `optString` rule above: org.json's opt* accessors are not doing what the
+  name suggests.
+- **THE LYRION WIRE SHAPES ARE DOCUMENTED, NOT OBSERVED.** No Lyrion server is
+  reachable from here, so `LmsStatusTest` and `LmsDiscoveryTest` pin the
+  protocol as written down rather than as captured. That is why the parsing is
+  lenient — every field is looked for in more than one place — and why the
+  socket is kept out of `parseReply`: if the real thing differs, it is one
+  function to correct rather than a broadcast to debug from another room. Treat
+  the first real run as the verification, and read `/api/debug` first.
+- **LYRION IS FOUND BY BROADCAST, WHICH IS THE FIRST THING A NETWORK BREAKS.**
+  UDP 3483 is dropped by mesh systems, guest VLANs, client isolation and any
+  Docker bridge — the same list SSDP fails on. `SeedHosts` is therefore shared:
+  an address typed in for Sonos is tried as a Lyrion server too, because from
+  the user's side it is one question, not one per protocol. The broadcast's
+  `JSON` tag carries the real web port, so a server moved off 9000 is still
+  found rather than assumed.
 - **`now_playing.three_line` is line1=track, line2=artist, line3=ALBUM.** Read in
   the wrong order it makes a card headed with a track name, which looks almost
   right.

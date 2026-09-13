@@ -4,6 +4,8 @@ import com.musicd.sharecard.api.ArtProxy
 import com.musicd.sharecard.api.Assets
 import com.musicd.sharecard.api.CardApi
 import com.musicd.sharecard.http.HttpServer
+import com.musicd.sharecard.lms.LmsClient
+import com.musicd.sharecard.lms.LmsSource
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.CacheStore
 import com.musicd.sharecard.meta.Pitchfork
@@ -93,6 +95,9 @@ class ShareCardApp(
     private val soap = SoapClient(soapHttpClient())
     private val metaHttp = metadataHttpClient()
 
+    /** A device on the LAN answers quickly or not at all — the SOAP profile fits. */
+    private val lmsHttp = soapHttpClient()
+
     val household = Household(
         playerAt = { ip -> SonosPlayer(ip, soap) },
         seedHosts = seedHosts
@@ -121,6 +126,12 @@ class ShareCardApp(
     val sources = sourcesOverride ?: Sources(
         listOf(
             RoonSource(roon),
+            // LYRION SITS WITH ROON, ABOVE THE SPEAKERS, for exactly Roon's
+            // reason: it owns the library and resolves the metadata, while a
+            // squeezelite endpoint — or a UPnP renderer it is streaming to —
+            // sees only a stream. Asked about the same room, the server is the
+            // one that knows what the record is.
+            LmsSource(LmsClient(lmsHttp), hosts = { seedHosts }),
             SonosSource(household),
             UpnpSource(soap, metaHttp)
         )
