@@ -498,7 +498,11 @@ was simply not there, however carefully the DIDL was parsed.
   answered into `preferredZoneId`, so the first card silently converted
   "whatever's playing" into that room for every request after it — and once the
   named path became a lock, that turned into a card that stopped following the
-  house. Only an explicitly named zone is remembered.
+  house. It moved the PICKER too: `/api/zones` returns that field as
+  `selected`, and the page takes `zoneSel.value || data.selected`, so a reload
+  came back with a specific room chosen that the user never chose. Only an
+  explicitly named zone is remembered, which makes `selected` mean what its
+  name says.
 - **PER-ZONE DIAGNOSTICS MUST ASK PER ZONE.** `/api/debug` listed every room
   with the same record on it, because it called `nowPlaying(zone.id)` and got
   the fallback's answer five times over — the report contradicted the source
