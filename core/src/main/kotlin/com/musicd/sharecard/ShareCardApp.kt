@@ -16,6 +16,7 @@ import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.roon.RoonClient
 import com.musicd.sharecard.roon.RoonSource
 import com.musicd.sharecard.roon.TokenStore
+import com.musicd.sharecard.settings.SettingsStore
 import com.musicd.sharecard.sonos.Household
 import com.musicd.sharecard.sonos.SoapClient
 import com.musicd.sharecard.sonos.SonosPlayer
@@ -86,7 +87,18 @@ class ShareCardApp(
      * every album the app had ever looked up. Defaults to remembering nothing,
      * which is what the tests and any host with no storage get.
      */
-    cacheStore: CacheStore = CacheStore.NONE
+    cacheStore: CacheStore = CacheStore.NONE,
+    /**
+     * What the household has switched on: which streaming services are linked,
+     * and which rooms this app may answer about.
+     *
+     * Defaults to remembering nothing, which is not a neutral default and is
+     * meant not to be: with no zones enabled the app finds the house and shows
+     * none of it, pointing at Settings. That is the opt-in rule, and a host
+     * that passes no store gets it too rather than quietly behaving differently
+     * from the real thing.
+     */
+    settingsStore: SettingsStore = SettingsStore.inMemory()
 ) {
 
     /** What the Android shell supplies so [updater] can finish the job. */
@@ -179,7 +191,8 @@ class ShareCardApp(
 
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
-        webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz, similar
+        webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz, similar,
+        settingsStore
     )
 
     private val server = HttpServer(api, port, bindAddress)

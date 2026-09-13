@@ -46,6 +46,7 @@
   const linksEl  = document.getElementById("links");
   const simEl    = document.getElementById("similar");
   const refresh  = document.getElementById("refresh");
+  const settingsBtn = document.getElementById("settings");
 
   /*
    * Bumped on every load(), so a late redraw cannot land on a card the user
@@ -62,6 +63,9 @@
 
   /** The PIN, when this page is the one running on the device itself. */
   let setup = { onDevice: false, mayConfigure: false, pin: null };
+
+  /** What the settings screens last read back from the server. */
+  let settings = { services: [], zones: [], anyZoneEnabled: false };
 
   /** A source asking to be let in, which outranks any tip the page would show. */
   let noticeText = "";
@@ -169,8 +173,27 @@
     }
   }
 
-  async function getJson(url) {
-    const response = await fetch(url, { cache: "no-store" });
+  /**
+   * The requests the CARD is waiting on, so they can be let go of.
+   *
+   * A browser allows a handful of connections to one origin and this server
+   * answers on a small pool of threads, so a slow request holds a slot. That
+   * matters here because the one request that can be slow is the card's —
+   * `/api/now-playing` runs a discovery sweep — and the screen somebody is
+   * most likely to open while it runs is Settings, which needs a request of
+   * its own to draw anything.
+   *
+   * WITHOUT THIS, OPENING SETTINGS DURING A FIRST RUN LOOKS BROKEN. Measured
+   * in a browser against the real server with no players on the network: the
+   * menu appeared, the sub-screens did not, and thirty seconds later they all
+   * arrived at once. A first run is precisely when discovery is slowest AND
+   * when the empty card says "open Settings", so that is the worst possible
+   * place for it.
+   */
+  let cardRequests = null;
+
+  async function getJson(url, options) {
+    const response = await fetch(url, Object.assign({ cache: "no-store" }, options));
     if (!response.ok) {
       let detail = "";
       try { detail = (await response.json()).error || ""; } catch (e) { /* no body */ }
@@ -181,10 +204,10 @@
 
   // ----------------------------------------------------------------- zones
 
-  async function loadZones(force) {
+  async function loadZones(force, signal) {
     let data;
     try {
-      data = await getJson("/api/zones" + (force ? "?refresh=1" : ""));
+      data = await getJson("/api/zones" + (force ? "?refresh=1" : ""), signal);
     } catch (e) {
       return;
     }
@@ -237,6 +260,10 @@
 
   async function load(force) {
     const mine = ++token;
+    // Anything the last card was waiting on is no longer wanted.
+    if (cardRequests) cardRequests.abort();
+    cardRequests = typeof AbortController === "function" ? new AbortController() : null;
+    const signal = cardRequests ? { signal: cardRequests.signal } : undefined;
     current = null;
     actions.innerHTML = "";
     linksEl.innerHTML = "";
@@ -251,14 +278,16 @@
     spinner("Looking for what’s playing…");
 
     try {
-      await loadZones(force);
-      await loadWebhooks();
+      await loadZones(force, signal);
+      await loadWebhooks(signal);
       if (mine !== token) return;
 
       const params = new URLSearchParams();
       if (zoneSel.value) params.set("zone", zoneSel.value);
       if (force) params.set("refresh", "1");
-      const playing = await getJson("/api/now-playing?" + params);
+      // THE SLOW ONE. On a first run this is a discovery sweep, and it is the
+      // request Settings has to be able to walk away from.
+      const playing = await getJson("/api/now-playing?" + params, signal);
       if (mine !== token) return;
 
       // MORE THAN ONE ROOM ON. The server decides this, not the page: the
@@ -302,6 +331,11 @@
 
       await draw(mine, playing);
     } catch (e) {
+      if (mine !== token) return;
+      // ABANDONING THIS LOAD IS NOT A FAILURE. Opening Settings aborts
+      // whatever the card was waiting on, and the rejection that causes must
+      // not paint "Could not build the card" over the screen that did it.
+      if (e && e.name === "AbortError") return;
       if (mine !== token) return;
       message("Could not build the card.");
       errEl.textContent = (e && e.message) ? e.message : String(e);
@@ -985,9 +1019,14 @@
       b.onclick = () => postTo(hook, b);
       actions.appendChild(b);
     }
-    const cog = button("", webhooks.length ? "Webhooks" : "Add a Discord webhook", "cog");
-    cog.onclick = showWebhookSettings;
-    actions.appendChild(cog);
+    /*
+     * NO COG HERE ANY MORE. Setting a webhook up moved to Settings, under the
+     * cog in the header, alongside Services, Reviews and Zones — one place for
+     * configuration instead of a button that lives on the row that vanishes
+     * whenever there is no card. POSTING a card stays right here: it is the
+     * everyday action and must not cost a trip through a menu, which is why
+     * the loop above is untouched.
+     */
 
     // A notice from a source — "enable this extension in Roon" — outranks the
     // iOS tip and must NOT be cleared here. This line used to assign
@@ -1110,9 +1149,9 @@
     }
   }
 
-  async function loadWebhooks() {
+  async function loadWebhooks(signal) {
     try {
-      const data = await getJson("/api/webhooks");
+      const data = await getJson("/api/webhooks", signal);
       webhooks = data.webhooks || [];
       setup.mayConfigure = !!data.mayConfigure;
     } catch (e) {
@@ -1129,6 +1168,7 @@
    * is nothing on this page that could show it.
    */
   async function showWebhookSettings() {
+    claimStage();
     errEl.textContent = "";
     try {
       setup = await getJson("/api/setup");
@@ -1185,6 +1225,282 @@
     document.getElementById("wh-avatar").onchange = onAvatarChosen;
     for (const b of document.querySelectorAll(".wh-del")) {
       b.onclick = () => removeWebhook(b.getAttribute("data-id"));
+    }
+  }
+
+  // ---------------------------------------------------------------- settings
+
+  /*
+   * SETTINGS, AND THE SHAPE OF IT IS DELIBERATE.
+   *
+   * One menu, four screens, every one of them drawn into the SAME stage the
+   * card uses and built from the same `.wh` furniture as the webhook panel —
+   * because that panel already solved this once: short rows, one line of
+   * explanation each, and the buttons above the fold on a phone. A settings
+   * screen you have to scroll to finish is one people abandon half done.
+   *
+   * EVERY CHANGE IS A WRITE TO THE SERVER, not to this page. What is switched
+   * on decides what the SERVER does — a disabled service is never looked up, a
+   * disabled room is never asked — so the answer has to be the same on the
+   * phone, the iPad and the browser on the machine itself. That is also why it
+   * is not localStorage, which is where the one genuinely per-device
+   * preference (the held-chip service tick) still lives.
+   */
+  function showSettings() {
+    /*
+     * CLAIMED BEFORE ANY await, AND THE MENU ASKS THE SERVER FOR NOTHING.
+     *
+     * Both halves were wrong in the first cut and the symptom was the same: a
+     * cog that did nothing. The screen claimed the stage inside `panel()`,
+     * which is reached only AFTER an await — so during a first-run discovery
+     * sweep the very first await queued behind it and the menu never drew.
+     * Claiming first is what frees the connection; asking for nothing is what
+     * makes the menu instant even when the server is busy.
+     */
+    claimStage();
+    errEl.textContent = "";
+    panel(
+      menuRow("settings-services", "Services", "Which streaming links appear under the card"),
+      menuRow("settings-reviews", "Reviews", "Album reviews and scores"),
+      menuRow("settings-zones", "Zones", "Which rooms this app may show"),
+      menuRow("settings-webhooks", "Webhooks", "Post the card to a Discord channel"),
+      // NO PIN FIELD ON THE MENU — nothing here writes — but there must be a
+      // way out. The first cut had none, and the only route back to the card
+      // was reloading the page.
+      '<div class="wh-buttons"><button id="set-back">Done</button></div>'
+    );
+    bind("settings-services", showServices);
+    bind("settings-reviews", showReviews);
+    bind("settings-zones", showZones);
+    bind("settings-webhooks", showWebhookSettings);
+    bind("set-back", () => load(false));
+  }
+
+  /** A row in the settings menu: a name, a line saying what it is, a chevron. */
+  function menuRow(id, name, note) {
+    return '<button class="set-row" id="' + id + '">' +
+      '<span class="set-row-text"><b>' + escapeHtml(name) + "</b>" +
+      '<span class="set-row-note">' + escapeHtml(note) + "</span></span>" +
+      '<span class="set-chev" aria-hidden="true">›</span></button>';
+  }
+
+  /**
+   * The frame every settings screen is drawn in.
+   *
+   * It empties the action row, the hint and the caption itself, exactly as the
+   * webhook panel does — those describe a card, and there is no card here.
+   */
+  function panel(...parts) {
+    claimStage();
+    show('<div class="wh set">' + parts.join("") + "</div>");
+    actions.innerHTML = "";
+    hintEl.textContent = "";
+    nowEl.innerHTML = "";
+    linksEl.innerHTML = "";
+    linksEl.classList.add("hidden");
+    simEl.innerHTML = "";
+    simEl.classList.add("hidden");
+  }
+
+  /**
+   * TAKE THE STAGE OFF A load() THAT HAS NOT FINISHED YET.
+   *
+   * Found by opening Settings on a household that was still being discovered:
+   * the menu drew, and a second later the request that was already in flight
+   * came back and painted its own answer straight over it. The screen did not
+   * fail — it appeared and then silently vanished, which reads as a button
+   * that does not work.
+   *
+   * `token` is the mechanism this page already has for "somebody has moved
+   * on", and a second press of Refresh uses it the same way; bumping it makes
+   * the pending load discard its own answer when it lands. It also has to
+   * clear `busy`, because that load will check the token before re-enabling
+   * the Refresh button and will decide the job is no longer its to finish.
+   */
+  function claimStage() {
+    ++token;
+    // AND LET GO OF WHAT THE CARD WAS WAITING ON. Bumping the token alone
+    // makes the answer be discarded when it arrives, which is not the same as
+    // not waiting for it: the connection stays held, and the request this
+    // screen needs queues behind one whose answer is already unwanted.
+    if (cardRequests) { cardRequests.abort(); cardRequests = null; }
+    busy(false);
+  }
+
+  function bind(id, fn) {
+    const el = document.getElementById(id);
+    if (el) el.onclick = fn;
+  }
+
+  /**
+   * Back, and the PIN field that has to sit beside it.
+   *
+   * A browser that is not on the device running this cannot configure without
+   * the PIN — see the server's Access gate, which trusts loopback and nothing
+   * else. The field carries the same id the webhook panel uses, so `pinParam`
+   * reads it without needing to know which screen asked.
+   */
+  function backRow() {
+    const pinField = setup.mayConfigure ? "" :
+      '<input class="wh-input" id="wh-pin" inputmode="numeric" placeholder="PIN from the device">';
+    return '<div class="wh-row">' + pinField + "</div>" +
+      '<div class="wh-buttons"><button id="set-back">Back</button></div>' +
+      (setup.onDevice && setup.pin
+        ? '<p class="wh-note">PIN for other devices: <b>' + escapeHtml(setup.pin) + "</b></p>"
+        : "");
+  }
+
+  /** Ask the server who we are before drawing a screen that can write. */
+  async function refreshSetup() {
+    try {
+      setup = await getJson("/api/setup");
+    } catch (e) { /* fall back to what the last answer said */ }
+  }
+
+  /**
+   * A row with a switch on it.
+   *
+   * The input is a real checkbox rather than a div that looks like one, so it
+   * is reachable by keyboard and announced as a switch; the stylesheet draws
+   * the track and the knob over it.
+   */
+  function toggleRow(id, label, note, on) {
+    return '<label class="set-toggle"><span class="set-row-text"><b>' +
+      escapeHtml(label) + "</b>" +
+      (note ? '<span class="set-row-note">' + escapeHtml(note) + "</span>" : "") +
+      "</span>" +
+      '<input type="checkbox" data-key="' + escapeHtml(id) + '"' + (on ? " checked" : "") +
+      '><span class="set-switch" aria-hidden="true"></span></label>';
+  }
+
+  /**
+   * Send one change and redraw from what the server says came back.
+   *
+   * DELIBERATELY ONE KEY AT A TIME. The body names only what changed, so two
+   * people with this open cannot overwrite each other's unrelated choices with
+   * a stale snapshot of everything.
+   */
+  async function writeSetting(group, key, value, redraw) {
+    errEl.textContent = "";
+    const body = {};
+    body[group] = {};
+    body[group][key] = value;
+    try {
+      const response = await fetch("/api/settings" + pinParam(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const answer = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(answer.error || ("Refused (" + response.status + ")"));
+      settings = answer;
+      redraw();
+    } catch (e) {
+      errEl.textContent = e.message || String(e);
+      // Redraw anyway: the switch flipped under the finger and the server did
+      // not agree, so leaving it flipped would be a lie about what is on.
+      redraw();
+    }
+  }
+
+  /**
+   * @param withZones ask for the room list too, which costs a discovery sweep.
+   *   Services and Reviews must not: they need nothing from the network, and
+   *   waiting on one made them look like screens that did not open.
+   */
+  async function loadSettings(withZones) {
+    try {
+      settings = await getJson("/api/settings" + (withZones ? "?zones=1" : ""));
+    } catch (e) {
+      settings = { services: [], zones: [], anyZoneEnabled: false };
+    }
+  }
+
+  async function showServices() {
+    // Before the awaits below, so the card's pending request is let go of
+    // rather than holding the connection this screen needs.
+    claimStage();
+    errEl.textContent = "";
+    await refreshSetup();
+    await loadSettings(false);
+    const rows = (settings.services || [])
+      .map((s) => toggleRow(s.id, s.name, "", s.enabled))
+      .join("");
+    panel(
+      '<p class="wh-note">Switched off, a service is not linked under the card ' +
+      "and is not looked up.</p>",
+      rows,
+      backRow()
+    );
+    bind("set-back", showSettings);
+    for (const box of document.querySelectorAll('.set-toggle input[data-key]')) {
+      box.onchange = () =>
+        writeSetting("services", box.getAttribute("data-key"), box.checked, showServices);
+    }
+  }
+
+  async function showReviews() {
+    // Before the awaits below, so the card's pending request is let go of
+    // rather than holding the connection this screen needs.
+    claimStage();
+    errEl.textContent = "";
+    await refreshSetup();
+    // EMPTY ON PURPOSE, and it says so. A screen that is blank with no
+    // explanation reads as one that failed to load.
+    panel(
+      '<p class="wh-note">Nothing to set here yet. Album reviews and scores ' +
+      "come from Pitchfork and are always on.</p>",
+      backRow()
+    );
+    bind("set-back", showSettings);
+  }
+
+  async function showZones() {
+    // Before the awaits below, so the card's pending request is let go of
+    // rather than holding the connection this screen needs.
+    claimStage();
+    errEl.textContent = "";
+
+    /*
+     * DRAWN BEFORE IT IS ASKED, because this is the one settings screen that
+     * genuinely has to wait: a list of discovered rooms cannot be produced
+     * without discovering them, and on a first run that is the slowest thing
+     * this app does. Without this the screen is blank for the whole sweep,
+     * which is indistinguishable from a menu item that does nothing.
+     */
+    panel(
+      '<div class="placeholder"><div class="spinner"></div>' +
+      "<div>Looking for rooms\u2026</div></div>"
+    );
+
+    const mine = token;
+    await refreshSetup();
+    await loadSettings(true);
+    // Somebody left while the sweep ran. Their screen is not ours to replace.
+    if (mine !== token) return;
+    const zones = settings.zones || [];
+
+    const rows = zones
+      .map((z) => toggleRow(z.uid, z.name, z.source || "", z.enabled))
+      .join("");
+
+    /*
+     * A HOUSE WITH NOTHING IN IT YET IS NOT AN ERROR. A television that is
+     * powered off has not answered discovery, so it is simply not here — and
+     * saying that is the difference between "wait and press Refresh" and an
+     * evening spent on the network.
+     */
+    const note = zones.length
+      ? '<p class="wh-note">Only the rooms switched on here appear in the picker. ' +
+        "Anything powered off joins this list when it answers.</p>"
+      : '<p class="wh-note">No rooms have answered yet. Anything powered off ' +
+        "appears here once it does — press Refresh to look again.</p>";
+
+    panel(note, rows, backRow());
+    bind("set-back", showSettings);
+    for (const box of document.querySelectorAll('.set-toggle input[data-key]')) {
+      box.onchange = () =>
+        writeSetting("zones", box.getAttribute("data-key"), box.checked, showZones);
     }
   }
 
@@ -1421,6 +1737,7 @@
   // ---------------------------------------------------------------- wiring
 
   refresh.addEventListener("click", () => load(true));
+  settingsBtn.addEventListener("click", showSettings);
   zoneSel.addEventListener("change", () => {
     // From here on the picker outranks whatever the server remembers, which
     // is what lets "Whatever's playing" mean it.

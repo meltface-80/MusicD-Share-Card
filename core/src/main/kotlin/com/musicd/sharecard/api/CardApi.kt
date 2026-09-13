@@ -1,6 +1,7 @@
 package com.musicd.sharecard.api
 
 import com.musicd.sharecard.Log
+import com.musicd.sharecard.bool
 import com.musicd.sharecard.describe
 import com.musicd.sharecard.str
 import com.musicd.sharecard.api.Json.putOrNull
@@ -18,6 +19,8 @@ import com.musicd.sharecard.source.Room
 import com.musicd.sharecard.webhook.DiscordPoster
 import com.musicd.sharecard.webhook.Webhook
 import com.musicd.sharecard.webhook.WebhookRejected
+import com.musicd.sharecard.settings.Settings
+import com.musicd.sharecard.settings.SettingsStore
 import com.musicd.sharecard.webhook.WebhookStore
 import com.musicd.sharecard.webhook.WebhookUrls
 import com.musicd.sharecard.source.Sources
@@ -48,10 +51,28 @@ class CardApi(
     private val updater: Updater? = null,
     private val qobuz: QobuzAlbum? = null,
     /** Null where suggestions are switched off; the row simply never appears. */
-    private val similar: Similar? = null
+    private val similar: Similar? = null,
+    /**
+     * What the household has switched on. Defaults to remembering nothing,
+     * which for a test means every service on and, deliberately, no zones.
+     */
+    private val settingsStore: SettingsStore = SettingsStore.inMemory()
 ) : HttpServer.Handler {
 
     private val access = Access { webhooks.pin() }
+
+    init {
+        /*
+         * THE FILTER IS INSTALLED ONCE, AND IT READS THE STORE EVERY TIME.
+         *
+         * Handing Sources a snapshot of the enabled set would freeze it at
+         * startup, so enabling a room would do nothing until the next restart
+         * — on a device that is never restarted. The lambda asks the store
+         * instead, and the store holds its answer in memory after the first
+         * read, so this costs nothing on the request path.
+         */
+        sources.zoneFilter = { id -> settingsStore.read().zoneEnabled(id) }
+    }
 
     /**
      * One thread, for the APK download only.
@@ -107,6 +128,11 @@ class CardApi(
             else -> Json.error(405, "That method is not used here.")
         }
         "/api/setup" -> setup(request)
+        "/api/settings" -> when (request.method) {
+            "POST" -> settingsWrite(request)
+            in READ_METHODS -> settingsRead(request.param("zones") == "1")
+            else -> Json.error(405, "That method is not used here.")
+        }
         // Reading what version is out there changes nothing. Fetching an APK
         // and pointing Android's installer at it changes everything on the
         // device, so both of those are gated exactly like adding a webhook.
@@ -182,6 +208,103 @@ class CardApi(
         .put("source", zone.source)
         .put("rooms", Json.strings(zone.rooms))
 
+    /** What is switched on right now. Held in memory by the store. */
+    private val enabledServices: Settings get() = settingsStore.read()
+
+    // ------------------------------------------------------------- settings
+
+    /**
+     * Everything the settings screen draws: what exists, and what is on.
+     *
+     * THE ZONES HERE ARE [Sources.allZones] AND NOT [Sources.zones], which is
+     * the one place in this app that difference matters. Everywhere else a
+     * switched-off room does not exist; on this screen it has to be visible,
+     * or there would be no way to switch it on. A television that is powered
+     * off is simply not in the list yet, and that is not an error — it appears
+     * when it next answers discovery.
+     */
+    private fun settingsRead(withZones: Boolean = false): Response {
+        val settings = settingsStore.read()
+        /*
+         * THE ZONE LIST IS ASKED FOR SEPARATELY, AND THAT IS NOT TIDINESS.
+         *
+         * Listing zones goes to the sources, which serialise against a
+         * discovery sweep already in progress — so while the house is being
+         * searched, this call blocks. Bundling the zones in meant the SERVICES
+         * screen, which needs nothing from the network at all, sat waiting on
+         * a sweep it had no use for: measured in a browser against the real
+         * server, the screen simply did not appear until discovery gave up.
+         *
+         * Services and Reviews now cost no network. Zones still waits, because
+         * a list of discovered devices cannot be produced without discovering
+         * them — but the page draws its frame first and says it is looking.
+         */
+        val zones = if (!withZones) emptyList() else runCatching { sources.allZones() }
+            .onFailure { Log.w(TAG, "could not list zones for settings: ${it.message}") }
+            .getOrDefault(emptyList())
+        return Json.obj(
+            JSONObject()
+                .put(
+                    "services",
+                    JSONArray(
+                        StreamingLinks.services().map {
+                            JSONObject()
+                                .put("id", it.service)
+                                .put("name", it.name)
+                                .put("enabled", settings.serviceEnabled(it.service))
+                        }
+                    )
+                )
+                .put(
+                    "zones",
+                    JSONArray(
+                        zones.map {
+                            zoneJson(it).put("enabled", settings.zoneEnabled(it.id))
+                        }
+                    )
+                )
+                // So the screen can say "nothing is switched on yet" rather
+                // than drawing an empty list that looks like a failed scan.
+                .put("anyZoneEnabled", !settings.noZonesChosen)
+        )
+    }
+
+    /**
+     * Turn things on and off.
+     *
+     * GATED, AND THAT IS THIS REPO'S STANDING RULE RATHER THAN A JUDGEMENT
+     * ABOUT ROOM NAMES. A new route that writes goes behind
+     * [Access.mayConfigure] in the same change that adds it. Loopback is
+     * trusted without a PIN, so on the Android build the app's own WebView
+     * configures freely; a browser across the house needs the PIN, exactly as
+     * it does for a webhook.
+     *
+     * PARTIAL BY DESIGN. The body names only what changed, so two people with
+     * the page open cannot overwrite each other's unrelated choices with a
+     * stale snapshot of the whole thing.
+     */
+    private fun settingsWrite(request: Request): Response {
+        if (!access.mayConfigure(request)) return needsPin()
+        val body = Json.body(request)
+        var settings = settingsStore.read()
+
+        body.optJSONObject("services")?.let { services ->
+            for (id in services.keys()) {
+                settings = settings.withService(id, services.bool(id))
+            }
+        }
+        body.optJSONObject("zones")?.let { zones ->
+            for (id in zones.keys()) {
+                settings = settings.withZone(id, zones.bool(id))
+            }
+        }
+
+        settingsStore.write(settings)
+        // Answered WITHOUT the zone list: flipping a switch must not trigger a
+        // discovery sweep, and the page already has the list it drew from.
+        return settingsRead()
+    }
+
     /**
      * What the card is about.
      *
@@ -244,6 +367,17 @@ class CardApi(
      * difference between an answer and a shrug.
      */
     private fun reasonForNothing(zoneId: String?): String = when {
+        /*
+         * "NO PLAYERS FOUND" IS A LIE WHEN THE PLAYERS ARE SIMPLY SWITCHED OFF,
+         * and it is the worst possible lie here: it sends somebody to the
+         * network — hosts.txt, multicast, VLANs — for a problem whose fix is
+         * two taps in Settings. Rooms are opt-in, so a first run finds plenty
+         * and may show none, and the message has to say which of those it is.
+         */
+        settingsStore.read().noZonesChosen && sources.allZones().isNotEmpty() ->
+            "No rooms are switched on yet. Open Settings \u2192 Zones and choose which to show."
+        settingsStore.read().noZonesChosen ->
+            "No players found yet. They appear in Settings \u2192 Zones as they answer."
         !sources.anyZones() -> "No players found on the network."
         zoneId == null -> "Nothing is playing."
         else -> {
@@ -384,15 +518,21 @@ class CardApi(
                 // Where to hear it. No lookup and no network — these are a
                 // function of the album and the artist, so they come back on
                 // the fast path too and are on screen with the first paint.
+                // A SWITCHED-OFF SERVICE IS FILTERED HERE, on the server, and
+                // not hidden by the page. The page would be the easy place and
+                // the wrong one: the chips would still be built, and the Qobuz
+                // lookup below would still run for a service nobody wants.
                 .put(
                     "links",
                     JSONArray(
-                        StreamingLinks.forAlbum(artist, album).map {
-                            JSONObject()
-                                .put("service", it.service)
-                                .put("name", it.name)
-                                .put("url", it.url)
-                        }
+                        StreamingLinks.forAlbum(artist, album)
+                            .filter { enabledServices.serviceEnabled(it.service) }
+                            .map {
+                                JSONObject()
+                                    .put("service", it.service)
+                                    .put("name", it.name)
+                                    .put("url", it.url)
+                            }
                     )
                 )
                 // The page shows nothing different for a cached miss than for a
@@ -561,6 +701,17 @@ class CardApi(
         val album = request.param("album").orEmpty()
         val artist = request.param("artist").orEmpty()
         if (album.isEmpty()) return Json.error(400, "No album named.")
+        /*
+         * SWITCHED OFF MEANS NOT LOOKED UP, and Qobuz is the service where
+         * that sentence has teeth. Every other chip is a URL built from the
+         * album and the artist — no network at all — but this one reads a page
+         * off www.qobuz.com behind a rate gate to resolve a real album id. So
+         * turning Qobuz off in Settings has to stop the REQUEST, not just hide
+         * the chip it would have upgraded.
+         */
+        if (!enabledServices.serviceEnabled("qobuz")) {
+            return Json.obj(JSONObject().put("url", JSONObject.NULL))
+        }
         val q = qobuz ?: return Json.obj(JSONObject().put("url", JSONObject.NULL))
         val url = if (request.param("fast") == "1") q.cachedDeepLink(artist, album)
         else q.deepLink(artist, album)
@@ -667,9 +818,14 @@ class CardApi(
         return body(u)
     }
 
+    /**
+     * IT NO LONGER SAYS "webhooks", because it no longer only guards them.
+     * Settings goes through the same gate, and a message naming the wrong
+     * screen is how somebody decides the PIN prompt is a bug.
+     */
     private fun needsPin(): Response = Json.error(
         401,
-        "Enter the PIN shown on the device running Share Card to change webhooks."
+        "Enter the PIN shown on the device running Share Card to change settings."
     )
 
     // ------------------------------------------------------------- the page
@@ -711,7 +867,8 @@ class CardApi(
          * routes work", and that quietly made POST /api/now-playing answer 200.
          * Every route not in here is GET-only.
          */
-        val WRITE_ROUTES = setOf("/api/webhooks", "/api/update/check", "/api/update/apply")
+        val WRITE_ROUTES =
+            setOf("/api/webhooks", "/api/settings", "/api/update/check", "/api/update/apply")
 
         /** The methods a route that changes nothing may be asked with. */
         val READ_METHODS = setOf("GET", "HEAD")
