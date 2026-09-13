@@ -249,6 +249,22 @@ was simply not there, however carefully the DIDL was parsed.
   Two servers sharing a host is not a fix; stop Lyrion and the sleeve goes blank
   again. When a bug disappears without the change that was meant to fix it, find
   out which unrelated thing is holding it up.
+- **THE ALBUM BLURB IS CHECKED AGAINST THE ARTIST NOW, AND IT NEVER WAS.**
+  `wikipediaAlbum` put the artist in the SEARCH QUERY and then guarded the
+  answer on the album title alone, so Wikipedia's ranking was the only thing
+  deciding which record the words were about. "Cult" by To/Die/For came back
+  with Static-X's "Cult of Static" — `Normalize.namesOverlap` anchors at the
+  front and deliberately accepts a name qualified on the RIGHT, which is what
+  makes "Spiderland" match "Spiderland (Slint album)" and is wanted there.
+  Reported from the field as the wrong blurb. An album page rarely names the
+  act in its TITLE and almost always does in its first sentence, so
+  `albumArticleFits` reads the EXTRACT through `Normalize.mentions` — the
+  prose counterpart to `namesOverlap`, a run of whole words rather than a
+  prefix, because a name sits anywhere in a sentence. "and" is dropped from
+  both sides or "Nick Cave & the Bad Seeds" is refused over a conjunction;
+  "the" is NOT, or "The Who" lands back inside "The Guess Who". A spelling the
+  article does not carry costs the blurb, which is the trade this app keeps
+  making: a missing blurb is honest, a confident wrong one is not.
 - **A source can report an opaque id where a title should be.** Roon streaming
   to Sonos sends "Roon" + 32 hex characters as `dc:title`. A card headed with a
   hash looks like the app working, which is worse than one that admits it knows
