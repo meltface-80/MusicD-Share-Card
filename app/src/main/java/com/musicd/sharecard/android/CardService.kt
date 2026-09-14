@@ -13,7 +13,9 @@ import android.os.IBinder
 import com.musicd.sharecard.Log
 import com.musicd.sharecard.ShareCardApp
 import com.musicd.sharecard.api.Assets
+import com.musicd.sharecard.discover.FilePlayHistory
 import com.musicd.sharecard.roon.RoonClient
+import java.io.File
 
 /**
  * The card server, running as a foreground service.
@@ -161,7 +163,13 @@ class CardService : Service() {
                 // Which streaming services are linked and which rooms may be
                 // shown. Rooms are opt-in, so a first run finds the house and
                 // draws none of it until somebody says which.
-                settingsStore = SettingsFile(this)
+                settingsStore = SettingsFile(this),
+                // What this device has drawn a card for — the Discover
+                // screen's only source of truth. In filesDir beside the other
+                // three, and read lazily like they are: this is constructed
+                // inside startForeground()'s five seconds, and a file read in
+                // there is exactly what used to kill the app.
+                history = FilePlayHistory(File(filesDir, "history.json"))
             ).also { it.start() }
 
             app = started

@@ -182,4 +182,54 @@ class SettingsDrawnTest {
             lines.any { it.contains("act.review") }
         )
     }
+
+    // ------------------------------------------------------- the new screen
+
+    @Test
+    fun `both tabs exist and the page wires them`() {
+        val markup = html.readText()
+        for (id in listOf("tab-card", "tab-new")) {
+            assertTrue("the header has no $id", markup.contains("id=\"$id\""))
+        }
+        val lines = code(page)
+        assertTrue(
+            "the Discover tab is drawn and does nothing",
+            lines.any { it.contains("showNewMusic") }
+        )
+    }
+
+    @Test
+    fun `the Discover screen takes the card's rows down with it`() {
+        val lines = code(page)
+        // Drawn over the grid on the first cut: the sleeves came in and under
+        // them sat "Playing in SR11 · via Roon", a Download button and two rows
+        // of links about something else — and because those rows kept their
+        // height, the grid was squeezed into a strip and its first row of
+        // sleeves was clipped.
+        val screen = lines.dropWhile { !it.contains("async function showNewMusic") }
+            .takeWhile { !it.contains("function newTile") }
+        assertTrue(
+            "showNewMusic never clears the rows that describe a card",
+            screen.any { it.contains("clearCardRows") }
+        )
+    }
+
+    @Test
+    fun `the page never decides what a record is new because of`() {
+        val lines = code(page)
+        // "Because you played Slint" against "New this week" is what makes this
+        // screen mean its name, and that rule lives in :core with tests. A
+        // second copy here is how the two drift — the same argument as the
+        // chooser's grid rule.
+        assertTrue(
+            "the page is composing its own reason instead of drawing the " +
+                "server's, which puts the rule in two places",
+            lines.none { it.contains("Because you played") }
+        )
+        assertTrue(
+            "the page never draws pick.why, so the server would be explaining " +
+                "itself to nobody",
+            lines.any { it.contains("pick.why") }
+        )
+    }
 }

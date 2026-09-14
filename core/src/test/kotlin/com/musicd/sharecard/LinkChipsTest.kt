@@ -2,6 +2,7 @@ package com.musicd.sharecard
 
 import com.musicd.sharecard.meta.Reviews
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -108,5 +109,51 @@ class LinkChipsTest {
         val close = text.indexOf('}', open)
         assertTrue("the `$selector` rule is never closed", close > open)
         return text.substring(open + 1, close)
+    }
+
+    // ------------------------------- a review chip and a service chip differ
+
+    /*
+     * ONE GRID HELD BOTH, so whatever the reviews left of a line was filled by
+     * the first service: Qobuz on the end of the review row, Spotify and
+     * Bandcamp starting a row of their own beneath it. Two chips that do
+     * entirely different things shared a line, and WHICH ones did depended on
+     * how many review sources happened to be switched on. Reported as exactly
+     * that — keep them on different lines, and give either one two lines if it
+     * needs them.
+     */
+
+    @Test
+    fun `the two kinds of chip are built into separate rows`() {
+        val lines = code(File("../app/src/main/assets/web/app.js"))
+        assertTrue(
+            "buildLinks no longer builds a row for the review chips",
+            lines.any { it.contains("reviewRow") }
+        )
+        assertTrue(
+            "buildLinks no longer builds a row for the service chips",
+            lines.any { it.contains("serviceRow") }
+        )
+        // The failure this guards is a service appended where the reviews go.
+        assertTrue(
+            "a service chip is being appended to the review row, which is the " +
+                "bug: the rows must hold one kind of thing each",
+            lines.none { it.contains("reviewRow.appendChild") && it.contains("svc") }
+        )
+    }
+
+    @Test
+    fun `the four columns are on the row, not on the container`() {
+        // `.links` being the grid is what made them share one. It is the column
+        // now; each `.links-row` is the four-column grid it used to be.
+        assertTrue(
+            "`.links-row` is not a four-column grid, so the chips would stack",
+            ruleFor(".links-row").contains("repeat(4")
+        )
+        assertFalse(
+            "`.links` is a grid again, which puts both kinds of chip back on " +
+                "one flow and lets a service finish the review line",
+            ruleFor(".links").contains(Regex("""display:\s*grid"""))
+        )
     }
 }

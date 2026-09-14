@@ -735,6 +735,17 @@ was simply not there, however carefully the DIDL was parsed.
   too narrow for the names on a phone, and the alternative was shortening
   services' own names or an ellipsis that hides the word telling two of them
   apart.
+- **A REVIEW CHIP AND A SERVICE CHIP NEVER SHARE A LINE.** One grid held both,
+  so whatever the reviews left of a line was filled by the first service —
+  Qobuz on the end of the review row, Spotify and Bandcamp starting a row of
+  their own beneath it. Two chips that do entirely different things shared a
+  line, and WHICH ones did depended on how many review sources happened to be
+  switched on that day. Reported as exactly that. `.links` is the column now
+  and each `.links-row` is the four-column grid it used to be, so each kind
+  takes as many lines as it needs and the other starts fresh. An empty row is
+  not added at all, because a gap is still a gap. Verified with five reviews
+  and seven services at 390px: two lines each, nothing mixed, and nothing
+  scrolls at 780 or 844 tall.
 - **EVERY CHIP IN THAT ROW IS ONE FIXED SIZE, AND A LABEL MAY NEVER SET IT.**
   `align-items: stretch` keeps the grid a grid by making the one-line chips as
   tall as the two-line ones — and it works the other way too, so ONE tall chip
@@ -1574,6 +1585,74 @@ was simply not there, however carefully the DIDL was parsed.
   because a GET that installs software is one a link prefetch can fire by
   itself. `/api/update/status` is a read and stays open. `WRITE_ROUTES` names
   every path a POST may reach; nothing infers it.
+
+## Discover, and the fourth thing that writes to disk
+
+- **"BASED ON YOUR LISTENING" NEEDED A SOURCE OF TRUTH AND THIS APP HAD NONE.**
+  It drew a card and forgot. Offered a ListenBrainz username instead, or keying
+  off whatever is on screen right now, the owner chose `PlayHistory`: it needs
+  no account, it works the same for Roon, Sonos, Lyrion and UPnP, and it is the
+  only one of the three where the words mean what they say. THE COST IS STATED
+  RATHER THAN DISCOVERED — it starts empty, so the screen is thin until the app
+  has been used for a while, and the empty state says exactly that rather than
+  "nothing new".
+- **IT HOLDS AS LITTLE AS IT CAN.** An artist, an album and when it was last
+  seen — no track, no per-play timestamps, no counts. None of that is needed to
+  ask "what is new by acts this house hears", and a record of what somebody
+  played and when is worth more to a stranger than a list of names. Capped at
+  60 acts, oldest out first, so an act nobody has played for months stops
+  shaping the screen. It FOLDS ON THE ACT, not the pair: a household that plays
+  six Bowie records weighs as Bowie once, or one act crowds out everyone else.
+- **IT IS WRITTEN OFF THE REQUEST THREAD, like the cache.** `remembering` is a
+  single daemon thread and the append happens after the card's answer is built.
+  A card must not be a millisecond slower because something is being remembered
+  about it, and a full disk must not be able to fail one. Throwable is caught at
+  both levels, because a rejected execution and a class that will not initialise
+  are both Errors.
+- **THE SCREEN IS SLEEVES, AND THAT IS THE LEGAL POSITION RATHER THAN A STYLE.**
+  Asked for as "anything we can legally scrape and make our own page rather than
+  more links", with "I just don't want to breach copyright of articles". So: a
+  title and an artist are facts, a sleeve identifies the record the same way the
+  card already does, and everything anybody has WRITTEN stays a link to whoever
+  wrote it. No article text is reproduced, and no route could return any. RSS
+  feeds are published for syndication and a digest of headlines would be
+  defensible too — that is the next increment — but reproducing the prose never
+  is, whatever it is wrapped in.
+- **TWO SOURCES, ANSWERING DIFFERENT QUESTIONS.** ListenBrainz's fresh-releases
+  window is ONE request for every release in a date range, so the filtering
+  against the history happens in `NewMusic` — sixty acts would otherwise be
+  sixty rate-limited MusicBrainz browses, which is a minute of waiting for a
+  screen. Deezer's editorial list is not personal at all and is what fills a
+  FIRST RUN. It only ever fills the space left over: a record by an act this
+  house actually plays is never pushed out by one that is new to everybody.
+- **NEITHER ENDPOINT HAS EVER BEEN REACHED FROM HERE.** Checked rather than
+  assumed — the proxy answers 403 to the CONNECT for both hosts, and for
+  musicbrainz.org, nme.com, pitchfork.com, daily.bandcamp.com and thequietus.com
+  with it. So the shapes are the documented ones, the parsing is lenient (every
+  field looked for in more than one place, a ragged row dropped rather than
+  taking the screen), the socket is kept out of it, and `attempts()` lands in
+  `/api/debug` under "Discover". Treat the first real run as the verification —
+  the same posture as Lyrion and Roon.
+- **THE PAGE NEVER DECIDES WHY A RECORD IS ON THE SCREEN.** "Because you played
+  Slint" against "New this week" is the difference between this screen meaning
+  its name and being a new-releases list, and that rule lives in `:core` where
+  it has tests. The page draws `why`. Same argument as the chooser grid's rule,
+  and `SettingsDrawnTest` scans for a second copy appearing in `app.js`.
+- **A SCREEN THAT IS NOT ABOUT A RECORD MUST TAKE THE CARD'S ROWS DOWN.** The
+  caption, the action row, the links and the suggestions all describe a record.
+  Drawn over the grid on the first cut: the sleeves came in and under them sat
+  "Playing in SR11 · via Roon", a Download button and two rows of links about
+  something else — and because those rows kept their height, the grid was
+  squeezed into a strip and its first row of sleeves was clipped.
+  `clearCardRows()` is one function rather than four lines in each screen,
+  because the fourth screen is where somebody forgets one.
+- **AND `.browsing` IS NOT `.scrolls`.** `.scrolls` is the diagnostics' class
+  and sets `flex: 1 1 auto`; using it drew a tall panel with the sleeves
+  floating in the middle of it — the same mistake the chooser grid already made
+  once and has a comment about. `restage()` decides every one of these classes
+  from what actually went into the stage, because a caller that has to remember
+  to CLEAR a class is a caller that will one day leave the diagnostics' scroll
+  on a card.
 
 ## Scope and process
 
