@@ -33,6 +33,10 @@
   a:hover { text-decoration: underline; }
 
   .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+  /* A third of the screenshot row at full width — .wrap's 980 less its 20px
+     sides, less the two 14px gaps. Named here so it follows .wrap if that
+     ever moves, rather than being a number in one rule nobody can check. */
+  :root { --shot-col: calc((980px - 40px - 28px) / 3); }
 
   /* ---------- top nav ---------- */
   nav.topnav {
@@ -90,7 +94,12 @@
      phone screens follow in a row that wraps to one column on a narrow
      screen. Shot on a real device rather than rendered, so what is on this
      page is what somebody actually sees. */
-  .shots { display: grid; gap: 14px; }
+  /* minmax(0, 1fr), NOT the default `auto`. An auto track is sized from its
+     items' content, so the moment one of the rows below got a max-width the
+     whole grid sized itself to that row instead of to the page — 434px of
+     screenshots inside a 360px phone, scrolling sideways. Capping the track at
+     the container is the fix, and it changes nothing at any other width. */
+  .shots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .shots img {
     display: block; width: 100%; height: auto;
     border: 1px solid var(--line); border-radius: 12px; background: var(--bg-deep);
@@ -100,6 +109,14 @@
     display: grid; gap: 14px;
     grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   }
+  /* A ROW OF TWO MUST NOT DRAW ITS PHONES BIGGER THAN A ROW OF THREE.
+     `1fr` stretches the items to fill what is left, so the last row — eight
+     screenshots do not divide by three — came out half again as large as the
+     rows above it, and the same phone looked like two different devices. This
+     caps each one at the width a third of the row would have given it and
+     centres the pair. Still a grid, so it collapses to one column on a phone
+     exactly as the others do. */
+  .shots .row.two { width: 100%; max-width: calc(var(--shot-col) * 2 + 14px); margin-inline: auto; }
   .shots figure { margin: 0; }
   .shots figcaption {
     color: var(--muted); font-size: 13px; margin-top: 8px; text-align: center;
@@ -339,7 +356,7 @@
           <figcaption>More than one room on, so it asks rather than choosing.</figcaption>
         </figure>
         <figure>
-          <img src="screenshots/zones.jpg" alt="The room picker open, listing Whatever's playing and each room from Roon, Sonos and UPnP with the source named beside it">
+          <img src="screenshots/picker.jpg" alt="The room picker open, listing Whatever's playing and each room from Roon, Sonos and UPnP with the source named beside it">
           <figcaption>Every room, whichever source found it.</figcaption>
         </figure>
         <figure>
@@ -353,12 +370,22 @@
           <figcaption>Behind the cog: services, reviews, rooms and webhooks.</figcaption>
         </figure>
         <figure>
+          <img src="screenshots/zones.jpg" alt="The Zones screen: a switch for each room found, with the source named under it — SR11 and Stereo Fives from Roon, Stereo Fives and TV Speaker from Sonos, WiiM Pro Plus from UPnP">
+          <figcaption>Rooms are opt-in, and a room two sources can see is listed under each.</figcaption>
+        </figure>
+        <figure>
           <img src="screenshots/services.jpg" alt="The Services screen: a switch for each of Qobuz, TIDAL, Spotify, Apple Music, Amazon Music, Deezer and Bandcamp">
           <figcaption>Only the services you use, and the rest are never looked up.</figcaption>
         </figure>
+      </div>
+      <div class="row two">
         <figure>
           <img src="screenshots/reviews.jpg" alt="The Reviews screen: About the record with Wikipedia, Pitchfork and AllMusic switched on, and About the artist with Wikipedia and AllMusic">
           <figcaption>Wikipedia, Pitchfork and AllMusic about the record — and the same two about the artist.</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/webhooks.jpg" alt="The Webhooks screen: channel name, the name to post as, the Discord webhook URL, a picture to upload, and Save">
+          <figcaption>Paste a webhook once and the card posts itself to Discord.</figcaption>
         </figure>
       </div>
     </div>

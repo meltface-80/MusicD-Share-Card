@@ -60,12 +60,16 @@ webhooks — the URLs themselves are still never handed out, only changed.
 
 <p>
   <img src="docs/screenshots/settings.jpg" width="330" alt="The settings menu: Services, Reviews, Zones and Webhooks">
-  <img src="docs/screenshots/services.jpg" width="330" alt="The Services screen: a switch for each of Qobuz, TIDAL, Spotify, Apple Music, Amazon Music, Deezer and Bandcamp">
+  <img src="docs/screenshots/zones.jpg" width="330" alt="The Zones screen: a switch for each room found, with the source named under it — SR11 and Stereo Fives from Roon, Stereo Fives and TV Speaker from Sonos, WiiM Pro Plus from UPnP">
 </p>
+
+Two sources seeing the same room list it twice, each under its own name, so
+you can choose which one describes it — a Sonos speaker Roon is playing to is
+better described by Roon.
 
 <p>
   <img src="docs/screenshots/rooms.jpg" width="330" alt="Whatever's playing: a grid of album covers, one per room, with the rooms that are silent listed underneath">
-  <img src="docs/screenshots/zones.jpg" width="330" alt="The room picker open, listing Whatever's playing and each room from Roon, Sonos and UPnP with the source named beside it">
+  <img src="docs/screenshots/picker.jpg" width="330" alt="The room picker open, listing Whatever's playing and each room from Roon, Sonos and UPnP with the source named beside it">
 </p>
 
 ## Install
@@ -220,6 +224,11 @@ Under the card is a row of links for whatever is playing:
 - a pre-filled search on **Qobuz, TIDAL, Spotify, Apple Music, Amazon Music,
   Deezer** and **Bandcamp**
 
+**Settings → Services** decides which of those chips appear. Switched off, a
+service is not linked and is not looked up.
+
+<img src="docs/screenshots/services.jpg" width="360" alt="The Services screen: a switch for each of Qobuz, TIDAL, Spotify, Apple Music, Amazon Music, Deezer and Bandcamp">
+
 They open the service's app if you have it and its web player if you don't.
 They're searches rather than links to the album itself — that needs each
 service's own id for the record, and their APIs need credentials. Qobuz is the
@@ -277,7 +286,7 @@ turn that off.
 Get the URL from Discord: **Edit Channel → Integrations → Webhooks → Copy
 Webhook URL**.
 
-<img src="docs/screenshots/webhooks.jpg" width="360" alt="The webhook settings: channel name, the name to post as, the webhook URL, a picture to upload, and the PIN">
+<img src="docs/screenshots/webhooks.jpg" width="360" alt="The Webhooks screen: channel name, the name to post as, the Discord webhook URL, a picture to upload, and Save">
 
 ## If something looks wrong
 
