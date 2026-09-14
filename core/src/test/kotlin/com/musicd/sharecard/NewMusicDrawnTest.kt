@@ -149,4 +149,72 @@ class NewMusicDrawnTest {
             block.contains("min-height: 0") && block.contains("flex: 0 1 auto")
         )
     }
+
+    @Test
+    fun `the wall of sleeves is full-bleed, and only the wall`() {
+        /*
+         * Reported on the first real run: "not using the full screen, doesn't
+         * need to be inside a window". Measured at 390x780 before the change —
+         * 16px of .wrap padding, a 1px border and 10px of stage padding EACH
+         * side, so 336px of a 390px phone reached the grid and a tile was
+         * 104px wide. After: 0px gutter, 370px of grid, a 115px tile.
+         *
+         * A CARD still gets the frame — it is one picture and the border is
+         * its edge — and so does one record opened from a tile, because that
+         * is the same kind of object as the card on the other tab. The rule is
+         * therefore keyed on the GRID alone.
+         */
+        val css = read("app/src/main/assets/web/style.css")
+        val full = css.substringAfter(".stage.grid-full {").substringBefore("}")
+        assertTrue(".stage.grid-full not found in the stylesheet", full.isNotEmpty())
+        val declared = full.split(";").map { it.trim() }
+        assertTrue(
+            "the sleeves are the screen, so the panel's frame comes off",
+            declared.any { it == "border: 0" } && declared.any { it.startsWith("background:") }
+        )
+        assertTrue(
+            "and it grows into the space rather than hugging its contents",
+            declared.any { it == "flex: 1 1 auto" }
+        )
+        assertTrue(
+            "the gutter is the other half, and it lives on .wrap",
+            css.contains(".wrap.edge {")
+        )
+
+        val code = page.lines()
+            .filterNot { val t = it.trimStart(); t.startsWith("//") || t.startsWith("*") }
+            .joinToString("\n")
+        assertTrue(
+            "restage() decides every stage class from what went into the stage, " +
+                "because a caller that has to remember to CLEAR one is a caller " +
+                "that will leave the diagnostics' scroll on a card",
+            code.contains("classList.toggle(\"grid-full\"") &&
+                code.contains("classList.toggle(\"edge\"")
+        )
+        assertTrue(
+            "keyed on the GRID, so one record keeps the frame the card has",
+            code.contains("const wall = !!stage.querySelector(\".newgrid\")")
+        )
+    }
+
+    @Test
+    fun `Refresh refreshes the screen you are looking at`() {
+        // It called load(true) unconditionally, so pressing it on Discover
+        // threw away the sleeves and drew the card — which reads as the button
+        // navigating rather than refreshing, and left Discover with no way to
+        // ask again at all now that it remembers its answer.
+        val code = page.lines()
+            .filterNot { val t = it.trimStart(); t.startsWith("//") || t.startsWith("*") }
+            .joinToString("\n")
+        val handler = code.substringAfter("refresh.addEventListener").substringBefore("});")
+        assertTrue("the Refresh handler was not found", handler.isNotEmpty())
+        assertTrue(
+            "on Discover it must ask Discover again, forcing past the shelf",
+            handler.contains("showNewMusic(true)")
+        )
+        assertTrue(
+            "and the forced look has to reach the server as a forced one",
+            code.contains("\"/api/new\" + (force ? \"?refresh=1\" : \"\")")
+        )
+    }
 }

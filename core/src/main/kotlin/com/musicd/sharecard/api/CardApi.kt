@@ -198,7 +198,7 @@ class CardApi(
         "/api/extras" -> extras(request)
         "/api/qobuz" -> qobuzLink(request)
         "/api/similar" -> similarActs(request)
-        "/api/new" -> newMusicRoute()
+        "/api/new" -> newMusicRoute(request)
         "/api/art" -> artwork(request)
         "/api/debug" -> Json.obj(
             Diagnostics(
@@ -938,8 +938,12 @@ class CardApi(
      * stays same-origin and the host allowlist still applies to a URL that
      * arrived over the network.
      */
-    private fun newMusicRoute(): Response {
+    private fun newMusicRoute(request: Request): Response {
         val engine = newMusic ?: return Json.obj(JSONObject().put("picks", JSONArray()))
+        // Refresh forces, which is the bargain every source here makes: a
+        // screen that is an hour old is one tap from being a fresh one, and
+        // nothing looks again by itself.
+        if (request.param("refresh") == "1") engine.forget()
         val picks = runCatching { engine.picks() }
             .onFailure { Log.w(TAG, "could not find new music: ${it.message}") }
             .getOrDefault(emptyList())

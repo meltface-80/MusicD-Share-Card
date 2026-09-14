@@ -36,6 +36,9 @@
   "use strict";
 
   const stage    = document.getElementById("stage");
+  // The page's one column. Its side padding is dropped for the sleeve wall,
+  // which is the only screen here that wants the glass — see restage().
+  const wrap     = document.querySelector(".wrap");
   const nowEl    = document.getElementById("now");
   const actions  = document.getElementById("actions");
   const hintEl   = document.getElementById("hint");
@@ -135,6 +138,17 @@
       "browsing",
       !!(stage.querySelector(".newgrid") || stage.querySelector(".newone"))
     );
+    /*
+     * THE GRID IS FULL-BLEED; THE SINGLE RECORD IS NOT.
+     *
+     * A wall of sleeves is a list and the sleeves are the screen, so it loses
+     * the frame and the gutter. One record opened from it is the same kind of
+     * object as the card on the other tab — one picture, framed — and making
+     * those two disagree would be a difference with no reason behind it.
+     */
+    const wall = !!stage.querySelector(".newgrid");
+    stage.classList.toggle("grid-full", wall);
+    wrap.classList.toggle("edge", wall);
   }
 
   function busy(on) {
@@ -1557,7 +1571,7 @@
    */
   let newMusicToken = 0;
 
-  async function showNewMusic() {
+  async function showNewMusic(force) {
     // Before any await, like every other screen: a load() already in flight
     // will otherwise paint the card over this one. See claimStage.
     claimStage();
@@ -1570,7 +1584,7 @@
 
     let picks = [];
     try {
-      const data = await getJson("/api/new");
+      const data = await getJson("/api/new" + (force ? "?refresh=1" : ""));
       picks = (data && Array.isArray(data.picks)) ? data.picks : [];
     } catch (e) {
       if (mine !== newMusicToken) return;
@@ -2349,7 +2363,18 @@
 
   // ---------------------------------------------------------------- wiring
 
-  refresh.addEventListener("click", () => load(true));
+  /*
+   * REFRESH REFRESHES THE SCREEN YOU ARE LOOKING AT.
+   *
+   * It called load(true) unconditionally, so pressing it on Discover threw
+   * away the sleeves and drew the card instead — which reads as the button
+   * navigating rather than refreshing, and left Discover with no way to ask
+   * again at all now that it remembers its answer. The tab decides.
+   */
+  refresh.addEventListener("click", () => {
+    if (tabNew.getAttribute("aria-selected") === "true") showNewMusic(true);
+    else load(true);
+  });
   settingsBtn.addEventListener("click", showSettings);
   tabCard.addEventListener("click", () => load(false));
   tabNew.addEventListener("click", showNewMusic);

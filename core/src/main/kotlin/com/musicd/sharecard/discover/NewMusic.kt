@@ -2,6 +2,9 @@ package com.musicd.sharecard.discover
 
 import com.musicd.sharecard.Log
 import com.musicd.sharecard.library.Normalize
+import com.musicd.sharecard.meta.CacheStore
+import com.musicd.sharecard.meta.RateGate
+import com.musicd.sharecard.meta.TtlCache
 import com.musicd.sharecard.strOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -46,6 +49,8 @@ class NewMusic(
     private val history: PlayHistory,
     /** What the press has been reviewing. Null where the feeds are not wanted. */
     private val editorial: Editorial? = null,
+    /** So a screenful of sleeves survives a restart as well as a tab switch. */
+    private val store: CacheStore = CacheStore.NONE,
     /** Seams for the tests: neither wants a socket or a real calendar. */
     private val fetchText: (String) -> String? = { null },
     private val today: () -> String = { isoToday() }
@@ -78,10 +83,63 @@ class NewMusic(
         val readAtName: String? = null
     )
 
+    /*
+     * TWO SHELVES, BECAUSE THEY GO STALE FOR DIFFERENT REASONS.
+     *
+     * The SCREEN is keyed on the history and turns over in an hour: it is a
+     * this-week question and the feeds behind it are published hourly. It is
+     * held in memory only — it is one answer, it is cheap to rebuild once a
+     * restart has happened anyway, and writing a whole screenful down to save
+     * the first look after a reboot is not the trade the others make.
+     *
+     * A SLEEVE does not change. Once Deezer has told us where the cover for a
+     * record is, that is the answer for as long as the record exists, so it is
+     * written to disk and kept for a week — which is what stops the same
+     * twelve lookups being paid again tomorrow.
+     */
+    private val cache = TtlCache<String, List<Pick>>(SCREEN_TTL_MS, 4)
+
+    private val sleeves = TtlCache<String, String>(
+        SLEEVE_TTL_MS, 256,
+        TtlCache.Persist(store, "sleeve", { it }, { it })
+    )
+
+    private val dzGate = RateGate(DZ_INTERVAL_MS)
+
     // ------------------------------------------------------------ the wire
 
+    /**
+     * THE WHOLE SCREEN, REMEMBERED. Two tabs and a page reload are one answer.
+     *
+     * Opening Discover cost a ListenBrainz window, two RSS feeds, a Deezer
+     * list and a sleeve lookup per record — every time, including tapping
+     * Playing and tapping back. That is the empty-sweep fault this repo has
+     * already paid for once: an answer that was expensive to get and was not
+     * kept. Refresh still forces, which is the bargain every source here
+     * makes.
+     *
+     * The KEY is the history, folded. "Based on your listening" changes when
+     * the listening does, so a record played since the last look reshapes the
+     * screen at once rather than at the end of a TTL — and a house that has
+     * played nothing new reads its screen off the shelf.
+     */
     fun picks(limit: Int = WANTED): List<Pick> {
         val heard = history.recent()
+        val cached = cache.get(key(heard, limit)) { compute(heard, limit) }
+        return cached.take(limit)
+    }
+
+    /** What [picks] would answer without going near the network. */
+    fun cachedPicks(limit: Int = WANTED): List<Pick>? =
+        cache.peek(key(history.recent(), limit))?.take(limit)
+
+    /** Throw the shelf away, so the next look is a fresh one. See Refresh. */
+    fun forget() {
+        cache.clear()
+        editorial?.forget()
+    }
+
+    private fun compute(heard: List<PlayHistory.Heard>, limit: Int): List<Pick> {
         val out = LinkedHashMap<String, Pick>()
 
         for (pick in fromListenBrainz(heard)) out.putIfAbsent(key(pick), pick)
@@ -118,7 +176,7 @@ class NewMusic(
             }
             note("deezer -> $added new this week")
         }
-        return out.values.take(limit)
+        return withSleeves(out.values.toList())
     }
 
     private fun fromListenBrainz(heard: List<PlayHistory.Heard>): List<Pick> {
@@ -154,6 +212,71 @@ class NewMusic(
         return runCatching { parseDeezerReleases(body) }
             .onFailure { note("deezer: unreadable answer (${it.javaClass.simpleName})") }
             .getOrDefault(emptyList())
+    }
+
+    /**
+     * A REAL SLEEVE FOR EVERY RECORD THAT CAN HAVE ONE.
+     *
+     * Reported from the first run as "no album artwork", and there were two
+     * halves to it. NME's feed carries no image this can use, so those tiles
+     * drew the placeholder; Pitchfork's carried one this app then failed to
+     * fetch, so that tile drew a broken image. Both are the same mistake
+     * underneath: THE PICTURE BESIDE AN ARTICLE IS NOT THE RECORD'S SLEEVE.
+     * It is whatever the publisher put at the top of the page — a press shot,
+     * a live photo, a collage — and a press shot under an album title is a
+     * confident wrong answer, which this app has a standing rule against.
+     *
+     * So the sleeve is resolved from the RECORD, out of the same Deezer API
+     * the new-release list already comes from. The feed's own image is kept
+     * only as the fallback, for a record Deezer does not carry.
+     *
+     * THE COST IS A REQUEST PER RECORD AND IT IS PAID ONCE. Rate-gated like
+     * every other Deezer call here, cached on disk for a week, and behind the
+     * screen cache above — so a cold first look pays about three seconds and
+     * nothing after it pays anything.
+     */
+    private fun withSleeves(picks: List<Pick>): List<Pick> {
+        var found = 0
+        val out = picks.map { pick ->
+            val fromRecord = sleeveFor(pick.artist, pick.album)
+            if (fromRecord != null) found++
+            if (fromRecord == null) pick else pick.copy(art = fromRecord)
+        }
+        note("sleeves -> $found of ${picks.size} resolved from the record")
+        return out
+    }
+
+    /**
+     * Deezer's cover for one record, or null.
+     *
+     * THE SEARCH IS LOOSE AND THE CHECK IS STRICT, which is the shape every
+     * lookup in this app has: a quoted field search finds nothing when the
+     * spelling differs by a word, so the query is the two names plainly and
+     * the ROWS are what get checked. Both the act and the title have to
+     * overlap through [Normalize.namesOverlap] — the first row is not the
+     * answer, the same lesson `QobuzAlbum.pick` and the Deezer artist search
+     * are both already written from. A wrong sleeve is worse than none: it
+     * says the app knows which record this is when it does not.
+     *
+     * The EMPTY STRING is how "we looked and Deezer has nothing" is
+     * remembered, because [TtlCache] cannot hold a null and a record nobody
+     * carries must not be looked up again on every visit.
+     */
+    private fun sleeveFor(artist: String, album: String): String? {
+        if (artist.isBlank() || album.isBlank()) return null
+        val found = sleeves.get(sleeveKey(artist, album)) {
+            val query = Normalize.primaryArtist(artist) + " " + Normalize.stripEdition(album)
+            val body = dzGate.run { get("$DZ/search/album?limit=$SLEEVE_ROWS&q=" + urlEncode(query)) }
+            if (body == null) {
+                note("sleeve($artist - $album) -> no answer")
+                ""
+            } else {
+                runCatching { pickSleeve(body, artist, album) }
+                    .onFailure { note("sleeve($artist - $album) -> unreadable (${it.javaClass.simpleName})") }
+                    .getOrDefault("")
+            }
+        }
+        return found.takeIf { it.isNotEmpty() }
     }
 
     private fun get(url: String): String? {
@@ -212,8 +335,71 @@ class NewMusic(
          */
         const val WINDOW_DAYS = 21
 
+        /** How long a screenful of "what is new" stays true. The feeds are hourly. */
+        const val SCREEN_TTL_MS = 60L * 60_000L
+
+        /** A record's cover does not change, so this is about the shelf, not the fact. */
+        const val SLEEVE_TTL_MS = 7L * 24 * 60 * 60_000L
+
+        /** Deezer asks for a pause between calls, the same one Similar uses. */
+        const val DZ_INTERVAL_MS = 250L
+
+        /** How many search rows to consider before giving up on a sleeve. */
+        const val SLEEVE_ROWS = 8
+
         private fun key(p: Pick) =
             Normalize.text(p.artist) + "|" + Normalize.text(p.album)
+
+        /**
+         * The screen's cache key: the acts this house has played, folded.
+         *
+         * Not a constant, because "based on your listening" must follow the
+         * listening. A record played since the last look changes this string
+         * and the screen is rebuilt at once, rather than staying wrong until
+         * an hour is up.
+         */
+        internal fun key(heard: List<PlayHistory.Heard>, limit: Int): String =
+            limit.toString() + "/" + heard.joinToString(",") { Normalize.text(it.artist) }
+
+        internal fun sleeveKey(artist: String, album: String): String =
+            Normalize.text(artist) + "|" + Normalize.text(album)
+
+        /**
+         * The cover off a Deezer album search, matched on BOTH names.
+         *
+         * Biggest first — `cover_xl` down to `cover` — because a sleeve at any
+         * size beats a blank tile, and a row whose names do not match is
+         * skipped rather than taken, however high it ranks.
+         */
+        internal fun pickSleeve(body: String, artist: String, album: String): String {
+            val rows = JSONObject(body).optJSONArray("data") ?: JSONArray()
+            for (i in 0 until rows.length()) {
+                val row = rows.optJSONObject(i) ?: continue
+                val title = row.strOrNull("title") ?: continue
+                val act = row.optJSONObject("artist")?.strOrNull("name") ?: continue
+                if (!Normalize.namesOverlap(album, title)) continue
+                if (!Normalize.namesOverlap(artist, act)) continue
+                /*
+                 * `cover_big` FIRST, NOT `cover_xl`, AND THAT IS ABOUT THE
+                 * CACHE. Deezer's big is 500px and its xl is 1000px; a tile
+                 * is about 115px on a phone and the record a tile opens onto
+                 * is 240px, so xl is four times the bytes for a picture
+                 * nothing here draws that large. Twelve of them at once is
+                 * what made the art proxy's shelf too small to hold a screen
+                 * — see ArtProxy. The others are the fallbacks, because a
+                 * sleeve at any size beats a blank tile.
+                 */
+                val cover = row.strOrNull("cover_big")
+                    ?: row.strOrNull("cover_xl")
+                    ?: row.strOrNull("cover_medium")
+                    ?: row.strOrNull("cover")
+                if (!cover.isNullOrBlank()) return cover
+            }
+            return ""
+        }
+
+        private fun urlEncode(s: String): String =
+            java.net.URLEncoder.encode(s, "UTF-8")
 
         internal fun isoToday(): String = java.time.LocalDate.now().toString()
 
