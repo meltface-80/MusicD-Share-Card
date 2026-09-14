@@ -586,8 +586,25 @@ class CardApi(
      */
     private fun artPath(playing: Playing): String? {
         if (playing.artUrl.isEmpty()) return null
-        return "/api/art?u=" + urlEncode(playing.artUrl)
+        return artLink(playing.artUrl)
     }
+
+    /**
+     * EVERY PICTURE THIS APP SERVES GOES THROUGH ONE FUNCTION, AND THE SECOND
+     * PLACE THAT BUILT THE STRING BY HAND GOT IT WRONG.
+     *
+     * The parameter is `u`. The Discover grid wrote `url=` — so every sleeve
+     * asked for a parameter [artwork] does not read, was answered 400 before
+     * [ArtProxy] was ever called, and drew a broken image. Twelve of them a
+     * screen, on a feature whose whole point is cover art.
+     *
+     * WHAT FOUND IT WAS THE DIAGNOSTICS BEING EMPTY. `/api/debug` had no "art"
+     * section at all — and `ArtProxy` notes every outcome it has, refusals
+     * included, so no notes means it was never reached. The ABSENCE of a
+     * report was the report. `CardApiTest` asserts every art URL any route
+     * emits goes through here, rather than naming the two it knew about.
+     */
+    private fun artLink(url: String): String = "/api/art?u=" + urlEncode(url)
 
     private fun artwork(request: Request): Response {
         val url = request.param("u") ?: return Json.error(400, "No picture asked for.")
@@ -958,7 +975,7 @@ class CardApi(
                             .put("released", it.released)
                             .put("why", it.why)
                             .put("heard", it.heard)
-                            .putOrNull("art", it.art?.let { url -> "/api/art?url=" + urlEncode(url) })
+                            .putOrNull("art", it.art?.let(::artLink))
                             // A LINK AND NOTHING ELSE. The record was
                             // identified out of a feed; the writing stays with
                             // whoever wrote it, and no route here could return
