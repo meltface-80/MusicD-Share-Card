@@ -33,6 +33,10 @@
   a:hover { text-decoration: underline; }
 
   .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+  /* A third of the screenshot row at full width — .wrap's 980 less its 20px
+     sides, less the two 14px gaps. Named here so it follows .wrap if that
+     ever moves, rather than being a number in one rule nobody can check. */
+  :root { --shot-col: calc((980px - 40px - 28px) / 3); }
 
   /* ---------- top nav ---------- */
   nav.topnav {
@@ -90,7 +94,12 @@
      phone screens follow in a row that wraps to one column on a narrow
      screen. Shot on a real device rather than rendered, so what is on this
      page is what somebody actually sees. */
-  .shots { display: grid; gap: 14px; }
+  /* minmax(0, 1fr), NOT the default `auto`. An auto track is sized from its
+     items' content, so the moment one of the rows below got a max-width the
+     whole grid sized itself to that row instead of to the page — 434px of
+     screenshots inside a 360px phone, scrolling sideways. Capping the track at
+     the container is the fix, and it changes nothing at any other width. */
+  .shots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .shots img {
     display: block; width: 100%; height: auto;
     border: 1px solid var(--line); border-radius: 12px; background: var(--bg-deep);
@@ -100,6 +109,14 @@
     display: grid; gap: 14px;
     grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   }
+  /* A ROW OF TWO MUST NOT DRAW ITS PHONES BIGGER THAN A ROW OF THREE.
+     `1fr` stretches the items to fill what is left, so the last row — eight
+     screenshots do not divide by three — came out half again as large as the
+     rows above it, and the same phone looked like two different devices. This
+     caps each one at the width a third of the row would have given it and
+     centres the pair. Still a grid, so it collapses to one column on a phone
+     exactly as the others do. */
+  .shots .row.two { width: 100%; max-width: calc(var(--shot-col) * 2 + 14px); margin-inline: auto; }
   .shots figure { margin: 0; }
   .shots figcaption {
     color: var(--muted); font-size: 13px; margin-top: 8px; text-align: center;
@@ -339,12 +356,36 @@
           <figcaption>More than one room on, so it asks rather than choosing.</figcaption>
         </figure>
         <figure>
-          <img src="screenshots/zones.jpg" alt="The room picker open, listing rooms from Roon, Sonos and UPnP together with the source named beside each">
+          <img src="screenshots/picker.jpg" alt="The room picker open, listing Whatever's playing and each room from Roon, Sonos and UPnP with the source named beside it">
           <figcaption>Every room, whichever source found it.</figcaption>
         </figure>
         <figure>
-          <img src="screenshots/app.jpg" alt="One room's card, with buttons to download it or post it to Discord, links to read about it or find it on a streaming service, and three suggestions">
+          <img src="screenshots/app.jpg" alt="One room's card, a Download button, one row of links — Wikipedia, AllMusic, Wikipedia artist, AllMusic artist, then the streaming services — and three suggestions">
           <figcaption>One screen: card, buttons, links, suggestions.</figcaption>
+        </figure>
+      </div>
+      <div class="row">
+        <figure>
+          <img src="screenshots/settings.jpg" alt="The settings menu: Services, Reviews, Zones and Webhooks">
+          <figcaption>Behind the cog: services, reviews, rooms and webhooks.</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/zones.jpg" alt="The Zones screen: a switch for each room found, with the source named under it — SR11 and Stereo Fives from Roon, Stereo Fives and TV Speaker from Sonos, WiiM Pro Plus from UPnP">
+          <figcaption>Rooms are opt-in, and a room two sources can see is listed under each.</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/services.jpg" alt="The Services screen: a switch for each of Qobuz, TIDAL, Spotify, Apple Music, Amazon Music, Deezer and Bandcamp">
+          <figcaption>Only the services you use, and the rest are never looked up.</figcaption>
+        </figure>
+      </div>
+      <div class="row two">
+        <figure>
+          <img src="screenshots/reviews.jpg" alt="The Reviews screen: About the record with Wikipedia, Pitchfork and AllMusic switched on, and About the artist with Wikipedia and AllMusic">
+          <figcaption>Wikipedia, Pitchfork and AllMusic about the record — and the same two about the artist.</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/webhooks.jpg" alt="The Webhooks screen: channel name, the name to post as, the Discord webhook URL, a picture to upload, and Save">
+          <figcaption>Paste a webhook once and the card posts itself to Discord.</figcaption>
         </figure>
       </div>
     </div>
@@ -359,8 +400,8 @@
         <p>Roon, Lyrion Music Server, Sonos, or any UPnP&nbsp;/&nbsp;DLNA renderer on the network. It
            asks whichever one actually knows what the record is.</p></div>
       <div class="card"><h3><span class="em">🖼️</span>A card worth sending</h3>
-        <p>Cover, title, artist and release year, with a few lines about the record and a Pitchfork
-           score where there is one.</p></div>
+        <p>Cover, title, artist and release year, with a few lines about the record from Wikipedia
+           and a Pitchfork score where there is one.</p></div>
       <div class="card"><h3><span class="em">📤</span>Share it anywhere</h3>
         <p>The Android share sheet, press and hold on an iPhone, or a plain download on a
            desktop.</p></div>
@@ -368,8 +409,9 @@
         <p>Paste a webhook URL once and a button appears on the card. Tap it and the card is
            posted — under your own name and picture.</p></div>
       <div class="card"><h3><span class="em">🔗</span>Read it, or hear it</h3>
-        <p>The Wikipedia article and the Pitchfork review behind the card, then Qobuz, TIDAL,
-           Spotify, Apple Music, Amazon Music, Deezer and Bandcamp.</p></div>
+        <p>Wikipedia, Pitchfork and AllMusic about the record — and, if you ask, Wikipedia and
+           AllMusic about the artist too. Then Qobuz, TIDAL, Spotify, Apple Music, Amazon Music,
+           Deezer and Bandcamp.</p></div>
       <div class="card"><h3><span class="em">✨</span>If you like this</h3>
         <p>Three acts worth hearing next, an album each. Hold a service chip to pick where they
            link — no settings screen.</p></div>

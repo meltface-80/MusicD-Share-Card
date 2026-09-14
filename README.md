@@ -9,14 +9,18 @@ Makes a share card for whatever you're playing, and posts it wherever you want i
 ## What it does
 
 Open it and you get a card for the record that's on: cover, title, artist, year,
-a short description from Wikipedia and a Pitchfork score where there is one.
-Then share it, copy it, save it, or post it to Discord with a webhook.
+a short description from **Wikipedia** and a **Pitchfork** score where there is
+one. Then share it, copy it, save it, or post it to Discord with a webhook.
+
+Under the card it links out to what's been written about the record —
+**Wikipedia**, **Pitchfork** and **AllMusic** — and, if you ask for them, to the
+same two about the **artist**: their Wikipedia article and their AllMusic page.
 
 Everything fits one screen — card, buttons, links, suggestions — and the page
 does not scroll. The card stays put until you press **Refresh**; leaving the app
 and coming back does not throw it away.
 
-<img src="docs/screenshots/app.jpg" width="360" alt="The app: the card, the room it is playing in, and buttons to download it or post it to Discord">
+<img src="docs/screenshots/app.jpg" width="360" alt="The app: the card, the room it is playing in, a Download button, one row of links — Wikipedia, AllMusic, Wikipedia artist, AllMusic artist, then the streaming services — and three suggestions">
 
 It works out what's playing by asking whoever actually knows:
 
@@ -55,8 +59,17 @@ the gate. With it off, anyone who can reach the port can also change your
 webhooks — the URLs themselves are still never handed out, only changed.
 
 <p>
+  <img src="docs/screenshots/settings.jpg" width="330" alt="The settings menu: Services, Reviews, Zones and Webhooks">
+  <img src="docs/screenshots/zones.jpg" width="330" alt="The Zones screen: a switch for each room found, with the source named under it — SR11 and Stereo Fives from Roon, Stereo Fives and TV Speaker from Sonos, WiiM Pro Plus from UPnP">
+</p>
+
+Two sources seeing the same room list it twice, each under its own name, so
+you can choose which one describes it — a Sonos speaker Roon is playing to is
+better described by Roon.
+
+<p>
   <img src="docs/screenshots/rooms.jpg" width="330" alt="Whatever's playing: a grid of album covers, one per room, with the rooms that are silent listed underneath">
-  <img src="docs/screenshots/zones.jpg" width="330" alt="The room picker open, listing rooms from Roon, Sonos and UPnP together with the source named beside each">
+  <img src="docs/screenshots/picker.jpg" width="330" alt="The room picker open, listing Whatever's playing and each room from Roon, Sonos and UPnP with the source named beside it">
 </p>
 
 ## Install
@@ -211,15 +224,32 @@ Under the card is a row of links for whatever is playing:
 - a pre-filled search on **Qobuz, TIDAL, Spotify, Apple Music, Amazon Music,
   Deezer** and **Bandcamp**
 
+**Settings → Services** decides which of those chips appear. Switched off, a
+service is not linked and is not looked up.
+
+<img src="docs/screenshots/services.jpg" width="360" alt="The Services screen: a switch for each of Qobuz, TIDAL, Spotify, Apple Music, Amazon Music, Deezer and Bandcamp">
+
 They open the service's app if you have it and its web player if you don't.
 They're searches rather than links to the album itself — that needs each
 service's own id for the record, and their APIs need credentials. Qobuz is the
 exception: it resolves the real album and opens the app on it.
 
-**Settings → Reviews** decides which of those appear, and can add two more
-about the ARTIST rather than the record — their Wikipedia article and their
-AllMusic page. Those are off until you ask for them. Switching a source off
-stops it being looked up, not just drawn.
+**Settings → Reviews** decides which of those appear, and it is in two halves.
+
+*About the record* — **Wikipedia**, **Pitchfork** and **AllMusic** — is on by
+default, because that is what the card has always drawn: the description under
+the cover and the score in the corner. **AllMusic** joins them as a third place
+to read about the record.
+
+*About the artist* — their **Wikipedia** article and their **AllMusic** page —
+is off until you ask for it. These are links only: the card stays about the
+record, and the artist's article is one the app was already fetching to check
+the description belongs to the right act, so switching it on costs no extra
+lookup at all.
+
+Switching any source off stops it being looked up, not just drawn.
+
+<img src="docs/screenshots/reviews.jpg" width="360" alt="The Reviews screen: About the record with Wikipedia, Pitchfork and AllMusic switched on, and About the artist with Wikipedia and AllMusic">
 
 There's no Roon link. Roon has no web player and no link scheme — still an
 open feature request, not an oversight — so there's nothing a tap could go
@@ -256,7 +286,7 @@ turn that off.
 Get the URL from Discord: **Edit Channel → Integrations → Webhooks → Copy
 Webhook URL**.
 
-<img src="docs/screenshots/webhooks.jpg" width="360" alt="The webhook settings: channel name, the name to post as, the webhook URL, a picture to upload, and the PIN">
+<img src="docs/screenshots/webhooks.jpg" width="360" alt="The Webhooks screen: channel name, the name to post as, the Discord webhook URL, a picture to upload, and Save">
 
 ## If something looks wrong
 
