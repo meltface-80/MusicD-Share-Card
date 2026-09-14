@@ -93,116 +93,44 @@ class RoonBrowse(private val socket: () -> MooSocket?) {
     private fun sessionKey(): String = "sharecard-" + System.nanoTime().toString(36)
 
     fun queueAlbum(album: String, artist: String, zoneId: String): Outcome {
-        /*
-         * WHAT GOES IN THE SEARCH BOX IS NOT WHAT THE SUGGESTION SAYS.
-         *
-         * A suggestion comes from Deezer, and Deezer's copy of a record is
-         * whichever pressing it sells: "The Offspring · Ignition (2008
-         * Remaster)". The copy in somebody's Roon library is called "Ignition".
-         * So the search went out with words no record in the house is named,
-         * and Roon answered `action: "none"` — which the app, before the reply
-         * check, did not even read. Reported with a photograph of the page
-         * saying "Roon answered \"none\" where a list was expected", and
-         * diagnosed by the person who owns the library: "could this be because
-         * the version I have isn't labelled as 2008 remaster".
-         *
-         * So the EDITION comes off, for every album, and only the first
-         * credited act goes in — both through the folds that already exist for
-         * this in Normalize, neither invented here. The full title is still
-         * what gets MATCHED against Roon's rows a few steps down, because
-         * namesOverlap accepts a name qualified on the right either way round.
-         */
-        val query = Normalize.stripEdition(album)
-        val act = Normalize.primaryArtist(artist)
-        val input = searchInput(album, artist)
         val what = "$artist \u2014 $album -> ${ZoneRefIds.raw(zoneId)}"
         val moo = socket() ?: return fail(what, "not connected to Roon", "Not connected to Roon.")
-        val key = sessionKey()
+        val zone = ZoneRefIds.raw(zoneId)
         return try {
-            // 1. Search Roon for the record. `pop_all` starts from the top
-            //    rather than wherever a previous browse was left.
-            note("$what -> searching Roon for \"$input\"")
-            val search = request(
-                moo,
-                JSONObject()
-                    .put("hierarchy", HIERARCHY)
-                    .put("input", input)
-                    .put("pop_all", true)
-                    .put("multi_session_key", key)
-            )
-            refused(search, expectList = true)?.let { return fail(what, "search: $it", it) }
-            val results = load(moo, key)
-
-            // 2. Roon groups a search under headings. The Albums one is the
-            //    only one worth opening: an Artists row would drill into a
-            //    discography and a Tracks row into a single song.
-            val albumsHeading = pickAlbumsHeading(results)
-                ?: return fail(
-                    what,
-                    "no Albums heading in the search results: ${titles(results)}",
-                    "Roon found nothing for that record."
-                )
-            refused(request(moo, browseItem(albumsHeading, key)), expectList = true)
-                ?.let { return fail(what, "opening Albums: $it", it) }
-            val albums = load(moo, key)
-
-            // 3. The right record among them, by name AND by artist.
-            val albumRow = pickAlbum(albums, query, act)
-                ?: return fail(
-                    what,
-                    // THE ROWS ARE PRINTED, because "not in your library" and
-                    // "there it is and the match refused it" are the same
-                    // sentence from the outside and are not the same bug.
-                    "no row matched \"$album\" by \"$artist\" among: ${titles(albums)}",
-                    "That record is not in your Roon library."
-                )
-            refused(request(moo, browseItem(albumRow, key)), expectList = true)
-                ?.let { return fail(what, "opening the album: $it", it) }
-            val albumScreen = load(moo, key)
-
-            // 4. The album's action menu, then Queue within it.
-            val menu = pickActionList(albumScreen)
-                ?: return fail(
-                    what,
-                    "no action_list row on the album screen: ${titles(albumScreen)}",
-                    "Roon offered no actions for that record."
-                )
-            // THE ZONE IS NAMED WHEN THE MENU IS OPENED, NOT ONLY WHEN THE
-            // ACTION IS INVOKED. Roon decides which actions to offer from the
-            // zone they would apply to, so a menu opened without one can come
-            // back with no playback actions in it at all — which this would
-            // then report as "Roon offered no Queue action", naming the wrong
-            // cause. UNVERIFIED like everything else here, and recorded either
-            // way by the note below.
-            refused(
-                request(moo, browseItem(menu, key).put("zone_or_output_id", ZoneRefIds.raw(zoneId))),
-                expectList = true
-            )?.let { return fail(what, "opening the actions: $it", it) }
-            val actions = load(moo, key)
-
-            val queue = pickQueueAction(actions)
-                ?: return fail(
-                    what,
-                    "no action titled exactly \"Queue\" among: ${titles(actions)}",
-                    "Roon offered no Queue action for that record."
-                )
-
-            // 5. Perform it, in the zone the card is about.
-            //
-            // AND READ WHAT ROON SAYS BACK. This reply used to be thrown away,
-            // so a refusal — a zone that has gone, an action Roon would not
-            // take — was reported to the page as "Added to the end of the
-            // queue in Roon". A tap that lies about having worked is worse
-            // than one that admits it did not: nobody goes looking for a bug
-            // they have been told is not there.
-            val done = request(
-                moo,
-                browseItem(queue, key).put("zone_or_output_id", ZoneRefIds.raw(zoneId))
-            )
-            refused(done, expectList = false)?.let { return fail(what, "invoking Queue: $it", it) }
-
-            note("$what -> QUEUED${done.strOrNull("message")?.let { " ($it)" }.orEmpty()}")
-            Outcome(true, "Added to the end of the queue in Roon.")
+            /*
+             * A LADDER OF SEARCHES, NOT ONE SEARCH.
+             *
+             * Reported as a record that is in the library and would not queue,
+             * with "this must work" attached — and the search is the only step
+             * whose input this app invents. Roon's box takes one string, and
+             * which string finds a record is not something that can be settled
+             * from here, so the app tries the forms in order of how specific
+             * they are and stops at the first that resolves. Every rung is
+             * recorded, so one /api/debug says which one worked or that none
+             * did.
+             *
+             * This is the same shape as the Pitchfork lookup — constructed
+             * URL, then the edition stripped, then the feed — and for the same
+             * reason: each rung costs a request only when the one before it
+             * found nothing.
+             */
+            var found: JSONObject? = null
+            var lastWhy = "nothing was tried"
+            for (input in searchQueries(album, artist)) {
+                val key = sessionKey()
+                val outcome = findAlbum(moo, key, input, album, artist)
+                if (outcome.row != null) {
+                    note("$what -> \"$input\" matched ${outcome.row.str("title")} / ${outcome.row.strOrNull("subtitle").orEmpty()}")
+                    found = outcome.row
+                    return queueFrom(moo, key, outcome.row, zone, what)
+                }
+                note("$what -> \"$input\": ${outcome.why}")
+                lastWhy = outcome.why
+            }
+            if (found == null) {
+                return Outcome(false, "That record is not in your Roon library. ($lastWhy)")
+            }
+            Outcome(false, lastWhy)
         } catch (e: Throwable) {
             // Throwable, not Exception: this runs on a request thread and a
             // class that fails to initialise throws an Error.
@@ -210,6 +138,105 @@ class RoonBrowse(private val socket: () -> MooSocket?) {
             return fail(what, "threw: $why", "Roon would not take that request.")
         }
     }
+
+    /** One search, walked as far as a row that really is this record. */
+    private data class Found(val row: JSONObject?, val why: String)
+
+    private fun findAlbum(
+        moo: MooSocket,
+        key: String,
+        input: String,
+        album: String,
+        artist: String
+    ): Found {
+        val search = request(
+            moo,
+            JSONObject()
+                .put("hierarchy", HIERARCHY)
+                .put("input", input)
+                .put("pop_all", true)
+                .put("multi_session_key", key)
+        )
+        refused(search, expectList = true)?.let { return Found(null, "search refused: $it ${raw(search)}") }
+        val results = load(moo, key)
+
+        /*
+         * ROON GROUPS A SEARCH UNDER HEADINGS, AND SOMETIMES IT DOES NOT.
+         *
+         * The Albums heading is the one to open — an Artists row drills into a
+         * discography and a Tracks row into one song. But a search that
+         * returns the records THEMSELVES has no heading to open, and giving up
+         * there is how a library that holds the record answers "not in your
+         * library". So the rows in hand are tried as albums too.
+         */
+        val rows = pickAlbumsHeading(results)?.let { heading ->
+            val opened = request(moo, browseItem(heading, key))
+            refused(opened, expectList = true)?.let { return Found(null, "opening Albums refused: $it ${raw(opened)}") }
+            load(moo, key)
+        } ?: results
+
+        pickAlbum(rows, album, artist)?.let { return Found(it, "matched") }
+        return Found(null, "no row matched \"$album\" by \"$artist\" among: ${titles(rows)}")
+    }
+
+    /** From the album's row to the Queue action, in the zone the card is about. */
+    private fun queueFrom(
+        moo: MooSocket,
+        key: String,
+        albumRow: JSONObject,
+        zone: String,
+        what: String
+    ): Outcome {
+        val opened = request(moo, browseItem(albumRow, key).put("zone_or_output_id", zone))
+        refused(opened, expectList = true)
+            ?.let { return fail(what, "opening the album: $it ${raw(opened)}", it) }
+        val albumScreen = load(moo, key)
+
+        // THE ZONE IS NAMED WHEN THE MENU IS OPENED, NOT ONLY WHEN THE ACTION
+        // IS INVOKED. Roon decides which actions to offer from the zone they
+        // would apply to, so a menu opened without one can come back with no
+        // playback actions in it at all — which this would then report as
+        // "Roon offered no Queue action", naming the wrong cause.
+        val menu = pickActionList(albumScreen)
+            ?: return fail(
+                what,
+                "no action_list row on the album screen: ${titles(albumScreen)}",
+                "Roon offered no actions for that record."
+            )
+        val actionsReply = request(moo, browseItem(menu, key).put("zone_or_output_id", zone))
+        refused(actionsReply, expectList = true)
+            ?.let { return fail(what, "opening the actions: $it ${raw(actionsReply)}", it) }
+        val actions = load(moo, key)
+
+        val queue = pickQueueAction(actions)
+            ?: return fail(
+                what,
+                "no action titled exactly \"Queue\" among: ${titles(actions)}",
+                "Roon offered no Queue action for that record."
+            )
+
+        // AND READ WHAT ROON SAYS BACK. This reply used to be thrown away, so
+        // a refusal — a zone that has gone, an action Roon would not take —
+        // was reported to the page as "Added to the end of the queue in Roon".
+        val done = request(moo, browseItem(queue, key).put("zone_or_output_id", zone))
+        refused(done, expectList = false)
+            ?.let { return fail(what, "invoking Queue: $it ${raw(done)}", it) }
+
+        note("$what -> QUEUED${done.strOrNull("message")?.let { " ($it)" }.orEmpty()}")
+        return Outcome(true, "Added to the end of the queue in Roon.")
+    }
+
+    /**
+     * What Roon actually sent, trimmed.
+     *
+     * THE NOTES USED TO CARRY THIS APP'S READING OF THE REPLY AND NOT THE
+     * REPLY. When the reading is the thing that is wrong — a field named
+     * differently, a shape nobody here has seen, because no Core is reachable
+     * from where this is written — an interpretation is exactly the wrong
+     * thing to be shown. One screenshot of /api/debug should be enough to
+     * settle any of this, and it only is if the raw answer is in it.
+     */
+    private fun raw(reply: JSONObject): String = "<- " + reply.toString().take(400)
 
     private fun fail(what: String, why: String, detail: String): Outcome {
         note("$what -> $why")
@@ -315,6 +342,44 @@ class RoonBrowse(private val socket: () -> MooSocket?) {
             (Normalize.primaryArtist(artist) + " " + Normalize.stripEdition(album)).trim()
 
         /**
+         * EVERY FORM WORTH PUTTING IN THAT BOX, MOST SPECIFIC FIRST.
+         *
+         * Reported as a record that IS in the library and would not queue,
+         * with "this must work" attached. The search is the one step whose
+         * input this app invents, and which string finds a record in somebody
+         * else's library is not a thing that can be settled from here — no
+         * Roon Core is reachable from where this is written. So rather than
+         * betting the feature on one guess, it tries the forms in order and
+         * stops at the first that resolves.
+         *
+         * The rungs, and why each earns its request:
+         *
+         *   1. act + album, edition stripped — the ordinary case, and the one
+         *      that already fixed "Ignition (2008 Remaster)".
+         *   2. the album alone — an artist name in the box is extra words to
+         *      fail on, and Roon's own search matches a title perfectly well
+         *      without one. The artist is still checked on the ROWS, so this
+         *      is not a looser match, only a looser question.
+         *   3. act + album exactly as the suggestion spelled it — the edition
+         *      strip is narrow on purpose and cannot know every shape, and a
+         *      record genuinely titled with a bracket ("Zooropa (Deluxe)" as
+         *      the library's own name) is found by asking for it whole.
+         *
+         * Deduplicated and in order, so a plain record costs exactly one
+         * request — the same bargain the Pitchfork ladder makes.
+         */
+        internal fun searchQueries(album: String, artist: String): List<String> {
+            val act = Normalize.primaryArtist(artist)
+            val plain = Normalize.stripEdition(album)
+            return listOf(
+                "$act $plain",
+                plain,
+                "$act $album",
+                album
+            ).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        }
+
+        /**
          * The "Albums" grouping out of a search result.
          *
          * Matched on the title because that is what Roon labels it, and
@@ -334,20 +399,48 @@ class RoonBrowse(private val socket: () -> MooSocket?) {
         /**
          * The row that really is this record.
          *
-         * BOTH HALVES ARE CHECKED. Roon's search is fuzzy and will happily
-         * return a compilation, a live album or another act's record of the
-         * same name — and the thing at stake is what goes into somebody's
-         * queue. [Normalize.namesOverlap] is the same rule the Wikipedia and
-         * Deezer lookups use, so a record qualified on the right ("Spiderland
+         * BOTH HALVES ARE CHECKED FIRST, and that is still the answer this
+         * prefers. Roon's search is fuzzy and will happily return a
+         * compilation, a live album or another act's record of the same name —
+         * and what is at stake is what goes into somebody's queue.
+         * [Normalize.namesOverlap] is the same rule the Wikipedia and Deezer
+         * lookups use, so a record qualified on the right ("Spiderland
          * (Remastered)") still matches and a stranger's does not.
+         *
+         * BOTH SIDES ARE FOLDED, because the two names come from different
+         * places. The row is the LIBRARY'S spelling and the album is
+         * DEEZER'S — one may carry an edition the other does not, and a
+         * four-name credit on this side has already broken a search once.
+         *
+         * A ROW WITH NO SUBTITLE AT ALL IS ACCEPTED ON ITS TITLE, and that is
+         * as far as the loosening goes. Roon's subtitle is not guaranteed to
+         * be the artist — a box set, a soundtrack, something filed under
+         * Various Artists — and refusing a row that simply does not say turned
+         * a library which HOLDS the record into "not in your Roon library".
+         *
+         * BUT A SUBTITLE THAT NAMES SOMEBODY ELSE STILL REFUSES THE ROW, and
+         * the test for it is the pair this repo has already been burned by:
+         * "Cult" by To/Die/For against Static-X's record of the same name. A
+         * blank subtitle contradicts nothing; a wrong one contradicts
+         * everything, and putting a stranger's record in somebody's queue is
+         * the one failure this feature must never have. Exactly one such row,
+         * too — two untitled candidates is a coin toss, and no queue beats the
+         * wrong record.
          */
-        internal fun pickAlbum(items: JSONArray, album: String, artist: String): JSONObject? =
-            items.objects()
-                .filter { it.strOrNull("item_key") != null }
-                .firstOrNull { row ->
-                    Normalize.namesOverlap(row.str("title"), album) &&
-                        (artist.isBlank() || Normalize.mentions(row.str("subtitle"), artist))
-                }
+        internal fun pickAlbum(items: JSONArray, album: String, artist: String): JSONObject? {
+            val title = Normalize.stripEdition(album)
+            val act = Normalize.primaryArtist(artist)
+            val rows = items.objects().filter { it.strOrNull("item_key") != null }
+            val byTitle = rows.filter {
+                Normalize.namesOverlap(Normalize.stripEdition(it.str("title")), title)
+            }
+            byTitle.firstOrNull { row ->
+                act.isBlank() || Normalize.mentions(row.str("subtitle"), act)
+            }?.let { return it }
+            // Nothing named the act. A row that names NOBODY may still be it;
+            // a row that names somebody else may not.
+            return byTitle.singleOrNull { it.str("subtitle").isBlank() }
+        }
 
         /**
          * The row that opens the album's actions.

@@ -1073,6 +1073,18 @@ was simply not there, however carefully the DIDL was parsed.
   not carry never upgrades, which is right: **a wrong album is worse than a
   search page**, so `pick` takes the exact album+artist slug wherever it appears
   and never the first hit.
+- **AND THE SUGGESTIONS GET THAT UPGRADE TOO, WHICH THEY DID NOT FOR FOUR
+  RELEASES.** Photographed: a tap on "U2 · Rattle And Hum" landing on
+  qobuz.com's DOWNLOAD STORE — "Results for U2 Rattle And Hum, 1-60 of 1000
+  albums", the first of them by somebody called ItsLee. That is what a Qobuz
+  search link does, and it is the failure the rule above already exists for.
+  The CARD's chip had been upgraded to a real album link since that was first
+  reported; the suggestion chips had not, because their URLs are built on the
+  server in one go — correct, the encoding rules live there — and nothing went
+  back to resolve them. So the row whose whole purpose is to send you somewhere
+  new was the one place still landing on a shop's search page. `upgradeSuggestions`
+  runs after the row is drawn, never before it, and only for the service the
+  chips actually point at.
 - **The Qobuz link then goes through `qobuzapp://` first, on Android.** The
   https link works but not from cold — the app opens on Home having dropped the
   album, and only a second tap lands on the record. open.qobuz.com's own page
@@ -1219,6 +1231,33 @@ was simply not there, however carefully the DIDL was parsed.
     actions in it — which the app then reported as "Roon offered no Queue
     action", naming the wrong cause. UNVERIFIED, like everything else on this
     wire.
+  - **THE SEARCH IS A LADDER, NOT A GUESS, AND THE RAW REPLY IS IN THE
+    DIAGNOSTICS NOW.** Reported as U2's "Rattle And Hum" — in the library, on a
+    Roon card — falling through to a streaming search, with "this must work"
+    attached. The search is the ONE step whose input this app invents, and
+    which string finds a record in somebody else's library cannot be settled
+    from here, so `searchQueries` tries the forms in order of how specific they
+    are and stops at the first that resolves: act+album with the edition
+    stripped, the album alone (an artist is extra words to fail on, and the act
+    is still checked on the ROWS), then both again exactly as the suggestion
+    spelled them. A record Roon has still costs one request, which is the same
+    bargain the Pitchfork ladder makes. AND the notes carry `reply.toString()`
+    now, not this app's reading of it — when the reading is the thing that is
+    wrong, an interpretation is precisely the wrong thing to be shown, and one
+    screenshot of /api/debug should settle any of this.
+  - **A ROW THAT NAMES NOBODY IS MATCHED ON ITS TITLE; ONE THAT NAMES SOMEBODY
+    ELSE IS STILL REFUSED.** Roon's subtitle is not guaranteed to be the
+    artist — a box set, a soundtrack, something filed under Various Artists —
+    and demanding it turned a library that HOLDS the record into "not in your
+    Roon library". The loosening stops exactly there, and the test for where it
+    stops is the pair this repo has already been burned by: "Cult" by
+    To/Die/For against Static-X's record of the same name. A blank subtitle
+    contradicts nothing; a wrong one contradicts everything. Two blank
+    candidates is a coin toss and neither is taken — no queue beats the wrong
+    record in somebody's queue, which is the one failure this feature must
+    never have. Both sides are folded through `stripEdition` and
+    `primaryArtist` too, because the row is the LIBRARY'S spelling and the
+    album is DEEZER'S.
   - **WHAT GOES IN ROON'S SEARCH BOX IS NOT WHAT THE SUGGESTION SAYS, AND THE
     OWNER OF THE LIBRARY DIAGNOSED THIS ONE.** A suggestion comes from Deezer,
     and Deezer's copy of a record is whichever pressing it sells: "The
