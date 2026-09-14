@@ -734,7 +734,19 @@
     // Both of these go to a page about THIS record rather than a search for
     // it, which is what sets them apart from the row that follows.
     if (review) {
-      reviewRow.appendChild(link(review, "Pitchfork review", "links-review"));
+      /*
+       * NAMED BY WHOEVER WROTE IT, NOT HARD-CODED. Pitchfork was the only
+       * source of a review link for as long as one came from a score lookup,
+       * so this chip carried their name in the page. A record that arrived
+       * out of NME's feed then drew an NME review under Pitchfork's name —
+       * the same mistake the blurb chip two lines below already has a rule
+       * about, made in the one place the rule had not reached.
+       *
+       * The default keeps the card's own behaviour exactly: the score lookup
+       * is Pitchfork's and names nobody, because it never had to.
+       */
+      const by = (extras && extras.reviewName) || "Pitchfork review";
+      reviewRow.appendChild(link(review, by, "links-review"));
     }
     if (article) {
       // Named by whoever the blurb came from rather than hard-coded, so a
@@ -1642,9 +1654,38 @@
       (pick.released ? " \u00b7 " + escapeHtml(pick.released) : "") + "</p>";
     showNode(panelEl);
 
+    /*
+     * THE REVIEW THIS RECORD CAME FROM, WHEN IT CAME FROM ONE.
+     *
+     * A LINK AND NOTHING ELSE — no headline, no excerpt, not a line of the
+     * piece. The record was identified out of a feed and the writing stays
+     * with whoever wrote it.
+     *
+     * IT REPLACES THE LOOKUP'S GUESS RATHER THAN SITTING BESIDE IT, AND A
+     * RENDER IS WHAT FOUND THAT. Added as an extra chip, a record that came
+     * from Pitchfork's own feed drew TWO chips both reading "Pitchfork
+     * review" — one the publisher's own link, one a URL this app built out of
+     * an artist and an album slug, and nothing on the row to tell a reader
+     * which was which. The publisher's link is the one that is certainly
+     * right: it is where the feed said the review is. So it takes the review
+     * slot, names itself, and any same-publisher chip the lookup added is
+     * dropped from behind it.
+     *
+     * `readAtName` is one of [Editorial.FEEDS]'s own names — a constant in
+     * this app, never a string off the feed — which is what keeps the chip
+     * label short enough for a quarter of a phone. See LinkChipsTest.
+     */
+    const withReview = pick.readAt && pick.readAtName
+      ? Object.assign({}, extras, {
+        reviewUrl: pick.readAt,
+        reviewName: pick.readAtName + " review",
+        reading: (extras.reading || [])
+          .filter((r) => r && r.name !== pick.readAtName)
+      })
+      : extras;
     // The row under the card, unchanged and in the same place, so there is one
     // set of rules about which links appear and what they promise.
-    buildLinks(extras);
+    buildLinks(withReview);
     hintEl.textContent = pick.why || "";
     actions.innerHTML = "";
     const back = button("", "Back to Discover", "");

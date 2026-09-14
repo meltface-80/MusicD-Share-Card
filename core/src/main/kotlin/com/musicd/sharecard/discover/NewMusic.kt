@@ -44,6 +44,8 @@ class NewMusic(
     private val http: OkHttpClient,
     private val userAgent: String,
     private val history: PlayHistory,
+    /** What the press has been reviewing. Null where the feeds are not wanted. */
+    private val editorial: Editorial? = null,
     /** Seams for the tests: neither wants a socket or a real calendar. */
     private val fetchText: (String) -> String? = { null },
     private val today: () -> String = { isoToday() }
@@ -63,7 +65,17 @@ class NewMusic(
         val released: String,
         val art: String?,
         val why: String,
-        val heard: Boolean
+        val heard: Boolean,
+        /**
+         * The review this record came from, when it came from one.
+         *
+         * A LINK AND NOTHING ELSE — no headline, no excerpt, no snippet of the
+         * piece. The record is identified out of the feed and the writing stays
+         * with whoever wrote it. See [Editorial] for why that line is where it
+         * is.
+         */
+        val readAt: String? = null,
+        val readAtName: String? = null
     )
 
     // ------------------------------------------------------------ the wire
@@ -75,9 +87,29 @@ class NewMusic(
         for (pick in fromListenBrainz(heard)) out.putIfAbsent(key(pick), pick)
         note("listenbrainz -> ${out.size} by acts you have heard")
 
-        // ONLY WHEN THERE IS ROOM. Deezer's list is the same for everybody, so
-        // it fills a first run and backs up a thin week — it never pushes out
-        // a record by somebody this house actually plays.
+        /*
+         * THE ORDER IS THE FEATURE, AND IT RUNS FROM MOST PERSONAL TO LEAST.
+         *
+         * 1. New records by acts this house actually plays. Nothing displaces
+         *    these — they are the only part that earns the word "listening".
+         * 2. What the press has just reviewed. Not personal, but it is
+         *    somebody's judgement rather than a release calendar, which is
+         *    what "what's good right now" was asking for.
+         * 3. Deezer's new-release list, which is the same for everybody and is
+         *    there so a first run is not an empty screen.
+         *
+         * Each only fills what the one above it left, so a week with plenty of
+         * (1) never shows (3) at all.
+         */
+        if (out.size < limit) {
+            var added = 0
+            for (pick in fromEditorial()) {
+                if (out.size >= limit) break
+                if (out.putIfAbsent(key(pick), pick) == null) added++
+            }
+            note("editorial -> $added reviewed lately")
+        }
+
         if (out.size < limit) {
             var added = 0
             for (pick in fromDeezer()) {
@@ -96,6 +128,24 @@ class NewMusic(
         return runCatching { parseFreshReleases(body, heard) }
             .onFailure { note("listenbrainz: unreadable answer (${it.javaClass.simpleName})") }
             .getOrDefault(emptyList())
+    }
+
+    private fun fromEditorial(): List<Pick> {
+        val source = editorial ?: return emptyList()
+        return runCatching {
+            source.recent().map {
+                Pick(
+                    artist = it.artist,
+                    album = it.album,
+                    released = "",
+                    art = it.art,
+                    why = "Reviewed by ${it.source}",
+                    heard = false,
+                    readAt = it.url,
+                    readAtName = it.source
+                )
+            }
+        }.onFailure { note("editorial: ${it.javaClass.simpleName}") }.getOrDefault(emptyList())
     }
 
     private fun fromDeezer(): List<Pick> {

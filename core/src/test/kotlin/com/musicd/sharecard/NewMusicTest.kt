@@ -1,5 +1,6 @@
 package com.musicd.sharecard
 
+import com.musicd.sharecard.discover.Editorial
 import com.musicd.sharecard.discover.NewMusic
 import com.musicd.sharecard.discover.PlayHistory
 import org.json.JSONObject
@@ -169,13 +170,42 @@ class NewMusicTest {
 
     // ------------------------------------------------------------ the ladder
 
-    private fun engine(history: PlayHistory, answers: Map<String, String>) = NewMusic(
+    private fun engine(
+        history: PlayHistory,
+        answers: Map<String, String>,
+        press: Editorial? = null
+    ) = NewMusic(
         http = okhttp3.OkHttpClient(),
         userAgent = "test",
         history = history,
+        editorial = press,
         fetchText = { url -> answers.entries.firstOrNull { url.contains(it.key) }?.value },
         today = { "2026-09-14" }
     )
+
+    /**
+     * The press, with a feed answer stubbed in and no socket anywhere.
+     *
+     * An unmatched feed answers with the EMPTY STRING rather than null: null
+     * falls through to the real fetch, and a test that reaches the network is
+     * a test that fails for somebody else's reason.
+     */
+    private fun press(answers: Map<String, String>) = Editorial(
+        http = okhttp3.OkHttpClient(),
+        userAgent = "test",
+        fetchText = { url -> answers.entries.firstOrNull { url.contains(it.key) }?.value ?: "" }
+    )
+
+    private val reviewFeed = """
+        <rss><channel>
+          <item>
+            <title><![CDATA[Low: Things We Lost in the Fire]]></title>
+            <link>https://pitchfork.com/reviews/albums/low-things-we-lost/</link>
+            <description><![CDATA[Three paragraphs of somebody's writing.]]></description>
+            <media:content url="https://media.pitchfork.com/photos/cover.jpg" />
+          </item>
+        </channel></rss>
+    """.trimIndent()
 
     @Test
     fun `what you have heard comes first and the editorial list fills the rest`() {
@@ -211,5 +241,54 @@ class NewMusicTest {
             "an empty screen says nothing about why, so the diagnostics must",
             engine.attempts().isNotEmpty()
         )
+    }
+
+
+    @Test
+    fun `the press sits between what you have heard and everybody's new releases`() {
+        // The order runs from most personal to least: a record by an act this
+        // house plays, then somebody's judgement, then a release calendar.
+        val history = PlayHistory.inMemory()
+        history.remember("Slint", "Spiderland")
+        val picks = engine(
+            history,
+            mapOf("listenbrainz" to fresh, "deezer" to editorial),
+            press(mapOf("pitchfork.com" to reviewFeed))
+        ).picks()
+        assertEquals(
+            listOf("Spiderland II", "Things We Lost in the Fire", "Out Now", "Small Cover Only"),
+            picks.map { it.album }
+        )
+    }
+
+    @Test
+    fun `a reviewed record carries the link and the publisher's name, and nothing else`() {
+        val pick = engine(
+            PlayHistory.inMemory(),
+            emptyMap(),
+            press(mapOf("pitchfork.com" to reviewFeed))
+        ).picks().first()
+        assertEquals("https://pitchfork.com/reviews/albums/low-things-we-lost/", pick.readAt)
+        assertEquals("Pitchfork", pick.readAtName)
+        assertEquals("Reviewed by Pitchfork", pick.why)
+        assertTrue(
+            "a record the press picked is not one this house has played, and " +
+                "saying otherwise would be the lie the whole screen rests on",
+            !pick.heard
+        )
+        assertTrue(
+            "not one word of the article may reach a field",
+            listOf(pick.why, pick.album, pick.artist).none { it.contains("paragraphs") }
+        )
+    }
+
+    @Test
+    fun `no press configured is simply the ladder without that rung`() {
+        val picks = engine(
+            PlayHistory.inMemory(),
+            mapOf("deezer" to editorial),
+            press = null
+        ).picks()
+        assertEquals(listOf("Out Now", "Small Cover Only"), picks.map { it.album })
     }
 }

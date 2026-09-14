@@ -915,13 +915,35 @@ body {
   align-items: center;
   gap: 2px;
   width: 100%;
+  /* Squeezable, because the SLEEVE inside it is — see below. */
+  min-height: 0;
   padding: 4px 2px;
 }
 
+/*
+ * THE SLEEVE IS WHAT GIVES WAY, AND IT HAS TO BE SIZED BY ITS HEIGHT TO DO IT.
+ *
+ * `width: 100%` with an aspect ratio derives the height from the width, so the
+ * picture was 240px tall whatever room the stage had. Measured at 320x700 the
+ * stage was 245px and the panel 223: the art alone overflowed it, and the
+ * record's OWN NAME AND ARTIST were laid out at y=390 inside a stage that ends
+ * at 368 and clips. A detail screen that does not say which record it is about
+ * is the "correct, served and invisible" failure one more time, and only a
+ * render shows it.
+ *
+ * Driving it from the HEIGHT inverts that: the width follows the ratio, and
+ * `flex: 0 1 auto` with `min-height: 0` lets the picture shrink while the two
+ * lines of text — which have no min-height override — keep theirs. Same trade
+ * the card makes on a short screen, for the same reason: the picture is the one
+ * thing here that can be smaller without anything being lost.
+ */
 .newone-art {
   display: block;
-  width: 100%;
-  max-width: 240px;
+  flex: 0 1 auto;
+  min-height: 0;
+  height: 240px;
+  width: auto;
+  max-width: 100%;
   aspect-ratio: 1 / 1;
   object-fit: cover;
   border-radius: 12px;

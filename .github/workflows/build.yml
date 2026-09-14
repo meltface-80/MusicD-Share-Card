@@ -119,9 +119,24 @@ jobs:
       # Install exactly what the build needs, here, where the download is
       # visible in the log — rather than leaving Gradle to fetch it mid-task
       # where a stall looks identical to a slow compile.
+      #
+      # `tools` IS NOT IN THAT LIST AND MUST NOT GO BACK. It is the OBSOLETE
+      # SDK Tools bundle — the old `android` script, the standalone AVD manager
+      # and monitor — superseded by cmdline-tools years ago and now REMOVED
+      # from Google's repository. Nothing here ever used it: Gradle wants
+      # platform-tools, a platform and build-tools, and the Android Gradle
+      # Plugin drives cmdline-tools, which this action installs itself.
+      #
+      # It broke this job on 2026-09-14 with the runner's cmdline-tools at
+      # 16.0: sdkmanager fetched the remote repository, answered `Warning:
+      # Failed to find package 'tools'` and exited 1, thirteen seconds in and
+      # before a line of this app was compiled. The run before it, forty
+      # minutes earlier, was green on the same YAML — so when a build that
+      # nobody changed goes red at a step that installs somebody else's
+      # software, read the log for the package name before reading the diff.
       - uses: android-actions/setup-android@v3
         with:
-          packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0'
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - uses: gradle/actions/setup-gradle@v4
 

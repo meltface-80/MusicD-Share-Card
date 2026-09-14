@@ -230,12 +230,16 @@ class ShareCardApp(
      * request each, and the filtering against [history] happens here rather
      * than as a request per act.
      */
-    private val newMusic = com.musicd.sharecard.discover.NewMusic(metaHttp, userAgent(version), history)
+    private val editorial =
+        com.musicd.sharecard.discover.Editorial(metaHttp, userAgent(version))
+
+    private val newMusic =
+        com.musicd.sharecard.discover.NewMusic(metaHttp, userAgent(version), history, editorial)
 
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
         webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz, similar,
-        settingsStore, requirePin, roonBrowse, history, newMusic
+        settingsStore, requirePin, roonBrowse, history, newMusic, editorial
     )
 
     private val server = HttpServer(api, port, bindAddress)

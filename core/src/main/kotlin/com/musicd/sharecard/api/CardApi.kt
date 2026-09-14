@@ -6,6 +6,7 @@ import com.musicd.sharecard.describe
 import com.musicd.sharecard.str
 import com.musicd.sharecard.api.Json.putOrNull
 import com.musicd.sharecard.http.HttpServer
+import com.musicd.sharecard.discover.Editorial
 import com.musicd.sharecard.discover.NewMusic
 import com.musicd.sharecard.discover.PlayHistory
 import com.musicd.sharecard.http.Request
@@ -75,7 +76,9 @@ class CardApi(
      */
     private val history: PlayHistory = PlayHistory.inMemory(),
     /** Null where this host has no route to the internet; the screen says so. */
-    private val newMusic: NewMusic? = null
+    private val newMusic: NewMusic? = null,
+    /** Its feed reads land in the same diagnostics section as the rest. */
+    private val editorial: Editorial? = null
 ) : HttpServer.Handler {
 
     private val access = Access({ webhooks.pin() }, requirePin)
@@ -203,7 +206,7 @@ class CardApi(
                 { similar?.attempts().orEmpty() },
                 art::attempts,
                 { roonBrowse?.attempts().orEmpty() },
-                { newMusic?.attempts().orEmpty() }
+                { newMusic?.attempts().orEmpty() + editorial?.attempts().orEmpty() }
             ).run()
         )
         else -> static(request.path)
@@ -952,6 +955,12 @@ class CardApi(
                             .put("why", it.why)
                             .put("heard", it.heard)
                             .putOrNull("art", it.art?.let { url -> "/api/art?url=" + urlEncode(url) })
+                            // A LINK AND NOTHING ELSE. The record was
+                            // identified out of a feed; the writing stays with
+                            // whoever wrote it, and no route here could return
+                            // a word of it.
+                            .putOrNull("readAt", it.readAt)
+                            .putOrNull("readAtName", it.readAtName)
                     }
                 )
             )
