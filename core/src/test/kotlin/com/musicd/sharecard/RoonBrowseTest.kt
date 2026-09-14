@@ -409,4 +409,69 @@ class RoonBrowseTest {
             "Stan Getz / Cal Tjader / Alan Jay Lerner / Frederick Loewe"
         )?.getString("item_key"))
     }
+
+    // ------------------------------- a search result is not the album itself
+
+    /*
+     * OBSERVED, FROM A REAL CORE. /api/debug carried these two lines one after
+     * the other for the same tap:
+     *
+     *   "The Offspring Ignition" matched Ignition / The Offspring
+     *   no action_list row on the album screen: Ignition / The Offspring [list]
+     *
+     * Read together they are the whole bug. The search matched perfectly, and
+     * then browsing the matched row did NOT open the album's own screen — it
+     * opened a screen holding one row, and that row was the album again. The
+     * app was standing one level above the record the entire time and
+     * reporting it as Roon offering no actions.
+     */
+
+    @Test
+    fun `a wrapper screen holding the same record is opened`() {
+        // Exactly what the Core sent back, transcribed.
+        val screen = items(row("Ignition", "The Offspring", hint = "list", key = "real"))
+        assertEquals("real", RoonBrowse.pickSameRecord(screen, "Ignition")?.getString("item_key"))
+    }
+
+    @Test
+    fun `the edition on either side does not stop the descent`() {
+        val screen = items(row("Ignition (2008 Remaster)", "The Offspring", key = "real"))
+        assertEquals("real", RoonBrowse.pickSameRecord(screen, "Ignition")?.getString("item_key"))
+    }
+
+    @Test
+    fun `a screen of tracks is not descended into`() {
+        // The case that makes the descent safe: an album screen is many rows,
+        // none of them named after the album. Walking into one would queue a
+        // single track — or worse, whatever happened to be first.
+        val tracks = items(
+            row("Session", "The Offspring", key = "t1"),
+            row("We Are One", "The Offspring", key = "t2"),
+            row("Burn It Up", "The Offspring", key = "t3")
+        )
+        assertNull(RoonBrowse.pickSameRecord(tracks, "Ignition"))
+    }
+
+    @Test
+    fun `two records sharing the name end the walk rather than being guessed between`() {
+        val screen = items(
+            row("Ignition", "The Offspring", key = "a"),
+            row("Ignition", "Brothers Osborne", key = "b")
+        )
+        assertNull(RoonBrowse.pickSameRecord(screen, "Ignition"))
+    }
+
+    @Test
+    fun `an action list is not something to descend into`() {
+        // It is the thing being looked FOR, and opening it as if it were a
+        // wrapper would skip the step that finds Queue.
+        val screen = items(row("Ignition", "The Offspring", hint = "action_list", key = "acts"))
+        assertNull(RoonBrowse.pickSameRecord(screen, "Ignition"))
+    }
+
+    @Test
+    fun `a row with no key cannot be opened`() {
+        val screen = JSONArray("""[{"title":"Ignition","subtitle":"The Offspring","hint":"list"}]""")
+        assertNull(RoonBrowse.pickSameRecord(screen, "Ignition"))
+    }
 }

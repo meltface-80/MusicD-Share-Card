@@ -187,23 +187,64 @@ class RoonBrowse(private val socket: () -> MooSocket?) {
         zone: String,
         what: String
     ): Outcome {
-        val opened = request(moo, browseItem(albumRow, key).put("zone_or_output_id", zone))
-        refused(opened, expectList = true)
-            ?.let { return fail(what, "opening the album: $it ${raw(opened)}", it) }
-        val albumScreen = load(moo, key)
+        /*
+         * A SEARCH RESULT IS NOT THE ALBUM. IT IS A ROW THAT OPENS ONTO IT.
+         *
+         * This is what the diagnostics finally caught, and it is the whole bug.
+         * The search matched perfectly — `"The Offspring Ignition" matched
+         * Ignition / The Offspring` — and then the very next line said `no
+         * action_list row on the album screen: Ignition / The Offspring
+         * [list]`. Read those together: browsing the matched row did not open
+         * the album's own screen, it opened a screen holding ONE row, and that
+         * row was the album again, hinted `list`.
+         *
+         * So the app was standing one level above the record the entire time
+         * and reporting it as Roon offering no actions — which is why this
+         * looked like a Roon problem rather than an off-by-one in a walk.
+         *
+         * It descends now: open a row, look for the action list, and if there
+         * isn't one, go through the single row that is plainly the same record
+         * and look again. Bounded, because a walk with no bottom is a hang.
+         *
+         * WHAT IT WILL NOT DO IS WANDER. The descent takes a row only when
+         * exactly one on the screen both opens a list and carries this record's
+         * name — so an album screen full of TRACKS (many rows, none of them the
+         * album) ends the walk rather than queueing track one, and a screen of
+         * several records ends it rather than guessing between them. Every
+         * level is recorded.
+         */
+        var current = albumRow
+        var menu: JSONObject? = null
+        for (level in 1..MAX_DESCENT) {
+            val opened = request(moo, browseItem(current, key).put("zone_or_output_id", zone))
+            refused(opened, expectList = true)
+                ?.let { return fail(what, "opening level $level: $it ${raw(opened)}", it) }
+            val screen = load(moo, key)
+
+            pickActionList(screen)?.let { menu = it }
+            if (menu != null) break
+
+            val deeper = pickSameRecord(screen, current.str("title"))
+                ?: return fail(
+                    what,
+                    "level $level has no action_list and nothing to open: ${titles(screen)}",
+                    "Roon offered no actions for that record."
+                )
+            note("$what -> level $level was a wrapper, opening ${deeper.str("title")}")
+            current = deeper
+        }
+        val actionList = menu ?: return fail(
+            what,
+            "no action_list within $MAX_DESCENT levels of the search result",
+            "Roon offered no actions for that record."
+        )
 
         // THE ZONE IS NAMED WHEN THE MENU IS OPENED, NOT ONLY WHEN THE ACTION
         // IS INVOKED. Roon decides which actions to offer from the zone they
         // would apply to, so a menu opened without one can come back with no
         // playback actions in it at all — which this would then report as
         // "Roon offered no Queue action", naming the wrong cause.
-        val menu = pickActionList(albumScreen)
-            ?: return fail(
-                what,
-                "no action_list row on the album screen: ${titles(albumScreen)}",
-                "Roon offered no actions for that record."
-            )
-        val actionsReply = request(moo, browseItem(menu, key).put("zone_or_output_id", zone))
+        val actionsReply = request(moo, browseItem(actionList, key).put("zone_or_output_id", zone))
         refused(actionsReply, expectList = true)
             ?.let { return fail(what, "opening the actions: $it ${raw(actionsReply)}", it) }
         val actions = load(moo, key)
@@ -317,6 +358,16 @@ class RoonBrowse(private val socket: () -> MooSocket?) {
 
         /** Enough attempts to cover a session's worth of taps, and no more. */
         private const val MAX_NOTES = 12
+
+        /**
+         * How far below a search result the record may be.
+         *
+         * One level is what a real Core was observed to need. Three is room for
+         * a shape nobody here has seen, and a bound rather than a `while` is
+         * the point: a walk with no bottom is a hang, on a request thread, in
+         * an app whose whole promise is that it never makes anybody wait.
+         */
+        private const val MAX_DESCENT = 3
 
         /** Roon pages its lists; a search's first hundred rows is plenty. */
         private const val PAGE = 100
@@ -440,6 +491,34 @@ class RoonBrowse(private val socket: () -> MooSocket?) {
             // Nothing named the act. A row that names NOBODY may still be it;
             // a row that names somebody else may not.
             return byTitle.singleOrNull { it.str("subtitle").isBlank() }
+        }
+
+        /**
+         * THE ONE ROW ON THIS SCREEN THAT IS PLAINLY THE SAME RECORD.
+         *
+         * A search result opens onto a screen holding the album again rather
+         * than onto the album itself — observed, from a real Core: browsing the
+         * matched row gave back exactly one item, `Ignition / The Offspring`,
+         * hinted `list`. Going through it is the difference between queueing
+         * the record and reporting that Roon offered no actions.
+         *
+         * NARROW, BECAUSE THE ALTERNATIVE IS QUEUEING SOMETHING ELSE. It takes
+         * a row only when it can be opened, is not itself an action list, and
+         * carries the name we arrived with — and only when EXACTLY ONE row on
+         * the screen does. An album screen full of tracks has many rows and
+         * none named after the album, so the walk stops there rather than
+         * queueing track one; a screen offering several records stops rather
+         * than guessing between them.
+         */
+        internal fun pickSameRecord(items: JSONArray, title: String): JSONObject? {
+            val want = Normalize.stripEdition(title)
+            return items.objects()
+                .filter {
+                    it.strOrNull("item_key") != null &&
+                        !it.str("hint").equals("action_list", ignoreCase = true) &&
+                        Normalize.namesOverlap(Normalize.stripEdition(it.str("title")), want)
+                }
+                .singleOrNull()
         }
 
         /**

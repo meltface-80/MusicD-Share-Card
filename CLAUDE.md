@@ -1231,6 +1231,31 @@ was simply not there, however carefully the DIDL was parsed.
     actions in it — which the app then reported as "Roon offered no Queue
     action", naming the wrong cause. UNVERIFIED, like everything else on this
     wire.
+  - **A SEARCH RESULT IS NOT THE ALBUM. IT IS A ROW THAT OPENS ONTO IT — AND
+    THAT WAS THE WHOLE BUG.** Four releases of this feature never queued
+    anything, and the diagnostics added for it printed the answer in two
+    consecutive lines off a real Core: `"The Offspring Ignition" matched
+    Ignition / The Offspring`, then `no action_list row on the album screen:
+    Ignition / The Offspring [list]`. Read together they say it plainly — the
+    search matched perfectly, and browsing the matched row did not open the
+    album's own screen, it opened a screen holding ONE row, and that row was
+    the album again. The app stood one level above the record the entire time
+    and reported it as Roon offering no actions, which is why it read as a Roon
+    problem rather than an off-by-one in a walk. It descends now, bounded by
+    `MAX_DESCENT`, because a walk with no bottom is a hang on a request thread.
+    **THE DESCENT IS NARROW ON PURPOSE**: `pickSameRecord` takes a row only
+    when exactly one on the screen can be opened, is not itself an action list,
+    and carries the name we arrived with — so a screen full of TRACKS ends the
+    walk rather than queueing track one, and two records sharing a title end it
+    rather than being guessed between. Tests both ways: the descent shown
+    failing when removed, and the guards shown failing against a reckless
+    "first openable row".
+  - **THE DIAGNOSTICS ARE WHAT SOLVED IT, AND THAT IS THE ARGUMENT FOR THEM.**
+    Three rounds of this feature were spent reasoning about a protocol nobody
+    here can reach. The round that fixed it did no reasoning at all: the app
+    printed which step it stopped at and what Roon actually sent, somebody
+    photographed it, and the answer was in the first two lines. Build the
+    report before building the theory.
   - **THE SEARCH IS A LADDER, NOT A GUESS, AND THE RAW REPLY IS IN THE
     DIAGNOSTICS NOW.** Reported as U2's "Rattle And Hum" — in the library, on a
     Roon card — falling through to a streaming search, with "this must work"
