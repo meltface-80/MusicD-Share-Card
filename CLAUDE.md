@@ -28,6 +28,7 @@ node tools/check-css.js
 node tools/check-sharecard.js
 python3 tools/check-icons.py
 sh tools/check-launcher.sh
+sh tools/check-publish.sh
 sh tools/check-docker-paths.sh   # after :server:installDist
 ```
 
@@ -442,6 +443,17 @@ was simply not there, however carefully the DIDL was parsed.
   internet at all. NOT FIXED, and deliberately left rather than changed
   quietly: making it non-blocking changes what the page looks like while it
   loads, which is the owner's call. Reopen it as a product question.
+
+  RE-MEASURED WHILE FIXING THE DISCOVERY SWEEPS, AND IT IS WORSE THAN "SLOW".
+  Driven in a real browser against a route that accepts the connection and
+  never answers: after six seconds `document.readyState` was still `loading`,
+  `app.js` had NOT EXECUTED, not one request had been made, and the page sat on
+  "Looking for what's playing…". So this is not the page being sluggish — it is
+  the page not being running. It still needs the owner's answer because the
+  cost is real on the other side: `ensureFont()` waits for Manrope before
+  DRAWING, and a stylesheet that no longer blocks can lose that race and draw
+  the card in the system sans. The card is the product, so the fix is a bounded
+  wait on the link's own load event, not simply making it async.
 - **A source can report an opaque id where a title should be.** Roon streaming
   to Sonos sends "Roon" + 32 hex characters as `dc:title`. A card headed with a
   hash looks like the app working, which is worse than one that admits it knows
@@ -588,6 +600,22 @@ was simply not there, however carefully the DIDL was parsed.
   `ClipboardItem` and `clipboard.write` natively, so the page's detect passed
   and drew a button that did nothing. `ShareBridge` now deletes both. Share does
   the same job and works; iOS long-press and desktop Copy are untouched.
+- **AN EMPTY SWEEP IS AN ANSWER, AND IT IS REMEMBERED LIKE ANY OTHER. THIS WAS
+  COSTING FORTY-SEVEN SECONDS A PAGE LOAD.** All three network sources cached a
+  discovery only when it SUCCEEDED — `zones.isNotEmpty()` in `Household.refresh`,
+  `renderers.isNotEmpty()` in `UpnpSource.scan`, `known != null` in
+  `LmsSource.scan` — so a source that found nothing searched again on the very
+  next question, for ever, inside the request. Measured against the real server
+  on a network with no players: `/api/zones` 9.3s and `/api/now-playing` 37s, on
+  EVERY request, because the fallback ladder asks each source and then each
+  enabled room and every one of those re-swept. With the answer remembered: 9.4s
+  once, then about a millisecond until the TTL runs out. Reported as "very slow
+  to detect zones and populate sharecards". It is the same fault Roon's
+  discovery had — it looked again every thirty seconds for ever rather than
+  looking once — and it is this rule wearing a different hat. Refresh still
+  forces, which is the bargain every source here already makes: a speaker
+  switched on a moment ago is one tap away rather than automatic. `EmptySweepTest`
+  counts the sweeps.
 - **Never poll.** The app asks a speaker what is playing when somebody opens the
   page or presses Refresh. This runs on a device that is never switched off; a
   timer anywhere means interrogating the household all day to answer a question
@@ -667,6 +695,29 @@ was simply not there, however carefully the DIDL was parsed.
   too narrow for the names on a phone, and the alternative was shortening
   services' own names or an ellipsis that hides the word telling two of them
   apart.
+- **EVERY CHIP IN THAT ROW IS ONE FIXED SIZE, AND A LABEL MAY NEVER SET IT.**
+  `align-items: stretch` keeps the grid a grid by making the one-line chips as
+  tall as the two-line ones — and it works the other way too, so ONE tall chip
+  makes every chip on its row that tall. The artist review chips were labelled
+  `"AllMusic: $artist"`, a Roon card answered "Stan Getz / Cal Tjader / Alan Jay
+  Lerner / Frederick Loewe", and the row drew as four CIRCLES with a small pill
+  orphaned under them. Reported as "button sizes completely off" and reproduced
+  in a browser at 390px: heights 30..117px on one row. Two halves to the fix and
+  both are needed. A chip label is a CONSTANT out of `Reviews.Source.chip`,
+  never built from a record — the row gives it a quarter of a phone. And the
+  height is STATED (`height: 44px`, two lines' worth, with the label clamped to
+  two lines in a span) rather than grown into, because a row whose height is
+  set by its longest label is a trap somebody walks into twice. Measured 44px
+  everywhere at 320, 360, 390, 430 and 1200.
+- **AND THE TYPE IN IT FOLLOWS THE WIDTH, WITH NO BREAKPOINT.** A quarter of a
+  320px phone is 67px and "Wikipedia" at 12px does not fit, so `break-word` did
+  what it says: "Wikipedi / a", "Qobu / z", "Bandca / mp" — the outcome
+  `anywhere` was rejected for, arrived at honestly. `clamp(10px, 3.2vw, 12px)`
+  is 12px above about 375px and smaller below it, continuously. A media query
+  would have done the same job and is the thing to avoid: `@media (max-width:
+  420px)` is what made one reporter's Android and iPhone lay out differently and
+  read as a platform bug. A size that follows the width has no edge for two
+  devices to sit either side of.
 - **THE PREFERRED SERVICE IS CHOSEN BY HOLDING ITS CHIP, and it is NOT a
   setting.** The suggestion chips have to link somewhere and that was Qobuz for
   everybody because Qobuz is first in the list. A settings screen for a one-tap
@@ -1048,6 +1099,26 @@ was simply not there, however carefully the DIDL was parsed.
   whether the row changes shape between albums. Put to the owner with that laid
   out, the answer was to leave it alone. Reopen it as a product question, not as
   something nobody thought of.
+- **A SEARCH BOX GETS THE FIRST CREDITED ACT, NOT THE WHOLE CREDIT.** A Roon
+  card came back credited "Stan Getz / Cal Tjader / Alan Jay Lerner / Frederick
+  Loewe" — two performers and the two men who wrote the songs — and every chip
+  in the row searched for all four names as one. AllMusic answered in as many
+  words: "No search results were found for Stan Getz Cal Tjader Alan Jay Lerner
+  Frederick Loewe". It is right; there is no such act. `Normalize.primaryArtist`
+  runs inside `StreamingLinks.searchQuery`, so one rule covers every service
+  chip and both AllMusic links — and `Reviews.artistUrl` passes the artist in
+  the ARTIST slot for exactly that reason, having previously passed it as the
+  album and skipped the rule. THE CARD STILL SAYS ALL FOUR: this is the query
+  only, and shortening the credit under the cover would be inventing a different
+  record. THE SPLIT IS DELIBERATELY NARROW, because throwing away part of a real
+  name leaves a search that finds nothing — the same failure from the other
+  side. A SPACED slash separates and a bare one does not, or "AC/DC" loses half
+  its name to the rule two lines below this one; "feat."/"ft."/"featuring" and a
+  semicolon separate; a COMMA does not ("Earth, Wind & Fire") and an AMPERSAND
+  does not ("Nick Cave & the Bad Seeds", "Simon & Garfunkel"), which is the same
+  conjunction `namesOverlap` drops rather than splits on. The METADATA lookups
+  were deliberately left alone: `namesOverlap` anchors at the front and accepts
+  a name qualified on the right, so a multi-name credit already matches there.
 - **The search query is percent-encoded, and a slash is spent as a space.**
   `URLEncoder` writes a space as `+`, which four of the six services take as a
   literal plus because they carry the query in the PATH. And `%2F` is decoded
@@ -1197,6 +1268,25 @@ was simply not there, however carefully the DIDL was parsed.
   the churn the old early-exit existed to prevent. When the APK is already
   committed, the note that came with it is still the true one and is preserved.
   The commit is skipped entirely when nothing actually changed.
+- **ONE PUBLISHER, AND IT IS THE DEFAULT BRANCH. TWO OF THEM IS A CONFLICT IN
+  EVERY PULL REQUEST, BY CONSTRUCTION.** `dist/latest.json`, `README.md` and
+  `docs/index.html` are all GENERATED by the publish step, from the version and
+  from `GITHUB_REF_NAME` — and it ran on every branch. So main and a branch did
+  not merely both write those files, they wrote DIFFERENT bytes into every line
+  carrying a version or a ref: `.../main/dist/musicd-share-card-0.51.0.apk`
+  against `.../claude/sonos-…/dist/musicd-share-card-0.52.0.apk`. Every pull
+  request conflicted on all three, every release, resolved by hand each time —
+  reported as "this keeps happening". A conflict between two generators of one
+  file is not a merge going wrong; the only permanent fix is one writer. Nothing
+  was lost by narrowing it: a branch manifest is read by nothing (the app reads
+  MAIN's) and names a url that stops resolving the day the branch is deleted,
+  which is the bug two entries below this one, the one that shipped twice. The
+  branch build still compiles, signs, checks and uploads the APK as an artifact.
+  `tools/check-publish.sh` asserts the invariant rather than the line: the step
+  is gated on the repository's own default branch, AND nothing else in the
+  workflow commits at all, because a second publisher added later is how this
+  comes back wearing another name. WHAT IT COSTS is that an open pull request's
+  `dist/` and README link still name the previous version until it merges.
 - **A DUPLICATE PUBLISH IS NOT A FAILURE.** Two pushes a minute apart build the
   same `versionName`, write the same APK path, and the loser's rebase hits an
   add/add conflict on a file identical but for its notes — reddening a build

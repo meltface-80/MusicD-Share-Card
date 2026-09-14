@@ -110,8 +110,14 @@ class Household(
     @Volatile
     private var zones: List<Zone> = emptyList()
 
+    /**
+     * When a sweep was last RUN, which is not the same as when one last found
+     * something — and that difference was costing nine seconds a request.
+     *
+     * See [refresh].
+     */
     @Volatile
-    private var topologyAt: Long = 0
+    private var sweptAt: Long = 0
 
     /** The group the user last chose, so a refresh does not wander. */
     @Volatile
@@ -126,11 +132,27 @@ class Household(
      * [force] is what the Refresh button sends: a regroup in the Sonos app
      * changes coordinators without changing anything this app would otherwise
      * notice, and a card headed with the wrong room is the result.
+     *
+     * AN EMPTY SWEEP IS AN ANSWER AND IS REMEMBERED LIKE ANY OTHER. The TTL
+     * used to be defeated by `zones.isNotEmpty()`, so a household that was not
+     * found was searched for again on the very next question — SSDP on every
+     * interface and then a 253-address subnet scan, in the request, every
+     * time. Measured on a network with no players: `/api/zones` 9.3s and
+     * `/api/now-playing` 37s, on EVERY request, because the ladder asks each
+     * source and then each room and every one of those re-swept. Reported as
+     * "very slow to detect zones and populate sharecards".
+     *
+     * That is the same fault Roon's discovery had — it rescheduled itself for
+     * ever rather than looking once — and it is the no-polling rule wearing a
+     * different hat: a sweep is a question of the whole household, and asking
+     * it again immediately answers nothing new. Refresh still forces, which is
+     * the bargain every other source here already makes, and a speaker
+     * switched on mid-minute is one tap away rather than automatic.
      */
     @Synchronized
     fun refresh(force: Boolean = false): List<Zone> {
-        val fresh = System.currentTimeMillis() - topologyAt < TOPOLOGY_TTL_MS
-        if (!force && fresh && zones.isNotEmpty()) return zones
+        if (!force && System.currentTimeMillis() - sweptAt < TOPOLOGY_TTL_MS) return zones
+        sweptAt = System.currentTimeMillis()
 
         // AN ADDRESS WE ALREADY HAVE IS TRIED FIRST, ALWAYS.
         //
@@ -183,7 +205,6 @@ class Household(
         if (parsed.isEmpty()) return zones
 
         zones = parsed
-        topologyAt = System.currentTimeMillis()
         // Learn every address, so the next scan does not depend on multicast
         // working twice.
         seeds += parsed.mapNotNull { it.ip.takeIf(String::isNotEmpty) }

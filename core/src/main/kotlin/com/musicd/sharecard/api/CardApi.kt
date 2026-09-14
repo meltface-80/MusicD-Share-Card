@@ -586,26 +586,29 @@ class CardApi(
          * so they cost nothing on the fast path and are on screen with the
          * first paint. The page draws whatever is in here rather than knowing
          * the names, so a source added later labels its own chip.
+         *
+         * EVERY LABEL IS A CONSTANT OUT OF [Reviews] and none is built from
+         * the record. The artist ones carried the artist string, and a
+         * four-name Roon one in a cell a quarter of a phone wide made the
+         * whole row draw as circles — see Reviews.Source.chip.
          */
         val reading = JSONArray()
+        fun chip(id: String, url: String?) {
+            val name = Reviews.chip(id) ?: return
+            url?.let { reading.put(JSONObject().put("name", name).put("url", it)) }
+        }
         if (chosen.reviewEnabled(Reviews.ALLMUSIC)) {
-            Reviews.albumUrl(artist, album)?.let {
-                reading.put(JSONObject().put("name", "AllMusic").put("url", it))
-            }
+            chip(Reviews.ALLMUSIC, Reviews.albumUrl(artist, album))
         }
         if (chosen.reviewEnabled(Reviews.WIKIPEDIA_ARTIST)) {
             // ALREADY FETCHED AND NEVER DRAWN. The metadata lookup has always
             // brought back the artist's article because it comes with the same
             // search; the card does not use it because a card is about a
             // record. Offering it costs no request at all.
-            extras?.artist?.url?.let {
-                reading.put(JSONObject().put("name", "Wikipedia: $artist").put("url", it))
-            }
+            chip(Reviews.WIKIPEDIA_ARTIST, extras?.artist?.url)
         }
         if (chosen.reviewEnabled(Reviews.ALLMUSIC_ARTIST)) {
-            Reviews.artistUrl(artist)?.let {
-                reading.put(JSONObject().put("name", "AllMusic: $artist").put("url", it))
-            }
+            chip(Reviews.ALLMUSIC_ARTIST, Reviews.artistUrl(artist))
         }
 
         return Json.obj(

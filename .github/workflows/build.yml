@@ -88,6 +88,12 @@ jobs:
       - name: Check the image copies a path the build produces
         run: sh tools/check-docker-paths.sh
 
+      # One publisher, and it is the default branch. Two of them means a
+      # conflict in dist/latest.json, README.md and docs/index.html on every
+      # pull request, which is how this repo spent several releases.
+      - name: Check only the default branch publishes
+        run: sh tools/check-publish.sh
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
@@ -260,8 +266,35 @@ jobs:
       # release APK once the signing secret exists, and the debug APK until
       # then. The unsigned release is never published — it installs nowhere, and
       # a dist/ link that downloads a dead file is worse than no link.
+      #
+      # THE DEFAULT BRANCH IS THE ONLY PUBLISHER, AND THAT IS WHAT STOPS THE
+      # CONFLICTS.
+      #
+      # This used to run on every branch. `dist/latest.json`, `README.md` and
+      # `docs/index.html` are all GENERATED here, from the version and from
+      # GITHUB_REF_NAME — so a branch and main did not merely both write them,
+      # they wrote DIFFERENT bytes into every line carrying a version or a ref.
+      # Two writers, three generated files, and a conflict on all three in every
+      # single pull request. Reported as "this keeps happening": README.md,
+      # dist/latest.json and docs/index.html, release after release, resolved by
+      # hand each time. It is not a merge that keeps going wrong, it is two
+      # branches generating the same files.
+      #
+      # A branch manifest was never read by anything either. The app reads
+      # MAIN's, and a branch url stops resolving the day the branch is deleted —
+      # which is the bug two comments below, the one that shipped twice. So the
+      # branch build still compiles the APK, signs it, checks the signature and
+      # uploads it as a workflow artifact; what it no longer does is commit a
+      # manifest nothing reads, naming a url that will not last.
+      #
+      # WHAT IT COSTS, STATED RATHER THAN HIDDEN: while a pull request is open,
+      # dist/ and the README link on that branch still name the PREVIOUS
+      # version. They are corrected the moment it merges, by main's own run.
       - name: Publish the APK into dist/
-        if: github.event_name == 'push' && github.ref_type == 'branch'
+        if: >-
+          github.event_name == 'push'
+          && github.ref_type == 'branch'
+          && github.ref_name == github.event.repository.default_branch
         env:
           RELEASE_APK: ${{ steps.name.outputs.apk }}
           DEBUG_APK: ${{ steps.debugname.outputs.apk }}
