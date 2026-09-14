@@ -41,8 +41,15 @@ most personal to least:
 3. **New this week**, from Deezer's editorial list — the same for everybody,
    there so a fresh install is not an empty screen.
 
+Cover art comes from the record rather than from the article beside it — the
+picture at the top of a review is usually a press shot, and a press shot under
+an album title is worse than no picture at all.
+
 Tap any sleeve and you get the same row of links the card has: the review it
 came from if it came from one, then Wikipedia, AllMusic and the services.
+
+The screen is remembered for an hour, so switching tabs costs nothing.
+**Refresh** asks again, and on this tab it refreshes this tab.
 
 
 It works out what's playing by asking whoever actually knows:

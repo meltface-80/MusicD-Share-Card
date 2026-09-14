@@ -181,4 +181,30 @@ class EditorialTest {
         assertTrue(Editorial.FEEDS.all { it.url.startsWith("https://") })
         assertTrue(Editorial.FEEDS.all { it.mustContain.isNotBlank() })
     }
+
+    // ------------------------------------------------------------- the shelf
+
+    @Test
+    fun `the feeds are read once an hour, not once a visit`() {
+        // Two people opening Discover a minute apart are asking the same
+        // question, and a review feed turns over slowly. Fetching both on
+        // every call spends somebody else's bandwidth to be told the same
+        // thing, which is the no-polling rule wearing another hat.
+        val seen = ArrayList<String>()
+        val press = Editorial(
+            http = okhttp3.OkHttpClient(),
+            userAgent = "test",
+            fetchText = { url -> seen.add(url); if (url.contains("pitchfork")) feed else "" }
+        )
+        assertEquals(2, press.recent().size)
+        val first = seen.size
+        assertTrue("the first read has to actually ask", first >= Editorial.FEEDS.size)
+        press.recent()
+        press.recent()
+        assertEquals("and no read after it may ask again", first, seen.size)
+
+        press.forget()
+        press.recent()
+        assertTrue("Refresh forces, like every other source here", seen.size > first)
+    }
 }

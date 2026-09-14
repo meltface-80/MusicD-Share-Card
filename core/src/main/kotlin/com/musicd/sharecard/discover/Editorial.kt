@@ -1,6 +1,7 @@
 package com.musicd.sharecard.discover
 
 import com.musicd.sharecard.Log
+import com.musicd.sharecard.meta.TtlCache
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -51,7 +52,24 @@ class Editorial(
         val url: String
     )
 
-    fun recent(): List<Reviewed> {
+    /*
+     * ONE FEED READ AN HOUR, NOT ONE PER VISIT.
+     *
+     * A review feed turns over slowly and two people opening Discover a minute
+     * apart are asking the same question, so fetching both feeds on every call
+     * spends somebody else's bandwidth to be told the same thing. Held in
+     * memory only, like Pitchfork's own hourly index and for the same reason:
+     * it is a recent-reviews window that must stay fresh, so a shelf that
+     * outlived a restart would be the wrong kind of memory.
+     */
+    private val cache = TtlCache<String, List<Reviewed>>(TTL_MS, 2)
+
+    fun recent(): List<Reviewed> = cache.get("all") { read() }
+
+    /** Throw the shelf away, so the next look is a fresh one. See Refresh. */
+    fun forget() = cache.clear()
+
+    private fun read(): List<Reviewed> {
         val out = ArrayList<Reviewed>()
         for (feed in FEEDS) {
             val xml = get(feed.url)
@@ -102,6 +120,9 @@ class Editorial(
     companion object {
         private const val TAG = "Editorial"
         private const val MAX_NOTES = 8
+
+        /** How long a read of the feeds stays true. They publish hourly at most. */
+        const val TTL_MS = 60L * 60_000L
 
         /**
          * How a publisher writes a review's headline.

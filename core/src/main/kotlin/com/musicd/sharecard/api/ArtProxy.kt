@@ -30,8 +30,26 @@ class ArtProxy(
     private val knownPlayers: () -> Collection<String> = { emptyList() }
 ) {
 
-    /** One picture in flight, the one on screen, and a couple behind it. */
-    private val cache = TtlCache<String, Art>(CACHE_MS, 8)
+    /*
+     * A SCREENFUL, NOT A CARD. THE DISCOVER GRID CHANGED THE DEMAND.
+     *
+     * This held eight, which was right for as long as the only picture on the
+     * page was the card: one in flight, the one on screen, a couple behind it.
+     * Discover asks for TWELVE sleeves at once, so every visit evicted
+     * everything the last one had fetched and downloaded the lot again —
+     * a cache doing the opposite of its job, and invisible because the tiles
+     * still drew.
+     *
+     * Sized for a grid and the card together, with headroom for the record a
+     * tile opens onto. The bytes stay bounded because a sleeve is asked for at
+     * TILE size rather than wall size (see NewMusic.pickSleeve): a 500px cover
+     * is about 80KB, so a full shelf is a couple of megabytes rather than the
+     * worst case MAX_BYTES allows.
+     *
+     * Still memory only and deliberately so — see the rule about which caches
+     * pass a Persist. Picture bytes are large and cheap to refetch.
+     */
+    private val cache = TtlCache<String, Art>(CACHE_MS, 32)
 
     class Art(val bytes: ByteArray, val contentType: String)
 
@@ -224,7 +242,13 @@ class ArtProxy(
         const val TAG = "Art"
 
         /** Long enough to cover a card being drawn and then redrawn. */
-        const val CACHE_MS = 5L * 60 * 1000
+        /*
+         * Long enough that leaving Discover and coming back is free. It was
+         * five minutes, chosen when this held one card whose picture changed
+         * whenever the record did; a wall of sleeves is the same wall for as
+         * long as the screen behind it is, which NewMusic keeps for an hour.
+         */
+        const val CACHE_MS = 30L * 60 * 1000
 
         /** A sleeve. Anything larger is not one. */
         const val MAX_BYTES = 12 * 1024 * 1024

@@ -873,6 +873,62 @@ was simply not there, however carefully the DIDL was parsed.
   inside the stage every time, and `NewMusicDrawnTest` scans the declaration —
   PER DECLARATION, not per substring, because `max-width: 100%` carries
   `width: 100%` inside it and the first cut of that scan failed on the fix.
+- **THE PICTURE BESIDE AN ARTICLE IS NOT THE RECORD'S SLEEVE.** Reported on
+  the first real run as "no album artwork", and it looked like two bugs: NME's
+  tiles drew the placeholder because its feed carries no image this could use,
+  and Pitchfork's drew a BROKEN IMAGE because its feed carried one that then
+  failed to fetch. One cause underneath. What a publisher puts at the top of a
+  review is a press shot, a live photo or a collage, and a press shot under an
+  album title is a confident wrong answer — the thing this repo refuses
+  everywhere else. The sleeve is resolved from the RECORD now, out of the same
+  Deezer API the new-release list already comes from, and the feed's own image
+  is kept only for a record Deezer does not carry. THE SEARCH IS LOOSE AND THE
+  CHECK IS STRICT, as every lookup here is: the query is the two names plainly
+  and both have to overlap on the ROW, because the first row is not the answer
+  — `QobuzAlbum.pick` and the Deezer artist search are already written from
+  that lesson.
+- **A SLEEVE IS ASKED FOR AT TILE SIZE, AND THAT IS A CACHE DECISION.**
+  Deezer's `cover_big` is 500px and its `cover_xl` is 1000px; a tile is about
+  115px on a phone and the record a tile opens onto is 240px, so xl is four
+  times the bytes for a picture nothing draws that large. Twelve of them at
+  once is what made `ArtProxy`'s shelf too small to hold one screen.
+- **A CACHE SIZED FOR THE OLD SCREEN DOES THE OPPOSITE OF ITS JOB ON THE NEW
+  ONE.** `ArtProxy` held EIGHT pictures, which was right for as long as the
+  only picture on the page was the card — one in flight, the one on screen, a
+  couple behind it, and its comment said exactly that. Discover asks for
+  TWELVE at once, so every visit evicted everything the last visit had fetched
+  and downloaded the lot again. Invisible, because the tiles still drew. WHEN A
+  SCREEN IS ADDED, GO AND LOOK AT WHAT THE OLD ONES SIZED THEMSELVES FOR.
+- **THE WHOLE DISCOVER SCREEN IS REMEMBERED, AND NOT DOING SO WAS THE EMPTY
+  SWEEP AGAIN.** Opening it cost a ListenBrainz window, two RSS feeds, a Deezer
+  list and a sleeve lookup per record — every time, including tapping Playing
+  and tapping back. Measured against the real server: 0.97s cold and 0.001s
+  warm, with `?refresh=1` going back to the network at 0.86s. THE KEY IS THE
+  HISTORY, FOLDED, because "based on your listening" has to follow the
+  listening: a record played since the last look reshapes the screen at once
+  rather than at the end of a TTL. TWO SHELVES, because they go stale for
+  different reasons — the screen is a this-week question and is held in memory
+  for an hour, while a record's cover does not change and is written to disk
+  for a week, which is what stops the same twelve lookups being paid again
+  tomorrow. `forget()` throws away the screen and NOT the sleeves.
+- **REFRESH REFRESHES THE SCREEN YOU ARE LOOKING AT.** It called `load(true)`
+  unconditionally, so pressing it on Discover threw away the sleeves and drew
+  the card — which reads as the button navigating rather than refreshing, and
+  left Discover with no way to ask again at all the moment it started
+  remembering its answer. A cache and a Refresh button are one change, not two:
+  whatever you start remembering, something has to be able to forget.
+- **THE WALL OF SLEEVES IS FULL-BLEED; THE CARD AND THE ONE RECORD ARE NOT.**
+  Reported as "not using the full screen, doesn't need to be inside a window".
+  Measured at 390x780 before: 16px of `.wrap` padding, a 1px border and 10px of
+  stage padding EACH side, so 336px of a 390px phone reached the grid and a
+  tile was 104px. After: 0px gutter, 370px of grid, a 115px tile. The frame is
+  what a CARD wants — it is one picture and the border is its edge — and a list
+  of records is the opposite: the sleeves ARE the screen. So the rule keys on
+  the GRID alone, and one record opened from a tile keeps the frame, because it
+  is the same kind of object as the card on the other tab. The old warning
+  against `flex: 1 1 auto` here still stands for `.choosing`: what it guarded
+  was a tall BORDERED box with its contents floating in the middle, and with no
+  border and the grid top-aligned there is no panel edge left to reveal.
 - **NEITHER FEED HAS BEEN REACHED FROM HERE.** The proxy answers 403 to the
   CONNECT for pitchfork.com and nme.com, checked rather than assumed, so the
   shapes are the documented ones pinned as fixtures and the socket is kept out

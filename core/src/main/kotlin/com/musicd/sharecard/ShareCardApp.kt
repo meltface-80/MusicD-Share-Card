@@ -233,8 +233,9 @@ class ShareCardApp(
     private val editorial =
         com.musicd.sharecard.discover.Editorial(metaHttp, userAgent(version))
 
-    private val newMusic =
-        com.musicd.sharecard.discover.NewMusic(metaHttp, userAgent(version), history, editorial)
+    private val newMusic = com.musicd.sharecard.discover.NewMusic(
+        metaHttp, userAgent(version), history, editorial, store = cacheStore
+    )
 
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
