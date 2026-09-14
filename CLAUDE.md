@@ -967,6 +967,21 @@ was simply not there, however carefully the DIDL was parsed.
   against `flex: 1 1 auto` here still stands for `.choosing`: what it guarded
   was a tall BORDERED box with its contents floating in the middle, and with no
   border and the grid top-aligned there is no panel edge left to reveal.
+
+  AND IT TOOK THREE GOES, EACH TIME BECAUSE SOMETHING SMALLER WAS LEFT. First
+  the border and the 16px page gutter came off; then 10px of stage padding was
+  still a mount round a picture, and 60px sat underneath. Measured at 393x852
+  with a 34pt home indicator: 26px of that was the caption and 34px was the
+  inset. The inset was the interesting half — held OUTSIDE a scrolling element
+  it is a band the content can NEVER reach, however far you scroll. Moved
+  inside the scroller as its own `padding-bottom`, the sleeves run through it
+  and it is blank only at the very end of the list, which is where a home
+  indicator belongs. The caption went with it on this screen alone: what it
+  explained was a grid of pictures with borders that are visibly buttons. A
+  SCROLLING WALL IS NOT A COLUMN OF ROWS — a column finishes, so page padding
+  keeps it off the edges and reads as margin; a wall is clipped at both ends by
+  definition, so the same padding reads as a frame. 0px each side, 0px under
+  it, and the grid starts at the tab underline.
 - **NEITHER FEED HAS BEEN REACHED FROM HERE.** The proxy answers 403 to the
   CONNECT for pitchfork.com and nme.com, checked rather than assumed, so the
   shapes are the documented ones pinned as fixtures and the socket is kept out

@@ -181,6 +181,25 @@ class NewMusicDrawnTest {
             "the gutter is the other half, and it lives on .wrap",
             css.contains(".wrap.edge {")
         )
+        /*
+         * ASKED FOR TWICE MORE AFTER THE FRAME CAME OFF: "still a fixed black
+         * border and bottom black bar". Measured at 393x852 with a 34pt home
+         * indicator: 10px of stage padding each side was still a mount round a
+         * picture, and 60px sat under the grid — 26px of caption plus an inset
+         * held OUTSIDE the scroller, which is a band the sleeves could never
+         * reach however far you scrolled. Now 0px each side and 0px under it,
+         * with the inset INSIDE the scroller so the grid runs through it.
+         */
+        assertTrue(
+            "the wall must reach the glass: no side padding left on the stage",
+            declared.none { it.startsWith("padding:") && it.contains("px ") } &&
+                declared.none { it.startsWith("padding-left") || it.startsWith("padding-right") }
+        )
+        assertTrue(
+            "the home indicator's inset belongs INSIDE the scroller, or it is a " +
+                "permanent band of nothing the grid can never reach",
+            full.contains("env(safe-area-inset-bottom)")
+        )
 
         val code = page.lines()
             .filterNot { val t = it.trimStart(); t.startsWith("//") || t.startsWith("*") }
