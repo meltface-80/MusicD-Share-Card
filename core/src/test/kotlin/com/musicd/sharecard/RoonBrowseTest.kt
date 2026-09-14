@@ -263,4 +263,49 @@ class RoonBrowseTest {
         // And it still says something when Roon sent no words either.
         assertNotNull(RoonBrowse.refused(reply(), expectList = true))
     }
+
+    // ------------------------------------------- what goes in the searchbox
+
+    @Test
+    fun `the edition a service tacked on does not go into Roon's search`() {
+        // The reported case, photographed: "The Offspring · Ignition (2008
+        // Remaster)" tapped on a Roon card, and Roon answering action "none"
+        // because no record in that library is called that.
+        assertEquals(
+            "The Offspring Ignition",
+            RoonBrowse.searchInput("Ignition (2008 Remaster)", "The Offspring")
+        )
+        assertEquals(
+            "Slint Spiderland",
+            RoonBrowse.searchInput("Spiderland [Remastered]", "Slint")
+        )
+    }
+
+    @Test
+    fun `only the first credited act goes into Roon's search`() {
+        // Same rule the links row needed after a four-name Roon credit was
+        // spent as one search term.
+        assertEquals(
+            "Stan Getz Cal Tjader-Stan Getz Sextet",
+            RoonBrowse.searchInput(
+                "Cal Tjader-Stan Getz Sextet",
+                "Stan Getz / Cal Tjader / Alan Jay Lerner / Frederick Loewe"
+            )
+        )
+    }
+
+    @Test
+    fun `a plain record goes in exactly as it is`() {
+        assertEquals(
+            "Bloodhound Gang Hefty Fine",
+            RoonBrowse.searchInput("Hefty Fine", "Bloodhound Gang")
+        )
+        // A bracket that is part of the name is not an edition.
+        assertEquals(
+            "Oasis (What's the Story) Morning Glory?",
+            RoonBrowse.searchInput("(What's the Story) Morning Glory?", "Oasis")
+        )
+        // And no artist at all still searches for the record.
+        assertEquals("Hefty Fine", RoonBrowse.searchInput("Hefty Fine", ""))
+    }
 }

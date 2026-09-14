@@ -93,17 +93,40 @@ class RoonBrowse(private val socket: () -> MooSocket?) {
     private fun sessionKey(): String = "sharecard-" + System.nanoTime().toString(36)
 
     fun queueAlbum(album: String, artist: String, zoneId: String): Outcome {
+        /*
+         * WHAT GOES IN THE SEARCH BOX IS NOT WHAT THE SUGGESTION SAYS.
+         *
+         * A suggestion comes from Deezer, and Deezer's copy of a record is
+         * whichever pressing it sells: "The Offspring · Ignition (2008
+         * Remaster)". The copy in somebody's Roon library is called "Ignition".
+         * So the search went out with words no record in the house is named,
+         * and Roon answered `action: "none"` — which the app, before the reply
+         * check, did not even read. Reported with a photograph of the page
+         * saying "Roon answered \"none\" where a list was expected", and
+         * diagnosed by the person who owns the library: "could this be because
+         * the version I have isn't labelled as 2008 remaster".
+         *
+         * So the EDITION comes off, for every album, and only the first
+         * credited act goes in — both through the folds that already exist for
+         * this in Normalize, neither invented here. The full title is still
+         * what gets MATCHED against Roon's rows a few steps down, because
+         * namesOverlap accepts a name qualified on the right either way round.
+         */
+        val query = Normalize.stripEdition(album)
+        val act = Normalize.primaryArtist(artist)
+        val input = searchInput(album, artist)
         val what = "$artist \u2014 $album -> ${ZoneRefIds.raw(zoneId)}"
         val moo = socket() ?: return fail(what, "not connected to Roon", "Not connected to Roon.")
         val key = sessionKey()
         return try {
             // 1. Search Roon for the record. `pop_all` starts from the top
             //    rather than wherever a previous browse was left.
+            note("$what -> searching Roon for \"$input\"")
             val search = request(
                 moo,
                 JSONObject()
                     .put("hierarchy", HIERARCHY)
-                    .put("input", "$artist $album")
+                    .put("input", input)
                     .put("pop_all", true)
                     .put("multi_session_key", key)
             )
@@ -124,7 +147,7 @@ class RoonBrowse(private val socket: () -> MooSocket?) {
             val albums = load(moo, key)
 
             // 3. The right record among them, by name AND by artist.
-            val albumRow = pickAlbum(albums, album, artist)
+            val albumRow = pickAlbum(albums, query, act)
                 ?: return fail(
                     what,
                     // THE ROWS ARE PRINTED, because "not in your library" and
@@ -270,6 +293,26 @@ class RoonBrowse(private val socket: () -> MooSocket?) {
 
         /** Roon pages its lists; a search's first hundred rows is plenty. */
         private const val PAGE = 100
+
+        /**
+         * WHAT GOES IN ROON'S SEARCH BOX.
+         *
+         * Not what the suggestion says. A suggestion comes from Deezer and
+         * Deezer's copy of a record is whichever pressing it sells — "Ignition
+         * (2008 Remaster)" — while the copy in somebody's library is called
+         * "Ignition". So the search went out with words no record in the house
+         * is named and Roon answered `action: "none"`. Reported with a
+         * photograph of the page saying exactly that, and diagnosed by the
+         * person who owns the library.
+         *
+         * Both folds already existed and neither is invented here:
+         * [Normalize.stripEdition] was written for Pitchfork, whose review is
+         * filed under the plain name, and [Normalize.primaryArtist] for the
+         * search links, after a four-name credit was spent as one act. A
+         * library search wants the shortest true form of both.
+         */
+        internal fun searchInput(album: String, artist: String): String =
+            (Normalize.primaryArtist(artist) + " " + Normalize.stripEdition(album)).trim()
 
         /**
          * The "Albums" grouping out of a search result.

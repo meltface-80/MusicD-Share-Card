@@ -109,4 +109,57 @@ class PrimaryArtistTest {
             links.all { it.url.contains("AC%20DC%20Back%20in%20Black") }
         )
     }
+
+    // --------------------------------------------- the edition on the end
+
+    /*
+     * REPORTED WITH A PHOTOGRAPH OF THE APP: tapping "The Offspring · Ignition
+     * (2008 Remaster)" on a Roon card came back "Roon answered \"none\" where a
+     * list was expected", and the owner of the library named the cause without
+     * being asked — "could this be because the version I have isn't labelled as
+     * 2008 remaster in my Roon library".
+     *
+     * That is exactly it. A suggestion comes from Deezer, and Deezer's copy is
+     * whichever pressing it sells; the copy in a library is called "Ignition".
+     * So the search went out with words no record in the house is named.
+     *
+     * The fold already existed for Pitchfork, whose review is filed under the
+     * plain name. It lives in Normalize now because it has two callers — the
+     * same move namesOverlap made — and NOT a second copy, which is how one
+     * lookup strips an edition and the next does not.
+     */
+
+    @Test
+    fun `an edition on the end comes off`() {
+        assertEquals("Ignition", Normalize.stripEdition("Ignition (2008 Remaster)"))
+        assertEquals("Spiderland", Normalize.stripEdition("Spiderland (Remastered)"))
+        assertEquals("Abbey Road", Normalize.stripEdition("Abbey Road [Super Deluxe Edition]"))
+        // More than one, peeled in turn.
+        assertEquals("Dookie", Normalize.stripEdition("Dookie (Deluxe Edition) (Remastered)"))
+    }
+
+    @Test
+    fun `a bracket that is part of the name stays`() {
+        // Bracketed at the FRONT, which is not where an edition is ever added.
+        assertEquals(
+            "(What's the Story) Morning Glory?",
+            Normalize.stripEdition("(What's the Story) Morning Glory?")
+        )
+        // A different record, not a dressed-up one — which is why "version" is
+        // not in the list of edition words.
+        assertEquals("Red (Taylor's Version)", Normalize.stripEdition("Red (Taylor's Version)"))
+        // Stripping must never leave nothing behind.
+        assertEquals("( )", Normalize.stripEdition("( )"))
+        assertEquals("Hefty Fine", Normalize.stripEdition("Hefty Fine"))
+    }
+
+    @Test
+    fun `the library's plain title still matches the suggestion's dressed-up one`() {
+        // The other half: having searched for "Ignition", the row Roon returns
+        // is matched against what the suggestion called it. namesOverlap
+        // accepts a name qualified on the right, so this holds either way
+        // round — and if it ever stops, the queue silently finds nothing.
+        assertTrue(Normalize.namesOverlap("Ignition", "Ignition (2008 Remaster)"))
+        assertTrue(Normalize.namesOverlap("Ignition (2008 Remaster)", "Ignition"))
+    }
 }
