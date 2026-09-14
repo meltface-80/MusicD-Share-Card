@@ -685,16 +685,35 @@
     label.textContent = reading ? "Read about it, or find it on" : "Find it on";
     linksEl.appendChild(label);
 
+    /*
+     * TWO ROWS, AND NEITHER MAY SPILL INTO THE OTHER.
+     *
+     * One grid held both, so whatever the reviews did not use up was filled by
+     * the first service — Qobuz sat on the end of the review line and Spotify
+     * and Bandcamp started a line of their own underneath. Two chips that do
+     * completely different things shared a row, and which ones did depended on
+     * how many review sources happened to be switched on.
+     *
+     * A grid each. Reviews take as many lines as they need and services start
+     * on a fresh one, so the row you are looking at is always one kind of
+     * thing. Four of anything is a line; a fifth starts a second, which is the
+     * honest cost of a fixed grid and is rare either side.
+     */
+    const reviewRow = document.createElement("div");
+    reviewRow.className = "links-row";
+    const serviceRow = document.createElement("div");
+    serviceRow.className = "links-row";
+
     // Both of these go to a page about THIS record rather than a search for
     // it, which is what sets them apart from the row that follows.
     if (review) {
-      linksEl.appendChild(link(review, "Pitchfork review", "links-review"));
+      reviewRow.appendChild(link(review, "Pitchfork review", "links-review"));
     }
     if (article) {
       // Named by whoever the blurb came from rather than hard-coded, so a
       // second source added later labels its own chip.
       const source = (extras && extras.bioSource) || "Wikipedia";
-      linksEl.appendChild(link(article, source, "links-review"));
+      reviewRow.appendChild(link(article, source, "links-review"));
     }
     /*
      * Whatever else Reviews is switched on for — AllMusic, an artist's
@@ -705,7 +724,7 @@
      */
     for (const extra of (extras && extras.reading) || []) {
       if (extra && extra.url && extra.name) {
-        linksEl.appendChild(link(extra.url, extra.name, "links-review"));
+        reviewRow.appendChild(link(extra.url, extra.name, "links-review"));
       }
     }
     for (const svc of services) {
@@ -719,8 +738,13 @@
         a.setAttribute("aria-pressed", "false");
         holdToPrefer(a, svc.service);
       }
-      linksEl.appendChild(a);
+      serviceRow.appendChild(a);
     }
+    // An empty row still carries its gap, so one that holds nothing is not
+    // added at all — a household with every service switched off must not get
+    // a band of blank space where they were.
+    if (reviewRow.children.length) linksEl.appendChild(reviewRow);
+    if (serviceRow.children.length) linksEl.appendChild(serviceRow);
     markPreferred();
     linksEl.classList.remove("hidden");
   }

@@ -521,17 +521,38 @@ body {
  * That is the honest outcome of a fixed grid and it is only drawn for records
  * Pitchfork has reviewed.
  */
+/*
+ * A GRID EACH, SO NEITHER KIND OF CHIP SPILLS INTO THE OTHER'S ROW.
+ *
+ * One grid held both, so whatever the reviews left of a line was filled by the
+ * first service: Qobuz on the end of the review row, Spotify and Bandcamp
+ * starting a row of their own beneath it. Two chips that do entirely different
+ * things shared a line, and WHICH ones did depended on how many review sources
+ * happened to be switched on that day. Reported as exactly that — keep them on
+ * different lines, and give either one two lines if it needs them.
+ *
+ * So `.links` is now just the column, and each `.links-row` is the four-column
+ * grid that used to be the whole thing. The rules below it are unchanged and
+ * apply to the chips in either row, which is the point: they are still one
+ * family, they simply no longer share a line.
+ */
 .links {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: stretch;
-  gap: 7px;
   margin: 14px 0 0;
   padding: 0;
 }
 
+.links-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 7px;
+}
+
+/* The gap between the two rows, and only between them: the first row sits
+   straight under the label. */
+.links-row + .links-row { margin-top: 7px; }
+
 .links-label {
-  grid-column: 1 / -1;
   text-align: center;
   margin: 0 0 2px;
   font-size: 12px;

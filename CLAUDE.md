@@ -735,6 +735,17 @@ was simply not there, however carefully the DIDL was parsed.
   too narrow for the names on a phone, and the alternative was shortening
   services' own names or an ellipsis that hides the word telling two of them
   apart.
+- **A REVIEW CHIP AND A SERVICE CHIP NEVER SHARE A LINE.** One grid held both,
+  so whatever the reviews left of a line was filled by the first service —
+  Qobuz on the end of the review row, Spotify and Bandcamp starting a row of
+  their own beneath it. Two chips that do entirely different things shared a
+  line, and WHICH ones did depended on how many review sources happened to be
+  switched on that day. Reported as exactly that. `.links` is the column now
+  and each `.links-row` is the four-column grid it used to be, so each kind
+  takes as many lines as it needs and the other starts fresh. An empty row is
+  not added at all, because a gap is still a gap. Verified with five reviews
+  and seven services at 390px: two lines each, nothing mixed, and nothing
+  scrolls at 780 or 844 tall.
 - **EVERY CHIP IN THAT ROW IS ONE FIXED SIZE, AND A LABEL MAY NEVER SET IT.**
   `align-items: stretch` keeps the grid a grid by making the one-line chips as
   tall as the two-line ones — and it works the other way too, so ONE tall chip
