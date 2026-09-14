@@ -357,6 +357,14 @@
   async function draw(mine, playing) {
     const album  = playing.album  || "";
     const artist = playing.artist || "";
+    /*
+     * Remembered from the CARD, not from the picker. "Whatever's playing"
+     * sends no zone at all, so the room that answered is the only one a queue
+     * could sensibly go to — and it has to be a Roon room, because "add to the
+     * end of the queue" names no queue anywhere else.
+     */
+    const uid = (playing.zone && playing.zone.uid) || "";
+    roonZone = uid.indexOf("roon:") === 0 ? uid : "";
     const params = new URLSearchParams({ album: album, artist: artist });
 
     let fast = EMPTY;
@@ -728,6 +736,65 @@
     return (j && Array.isArray(j.acts)) ? j.acts.filter((a) => a && a.name && a.url) : [];
   }
 
+  /**
+   * The Roon zone the card on screen is about, or "".
+   *
+   * Set from the card itself rather than from the picker: "Whatever's playing"
+   * sends no zone at all, and the room that answered is the one a queue would
+   * go to.
+   */
+  let roonZone = "";
+
+  /**
+   * Queue a suggestion in Roon instead of leaving the page for it.
+   *
+   * THE LINK STAYS ON THE CHIP AND IS THE FALLBACK. Roon may never have heard
+   * of the record — a suggestion is deliberately something you have not played
+   * — and a tap that does nothing would be worse than the streaming search it
+   * replaced. So: try to queue, and if Roon cannot find it, follow the link
+   * exactly as before. The tap always does something.
+   *
+   * `preventDefault` only once queueing is known to have worked would be too
+   * late (the navigation has already happened), so it is prevented up front
+   * and the navigation is done by hand if the queue attempt comes back empty.
+   */
+  function queueOnTap(chip, act) {
+    chip.classList.add("sim-queue");
+    chip.addEventListener("click", async (event) => {
+      event.preventDefault();
+      errEl.textContent = "";
+      const was = chip.textContent;
+      chip.textContent = "Queueing\u2026";
+      try {
+        const response = await fetch("/api/roon/queue" + pinParam(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            album: act.album || "",
+            // `name` IS the artist on a suggestion — the row is "act · record"
+            // and there is no separate artist field. Sending act.artist would
+            // have posted an empty string and matched the album by title
+            // alone, which is how a stranger's record ends up in the queue.
+            artist: act.name || "",
+            zone: roonZone
+          })
+        });
+        const answer = await response.json().catch(() => ({}));
+        if (response.ok && answer.queued) {
+          chip.textContent = "Queued in Roon";
+          chip.classList.add("sim-queued");
+          return;
+        }
+        // Roon could not, so do what the chip says it does.
+        chip.textContent = was;
+        window.open(chip.href, "_blank", "noopener");
+      } catch (e) {
+        chip.textContent = was;
+        window.open(chip.href, "_blank", "noopener");
+      }
+    });
+  }
+
   function drawSimilar(acts) {
     simEl.innerHTML = "";
     const label = document.createElement("p");
@@ -742,7 +809,26 @@
       // three rules that already live in StreamingLinks with a test each. A
       // second copy of them in this file is how they drift apart.
       if (!act.url) continue;
-      simEl.appendChild(link(act.url, actLabel(act), ""));
+      const chip = link(act.url, actLabel(act), "");
+      /*
+       * ON A ROON CARD, A TAP QUEUES IT INSTEAD OF LEAVING.
+       *
+       * Only there: the room has to be one Roon is playing to, or "add to the
+       * end of the queue" names no queue. The link stays on the chip and is
+       * what happens if Roon has never heard of the record — so the tap always
+       * does something, and the something it does when it can is the better
+       * one. Asked for as: if the card came from a Roon zone and the
+       * suggestion is in the library, put it on the end of the queue.
+       */
+      /*
+       * AN ACT WITH NO RECORD CANNOT BE QUEUED. Deezer's albums endpoint
+       * returns singles and EPs as well, so the lookup keeps only real albums
+       * — and an act whose only releases were singles keeps its name and
+       * loses the record. There is nothing to put in a queue then, so the
+       * chip stays an ordinary link.
+       */
+      if (roonZone && act.album) queueOnTap(chip, act);
+      simEl.appendChild(chip);
     }
     simEl.classList.remove("hidden");
     fitSuggestions();
@@ -1755,11 +1841,22 @@
     updateEl.classList.remove("hidden");
 
     const phase = (state.phase && state.phase.name) || "idle";
+    /*
+     * THE LAST STEP IS NOT THE SAME STEP ON BOTH BUILDS, and saying it was
+     * left a container stuck under "Android is asking you to confirm" for
+     * ever. Nothing is asking: Android hands an APK to the system installer
+     * and waits for a human, while the container has already unpacked the new
+     * build and is about to exit so the launcher can start it. Reported from
+     * a Docker install, where there is no Android in the picture at all.
+     */
+    const onServer = state.variant === "server";
     const busyText = {
       checking: "Checking\u2026",
       downloading: "Downloading\u2026",
       verifying: "Checking the download\u2026",
-      installing: "Android is asking you to confirm\u2026"
+      installing: onServer
+        ? "Restarting into the new version\u2026"
+        : "Android is asking you to confirm\u2026"
     }[phase];
 
     if (phase === "error" && state.phase.error) {
@@ -1799,20 +1896,63 @@
   }
 
   /* Runs only while a download is in flight, and stops the moment it is not. */
+  /**
+   * Follow an update that is already running. Ends when it does.
+   *
+   * A BOUNDED POLL DURING SOMETHING SOMEBODY JUST PRESSED, which is not the
+   * timer the no-polling rule forbids: that one interrogates the household all
+   * day to answer a question nobody is reading. This one has a beginning, an
+   * end and a person watching it.
+   */
   function watchUpdate() {
+    let restarting = false;
+    let tries = 0;
     const timer = setInterval(async () => {
+      /*
+       * THE SERVER GOING AWAY IS THE UPDATE WORKING, not the update failing.
+       * The container exits so its launcher can start the build it just
+       * unpacked, so the status request fails for a few seconds by design.
+       * Giving up there is what froze the bar on the last message it managed
+       * to read.
+       */
+      if (++tries > MAX_UPDATE_POLLS) {
+        clearInterval(timer);
+        if (restarting) {
+          updateEl.innerHTML = '<span class="update-text">' +
+            "Still restarting. Reload the page in a moment.</span>";
+        }
+        return;
+      }
+
       let state;
       try {
         state = await getJson("/api/update/status");
       } catch (e) {
+        if (restarting) return;
         clearInterval(timer);
         return;
       }
+
+      if (restarting) {
+        // It answered again, so the new build is up. Reload rather than patch
+        // the bar: everything on this page came from the old one.
+        clearInterval(timer);
+        location.reload();
+        return;
+      }
+
       showUpdate(state);
       const phase = (state.phase && state.phase.name) || "idle";
+      if (phase === "installing" && state.variant === "server") {
+        restarting = true;
+        return;
+      }
       if (phase !== "downloading" && phase !== "verifying") clearInterval(timer);
     }, 1500);
   }
+
+  /** Ninety seconds at 1.5s a go. A restart that takes longer has gone wrong. */
+  const MAX_UPDATE_POLLS = 60;
 
   // ---------------------------------------------------------------- wiring
 

@@ -116,6 +116,15 @@ class RoonClient(
     fun zone(id: String?): Zone? = zoneStore.byId(id)
 
     /**
+     * The live socket, for the one caller that needs to talk past the zones.
+     *
+     * Null unless this app is actually paired, which is what stops a queue
+     * request going out to a Core that has not let it in yet. Nothing else
+     * reaches for this: the card's reads all go through [zones].
+     */
+    fun browseSocket(): MooSocket? = socket.get()?.takeIf { it.isOpen && isPaired }
+
+    /**
      * Album art, straight off the Core's image service.
      *
      * It listens on the same host and port as the extension API over plain
@@ -349,12 +358,33 @@ class RoonClient(
                 .put("publisher", extension.publisher)
                 .put("email", extension.email)
                 .put("website", extension.website)
-                // TRANSPORT only. The remote this was ported from also requires
-                // BROWSE, because it walks the library; this app never does, and
-                // asking for a permission it will not use is asking the user to
-                // grant more than the job needs.
+                /*
+                 * TRANSPORT, and BROWSE as an OPTIONAL service.
+                 *
+                 * It was TRANSPORT alone, on the grounds that this app reads
+                 * and never walks the library — asking for a permission it
+                 * will not use is asking for more than the job needs. Queueing
+                 * a suggestion needs the library, so BROWSE arrives with it.
+                 *
+                 * OPTIONAL AND NOT REQUIRED, deliberately. A required service
+                 * is a condition of pairing at all: a Core that would not give
+                 * it would leave this app unable to read what is playing,
+                 * which is the whole product, to support one tap on a
+                 * suggestion. Optional means the card keeps working and only
+                 * the queueing goes quiet.
+                 *
+                 * UNVERIFIED, AND IT IS THE RISK IN THIS CHANGE: whether
+                 * adding a service to the registration makes Roon ask for the
+                 * extension to be enabled again in Settings → Extensions. This
+                 * repo's notes have carried that question unanswered since the
+                 * port. If it does, the app says so — Source.notice() speaks
+                 * for AWAITING_APPROVAL — and one tap in Roon fixes it.
+                 */
                 .put("required_services", JSONArray().put(RoonServices.TRANSPORT))
-                .put("optional_services", JSONArray().put(RoonServices.IMAGE))
+                .put(
+                    "optional_services",
+                    JSONArray().put(RoonServices.IMAGE).put(RoonServices.BROWSE)
+                )
                 .put(
                     "provided_services",
                     // Advertising a service means answering it: Roon subscribes

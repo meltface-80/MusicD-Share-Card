@@ -389,4 +389,93 @@ class SettingsApiTest {
         assertTrue(answer.isNull("bio"))
         assertTrue(answer.isNull("score"))
     }
+
+    // ------------------------------------------------- queueing into Roon
+
+    private fun roonApi(requirePin: Boolean = false): Pair<CardApi, MutableList<String>> {
+        val calls = mutableListOf<String>()
+        source = FakeSource("Sonos", mapOf("Kitchen" to playing("Kitchen", "Spiderland")))
+        store = SettingsStore.inMemory()
+        val http = metadataHttpClient()
+        val browse = com.musicd.sharecard.roon.RoonBrowse { null }
+        val api = CardApi(
+            Sources(listOf(source)),
+            Metadata(http, "test"),
+            Pitchfork(http, "test"),
+            ArtProxy(http),
+            Assets { null },
+            "1.0.0",
+            settingsStore = store,
+            requirePin = requirePin,
+            roonBrowse = browse
+        )
+        return api to calls
+    }
+
+    @Test
+    fun `queueing refuses a GET`() {
+        // A GET that starts or changes playback is one a link prefetch can
+        // fire by itself.
+        val (api, _) = roonApi()
+        val answer = api.handle(
+            Request("GET", "/api/roon/queue", emptyMap(), emptyMap(), ByteArray(0), false, "127.0.0.1")
+        )
+        assertEquals(405, answer.status)
+    }
+
+    @Test
+    fun `queueing refuses a room that is not Roon's`() {
+        /*
+         * "Add to the end of the queue" names no queue on a Sonos or a UPnP
+         * renderer, and picking a Roon room on somebody's behalf would be
+         * choosing which room to play into. The card has to already be about a
+         * Roon zone.
+         */
+        val (api, _) = roonApi()
+        val answer = post(
+            api, "/api/roon/queue",
+            """{"album":"Spiderland","artist":"Slint","zone":"$kitchenId"}""",
+            "127.0.0.1"
+        )
+        assertEquals(400, answer.status)
+        assertTrue(String(answer.body).contains("Roon"))
+    }
+
+    @Test
+    fun `queueing needs an album`() {
+        val (api, _) = roonApi()
+        val answer = post(
+            api, "/api/roon/queue",
+            """{"album":"","artist":"Slint","zone":"roon:1"}""",
+            "127.0.0.1"
+        )
+        assertEquals(400, answer.status)
+    }
+
+    @Test
+    fun `queueing is gated when a PIN is required`() {
+        // It reaches into somebody's listening room, so it sits behind the
+        // same gate as adding a webhook.
+        val (api, _) = roonApi(requirePin = true)
+        val answer = post(
+            api, "/api/roon/queue",
+            """{"album":"Spiderland","artist":"Slint","zone":"roon:1"}""",
+            "10.0.0.99"
+        )
+        assertEquals(401, answer.status)
+    }
+
+    @Test
+    fun `a Roon zone with no connection answers rather than throwing`() {
+        val (api, _) = roonApi()
+        val answer = post(
+            api, "/api/roon/queue",
+            """{"album":"Spiderland","artist":"Slint","zone":"roon:1"}""",
+            "127.0.0.1"
+        )
+        assertEquals(200, answer.status)
+        val body = JSONObject(String(answer.body))
+        assertFalse(body.getBoolean("queued"))
+        assertTrue(body.getString("detail"), body.getString("detail").isNotEmpty())
+    }
 }

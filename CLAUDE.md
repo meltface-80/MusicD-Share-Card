@@ -1105,12 +1105,40 @@ was simply not there, however carefully the DIDL was parsed.
   `invoke` its Play Now with a `zone_or_output_id`. A "Play in Roon" BUTTON is
   entirely buildable and would do more than the six search links do.
 
-  It is left out because it would make this app able to start music. Every route
-  here is a read, `TokenStore` is the only thing that writes, and that rule is
-  load-bearing — see [Access]. Asked directly, the answer was to leave it out.
-  Reopen that decision with the owner, not on the grounds that it cannot be
-  done. One thing still unverified if it ever is: whether adding a service to
-  the registration re-prompts for approval in Roon → Settings → Extensions.
+  IT WAS REOPENED, AND THE ANSWER CHANGED — but not to what was asked for. Asked
+  for a Roon chip in the links row that opens the app on the album; re-checked
+  in 2026 and there is still no scheme and no web player, only a feature
+  request. Offered play-it, leave-it-out, or launch-the-app-blind, the owner
+  chose to leave it out of the links row and asked instead for this: a
+  SUGGESTION, on a card that came from a Roon zone, tapped to go on the END of
+  that zone's queue. That is `RoonBrowse`, and these are its rules:
+
+  - **ONE ACTION, AND IT IS "Queue".** Roon's album menu opens with Play Now,
+    so anything reaching for "the first action" would stop what somebody is
+    listening to and start something else, from a tap on a suggestion.
+    `pickQueueAction` requires the title to BE "Queue" — not a prefix, not a
+    contains, not the first action. An installation in another language finds
+    nothing and the tap falls back to opening the record in a streaming
+    service, which is the right way to be wrong. `RoonBrowseTest` is mostly
+    about this one function.
+  - **THE LINK STAYS ON THE CHIP AND IS THE FALLBACK.** A suggestion is
+    deliberately a record you have not played, so Roon often will not have it.
+    Queue if possible, open the search if not; the tap always does something.
+  - **BROWSE IS OPTIONAL, NOT REQUIRED.** A required service is a condition of
+    pairing at all — a Core that refused it would leave the app unable to read
+    what is playing, which is the whole product, to support one tap. STILL
+    UNVERIFIED, and it is the risk in the change: whether adding a service to
+    the registration re-prompts for approval in Roon → Settings → Extensions.
+  - **THE PARSING IS SEPARATED FROM THE SOCKET** because no Core is reachable
+    from here, so none of this has been seen on the wire. The shapes are the
+    ones `node-roon-api-browse` documents and MusicD Remote Lite drives against
+    real hardware; the decisions that can be wrong on their own are pure
+    functions with tests. Treat the first real run as the verification.
+  - **`/api/roon/queue` IS THE ONLY ROUTE THAT CHANGES ANYTHING OUTSIDE THIS
+    APP.** POST only, because a GET that touches playback is one a prefetch can
+    fire; gated by `Access.mayConfigure`; and it refuses any zone id that is
+    not `roon:`, because choosing a Roon room on somebody's behalf is choosing
+    which room to play into.
 - **`sharecard.js` is a port, not this project's code.** It is MusicD Remote
   Lite's file, and it is the card's visual definition. A change here that is not
   also made there means the two apps stop producing the same picture — which is
@@ -1191,6 +1219,31 @@ was simply not there, however carefully the DIDL was parsed.
   let `restart: unless-stopped` bring the container back on it. The cost is
   stated in the README rather than hidden — the JRE and the OS packages
   underneath change only when somebody pulls an image by hand.
+- **THE TWO BUILDS DO NOT SHARE A LAST STEP, AND THE BAR SAID THEY DID.**
+  Android writes an APK and hands it to the system installer, which asks a
+  human; the container has already unpacked the new build and is about to exit
+  so its launcher can start it. One message served both, so a Docker install
+  sat under "Android is asking you to confirm…" — reported from a machine with
+  no Android anywhere near it. `/api/update/status` carries `variant`; the page
+  branches on it, and `UpdateDrawnTest` scans for the wording going back to
+  being unconditional.
+- **AND THE WATCHER GAVE UP EXACTLY WHEN THE UPDATE WAS WORKING.** The
+  container exits mid-update by design, so the status request fails for a few
+  seconds — and `watchUpdate` called `clearInterval` on the first failure,
+  freezing the bar on whatever it had last read. It waits through the gap now,
+  bounded by `MAX_UPDATE_POLLS`, and reloads the page once the server answers
+  again, because everything on it came from the build that just went away.
+- **PROMOTE WHAT THE LAUNCHER LAUNCHED, NOT WHAT THE BUILD CALLS ITSELF.** The
+  version directory is named after the MANIFEST; the running process reports
+  whatever was baked into it. Two names for one thing, from different places —
+  and `promote` wrote the second into the file the launcher reads as the first.
+  The moment they disagree, `active` names a directory that does not exist, the
+  next boot finds nothing there and falls back to the build in the image: an
+  update that appears to work and quietly undoes itself, which is close to
+  undiagnosable from outside. In practice they agree, because both come from
+  `versionName` — `SHARECARD_VERSION` is the documented way to make them
+  differ, and it is what exposed this while watching a real update restart.
+  `promote` reads the `trying` marker now, so the launcher is the only source.
 - **THE INSTALLER IS TOLD THE VERSION; IT MUST NEVER READ IT OFF A FILENAME.**
   The downloader writes one fixed name, replaced each time, and that name has
   never carried a version — so the container's installer parsed nothing and

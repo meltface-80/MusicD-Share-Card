@@ -140,7 +140,7 @@ fun main() {
      * version away and falls back. That is the entire rollback, and it hangs
      * on this line being late rather than early.
      */
-    ServerRelease.promote(updates, version)
+    ServerRelease.promote(updates)
 
     for (url in app.lanUrls()) Log.i(TAG, "open $url on any device on this network")
     if (requirePin) announcePin(webhooks.pin())

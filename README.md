@@ -67,7 +67,7 @@ shell around it. Run whichever suits the machine you already leave switched on.
 
 ### Android
 
-[**Download musicd-share-card-0.49.0.apk**](dist/musicd-share-card-0.49.0.apk)
+[**Download musicd-share-card-0.50.0.apk**](dist/musicd-share-card-0.50.0.apk)
 and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 
@@ -224,6 +224,12 @@ stops it being looked up, not just drawn.
 There's no Roon link. Roon has no web player and no link scheme — still an
 open feature request, not an oversight — so there's nothing a tap could go
 to.
+
+**But on a card that came from a Roon zone, tapping a suggestion puts that
+record on the end of that zone's queue** instead of opening a search. Only
+that: it never starts or changes what is playing. If Roon doesn't have the
+record — likely, since a suggestion is something you haven't played — the tap
+opens the streaming search as it always did.
 
 ## If you like this, try these
 

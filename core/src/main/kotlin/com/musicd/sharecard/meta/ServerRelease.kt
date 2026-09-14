@@ -121,13 +121,35 @@ object ServerRelease {
      * throws that version away and falls back. A container cannot be bricked
      * by an update it could not run.
      */
-    fun promote(dir: File, version: String) {
+    fun promote(dir: File) {
         val trying = File(dir, TRYING)
         if (!trying.isFile) return
         runCatching {
-            File(dir, ACTIVE).writeText(version)
+            /*
+             * WHAT THE LAUNCHER LAUNCHED, NOT WHAT THIS BUILD CALLS ITSELF.
+             *
+             * These are two names for one thing and they came from different
+             * places: the DIRECTORY is named after the manifest's version, and
+             * the running process reports whatever was baked into it. Promote
+             * used to write the second into a file the launcher reads as the
+             * first — so the moment they disagreed, `active` named a directory
+             * that does not exist, the next boot found nothing there and fell
+             * back to the build in the image. An update that appeared to work
+             * and then quietly undid itself on the next restart, which is
+             * close to undiagnosable from the outside.
+             *
+             * Caught by watching a real update restart with the two
+             * deliberately different. The launcher is the one that knows, so
+             * its own marker is what gets promoted.
+             */
+            val started = trying.readText().trim()
+            if (started.isEmpty()) {
+                Log.w(TAG, "the trying marker was empty; not promoting anything")
+                return
+            }
+            File(dir, ACTIVE).writeText(started)
             trying.delete()
-            Log.i(TAG, "running $version, kept")
-        }.onFailure { Log.w(TAG, "could not record $version as good: $it") }
+            Log.i(TAG, "running $started, kept")
+        }.onFailure { Log.w(TAG, "could not record the running build as good: $it") }
     }
 }

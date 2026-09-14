@@ -1075,3 +1075,9 @@ body {
   font-weight: 600;
   color: var(--accent);
 }
+
+/* A suggestion that will go into Roon's queue rather than open a search. It
+   is still a link — that is the fallback when Roon has never heard of the
+   record — so this only hints at the better outcome. */
+.sim-queue { border-style: dashed; }
+.sim-queued { border-color: var(--accent); color: var(--accent); border-style: solid; }
