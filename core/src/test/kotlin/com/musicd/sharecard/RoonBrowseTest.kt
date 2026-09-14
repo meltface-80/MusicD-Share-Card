@@ -308,4 +308,105 @@ class RoonBrowseTest {
         // And no artist at all still searches for the record.
         assertEquals("Hefty Fine", RoonBrowse.searchInput("Hefty Fine", ""))
     }
+
+    // ------------------------------------------------- the ladder of searches
+
+    /*
+     * REPORTED AS "this must work": U2's Rattle And Hum, in the library, on a
+     * Roon card, tapped — and it opened Qobuz instead of queueing.
+     *
+     * The search is the one step whose input this app invents, and which
+     * string finds a record in somebody else's library cannot be settled from
+     * here. So it stopped being one guess.
+     */
+
+    @Test
+    fun `the ladder asks the most specific form first`() {
+        val q = RoonBrowse.searchQueries("Rattle And Hum", "U2")
+        assertEquals("U2 Rattle And Hum", q.first())
+        assertTrue("the album alone is worth asking: an artist is extra words to fail on",
+            q.contains("Rattle And Hum"))
+    }
+
+    @Test
+    fun `a stripped edition is asked before the spelling the suggestion used`() {
+        val q = RoonBrowse.searchQueries("Ignition (2008 Remaster)", "The Offspring")
+        assertEquals(
+            listOf(
+                "The Offspring Ignition",
+                "Ignition",
+                "The Offspring Ignition (2008 Remaster)",
+                "Ignition (2008 Remaster)"
+            ),
+            q
+        )
+    }
+
+    @Test
+    fun `a plain record costs exactly one search`() {
+        // Nothing to strip and one credited act, so every rung folds to the
+        // same string and the ladder is one rung long. A record Roon has is
+        // one request, as it always was.
+        assertEquals(listOf("Bloodhound Gang Hefty Fine", "Hefty Fine"),
+            RoonBrowse.searchQueries("Hefty Fine", "Bloodhound Gang"))
+    }
+
+    @Test
+    fun `no artist still searches for the record`() {
+        assertEquals(listOf("Hefty Fine"), RoonBrowse.searchQueries("Hefty Fine", ""))
+    }
+
+    // ------------------------------------------- what the rows have to prove
+
+    @Test
+    fun `a row that names nobody is matched on its title`() {
+        // Roon's subtitle is not guaranteed to be the artist — a box set, a
+        // soundtrack, something filed under Various Artists — and refusing a
+        // row that simply does not say turned a library which HOLDS the record
+        // into "not in your Roon library".
+        val albums = items(row("Rattle And Hum", "", key = "a"))
+        assertEquals("a", RoonBrowse.pickAlbum(albums, "Rattle And Hum", "U2")?.getString("item_key"))
+    }
+
+    @Test
+    fun `a row that names somebody else is still refused`() {
+        // The pair this repo has already been burned by, and the reason the
+        // loosening above stops where it does: a blank subtitle contradicts
+        // nothing, a wrong one contradicts everything.
+        val albums = items(row("Cult", "Static-X", key = "stranger"))
+        assertNull(RoonBrowse.pickAlbum(albums, "Cult", "To/Die/For"))
+    }
+
+    @Test
+    fun `two rows naming nobody are a coin toss and neither is taken`() {
+        val albums = items(
+            row("Rattle And Hum", "", key = "a"),
+            row("Rattle And Hum", "", key = "b")
+        )
+        assertNull(
+            "no queue beats the wrong record",
+            RoonBrowse.pickAlbum(albums, "Rattle And Hum", "U2")
+        )
+    }
+
+    @Test
+    fun `the library's edition and the suggestion's need not agree`() {
+        // The row is the LIBRARY'S spelling and the album is DEEZER'S. Either
+        // side may carry an edition the other does not.
+        val albums = items(row("Ignition (2008 Remaster)", "The Offspring", key = "lib"))
+        assertEquals("lib",
+            RoonBrowse.pickAlbum(albums, "Ignition", "The Offspring")?.getString("item_key"))
+        val plain = items(row("Ignition", "The Offspring", key = "lib2"))
+        assertEquals("lib2",
+            RoonBrowse.pickAlbum(plain, "Ignition (2008 Remaster)", "The Offspring")?.getString("item_key"))
+    }
+
+    @Test
+    fun `a four-name credit does not stop the row matching`() {
+        val albums = items(row("Cal Tjader-Stan Getz Sextet", "Stan Getz", key = "x"))
+        assertEquals("x", RoonBrowse.pickAlbum(
+            albums, "Cal Tjader-Stan Getz Sextet",
+            "Stan Getz / Cal Tjader / Alan Jay Lerner / Frederick Loewe"
+        )?.getString("item_key"))
+    }
 }

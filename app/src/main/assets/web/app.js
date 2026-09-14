@@ -720,7 +720,7 @@
       acts = actsOf(await getJson("/api/similar?fast=1&" + params));
     } catch (e) { /* the shelf is empty, which is not an error */ }
     if (mine !== token) return;
-    if (acts.length) drawSimilar(acts);
+    if (acts.length) { drawSimilar(acts); upgradeSuggestions(mine, acts); }
 
     // Already drawn from the shelf means the slow path has nothing to add:
     // both answers come out of the same cache entry.
@@ -729,7 +729,50 @@
       const slow = actsOf(await getJson("/api/similar?" + params));
       if (mine !== token || !slow.length) return;
       drawSimilar(slow);
+      upgradeSuggestions(mine, slow);
     } catch (e) { /* no row, which is the honest outcome */ }
+  }
+
+  /*
+   * THE SUGGESTIONS GET THE SAME QOBUZ UPGRADE THE CARD'S CHIP DOES.
+   *
+   * Reported with a photograph of where a tap landed: qobuz.com's DOWNLOAD
+   * STORE, "Results for U2 Rattle And Hum — 1-60 of 1000 albums", the first of
+   * them a record by somebody called ItsLee. That is what a Qobuz search link
+   * does, and it is exactly the failure StreamingLinks already carries a rule
+   * about: Qobuz needs an album ID, and a search link can never open that app.
+   *
+   * The CARD's chip has been upgraded to a real album link since that was
+   * reported. The suggestions were not, because their URLs are built on the
+   * server in one go — which is right, the encoding rules live there — and
+   * nothing then went back to resolve them. So the row that exists to send you
+   * somewhere new was the one place still landing on a shop's search page.
+   *
+   * AFTER THE ROW IS DRAWN AND NEVER BEFORE IT, and only for the service the
+   * chips actually point at. Each is a page read off www.qobuz.com behind a
+   * rate gate; none of it may hold up a suggestion appearing, and a failure
+   * leaves the search link that was already there.
+   */
+  async function upgradeSuggestions(mine, acts) {
+    if (preferredService() !== "qobuz") return;
+    for (const act of acts) {
+      if (!act.album) continue;
+      try {
+        const params = new URLSearchParams({ album: act.album, artist: act.name || "" });
+        const data = await getJson("/api/qobuz?" + params);
+        if (mine !== token) return;
+        if (!data || !data.url) continue;
+        // The chip may have been rebuilt while that was in flight, so it is
+        // found again by what it links to rather than held onto.
+        const chip = simEl.querySelector('a[href="' + cssEscape(act.url) + '"]');
+        if (chip) chip.href = data.url;
+      } catch (e) { /* the search link is still there, which is not nothing */ }
+    }
+  }
+
+  /** Quotes and backslashes, so a URL can sit inside an attribute selector. */
+  function cssEscape(value) {
+    return String(value).replace(/["\\]/g, "\\$&");
   }
 
   function actsOf(j) {
