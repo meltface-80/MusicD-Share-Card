@@ -138,6 +138,59 @@ object Normalize {
     private val DESCRIPTOR = Regex("\\b(album|band|musician|singer|song)\\b")
 
     /**
+     * A title as the streaming service spells it, without the edition it
+     * tacked on. "Album (Deluxe Edition)" is the record everyone else calls
+     * "Album".
+     *
+     * IT LIVES HERE BECAUSE IT HAS A SECOND CALLER NOW, and that is the same
+     * move [namesOverlap] made when it went from private-to-Metadata to shared
+     * with [com.musicd.sharecard.meta.Similar]. It was written for Pitchfork,
+     * whose review of a record is filed under the plain name. Roon needs it for
+     * the opposite reason and the same fact: a suggestion arrives from Deezer
+     * as "Ignition (2008 Remaster)" and the copy in somebody's LIBRARY is
+     * called "Ignition", so the search went out with four words that no record
+     * in the house is named and Roon answered `action: "none"` — reported with
+     * a photograph of the app saying exactly that, and diagnosed by the person
+     * who owns the library rather than by this code. Two copies of a folding
+     * rule is how one lookup strips an edition and the next does not.
+     *
+     * DELIBERATELY NARROW, and this is the half to keep. Only a TRAILING
+     * bracketed group, and only one whose words are in [EDITIONS]. Plenty of
+     * brackets are part of a name — "(What's the Story) Morning Glory?" is
+     * bracketed at the FRONT, and Sigur Ros named a record "( )" — and
+     * "(Taylor's Version)" is a different record rather than a dressed-up one,
+     * which is why "version" is absent from the list. Stripping too eagerly
+     * finds the wrong record, and putting the wrong record in somebody's queue
+     * is the thing this app tries hardest never to do.
+     */
+    fun stripEdition(title: String): String {
+        var out = title.trim()
+        while (true) {
+            val m = TRAILING_BRACKET.find(out) ?: break
+            val inside = m.groupValues[1].ifEmpty { m.groupValues[2] }
+            if (!EDITIONS.containsMatchIn(inside)) break
+            val next = out.removeRange(m.range).trim().trimEnd('-', '\u2013').trim()
+            if (next.isEmpty()) break
+            out = next
+        }
+        return out
+    }
+
+    /** A trailing "(…)" or "[…]" — the only place an edition is ever added. */
+    private val TRAILING_BRACKET = Regex("\\s*(?:\\(([^()]*)\\)|\\[([^\\[\\]]*)\\])\\s*$")
+
+    /**
+     * What makes a bracketed suffix an edition rather than part of the name.
+     * "Version" is absent on purpose: "(Taylor's Version)" is a different
+     * record, not a dressed-up one.
+     */
+    private val EDITIONS = Regex(
+        "deluxe|remaster|expanded|anniversary|edition|explicit|clean|" +
+            "bonus track|reissue|mono|stereo|special|super deluxe",
+        RegexOption.IGNORE_CASE
+    )
+
+    /**
      * THE FIRST CREDITED ACT, FOR A SEARCH BOX AND NOTHING ELSE.
      *
      * A Roon card came back credited "Stan Getz / Cal Tjader / Alan Jay Lerner

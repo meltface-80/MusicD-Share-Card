@@ -386,27 +386,16 @@ class Pitchfork(
         .replace("&lt;", "<").replace("&gt;", ">")
 
     /**
-     * A title as the streaming service spells it, without the edition it tacked
-     * on. "Album (Deluxe Edition)" is the record Pitchfork reviewed as "Album".
+     * A title without the edition a service tacked on — [Normalize.stripEdition].
      *
-     * DELIBERATELY NARROW. Only a trailing bracketed group, and only one whose
-     * words are in [EDITIONS] — because plenty of brackets are part of the
-     * title, and "(Taylor's Version)" is a different record rather than a
-     * dressed-up one. Stripping too eagerly finds the wrong review, which is
-     * worse than finding none.
+     * It moved there when Roon's queue needed the same fold for the opposite
+     * reason: Pitchfork files a review under the plain name, and somebody's
+     * library holds the plain name too, while the suggestion arriving from
+     * Deezer carries "(2008 Remaster)". Two copies of a folding rule is how one
+     * lookup strips an edition and the next does not — the same argument that
+     * keeps `Normalize.text` the only slug rule in this repo.
      */
-    internal fun stripEdition(title: String): String {
-        var out = title.trim()
-        while (true) {
-            val m = TRAILING_BRACKET.find(out) ?: break
-            val inside = m.groupValues[1].ifEmpty { m.groupValues[2] }
-            if (!EDITIONS.containsMatchIn(inside)) break
-            val next = out.removeRange(m.range).trim().trimEnd('-', '\u2013').trim()
-            if (next.isEmpty()) break
-            out = next
-        }
-        return out
-    }
+    internal fun stripEdition(title: String): String = Normalize.stripEdition(title)
 
     /** One line of diagnostics per page read, saying exactly what it was. */
     private fun record(url: String, outcome: Outcome, where: String): Review? = when (outcome) {
@@ -636,19 +625,6 @@ class Pitchfork(
         val CDATA = Regex("<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>")
         val TAGS = Regex("<[^>]+>")
 
-        /** A trailing "(…)" or "[…]" — the only place an edition is ever added. */
-        val TRAILING_BRACKET = Regex("\\s*(?:\\(([^()]*)\\)|\\[([^\\[\\]]*)\\])\\s*$")
-
-        /**
-         * What makes a bracketed suffix an edition rather than part of the
-         * name. "Version" is absent on purpose: "(Taylor's Version)" is a
-         * different record, not a dressed-up one.
-         */
-        val EDITIONS = Regex(
-            "deluxe|remaster|expanded|anniversary|edition|explicit|clean|" +
-                "bonus track|reissue|mono|stereo|special|super deluxe",
-            RegexOption.IGNORE_CASE
-        )
 
         const val MAX_NOTES = 12
     }

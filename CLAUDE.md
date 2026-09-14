@@ -1219,6 +1219,34 @@ was simply not there, however carefully the DIDL was parsed.
     actions in it — which the app then reported as "Roon offered no Queue
     action", naming the wrong cause. UNVERIFIED, like everything else on this
     wire.
+  - **WHAT GOES IN ROON'S SEARCH BOX IS NOT WHAT THE SUGGESTION SAYS, AND THE
+    OWNER OF THE LIBRARY DIAGNOSED THIS ONE.** A suggestion comes from Deezer,
+    and Deezer's copy of a record is whichever pressing it sells: "The
+    Offspring · Ignition (2008 Remaster)". The copy in somebody's Roon library
+    is called "Ignition". So the search went out with four words no record in
+    that house is named, and Roon answered `action: "none"` — which is what the
+    new reply check surfaced, photographed on the page, one release after the
+    silent failure. Asked directly: "could this be because the version I have
+    isn't labelled as 2008 remaster in my Roon library... artist name and album
+    title minus (2008 Remaster) should be used. This applies to every album."
+    It does. `RoonBrowse.searchInput` folds both sides through rules that
+    ALREADY EXISTED for other callers — `Normalize.stripEdition`, written for
+    Pitchfork because a review is filed under the plain name, and
+    `Normalize.primaryArtist`, written for the links row after a four-name
+    credit was spent as one act. The full title is still what gets MATCHED
+    against Roon's rows, because `namesOverlap` accepts a name qualified on the
+    right either way round.
+  - **AND `stripEdition` MOVED INTO `Normalize` RATHER THAN BEING COPIED.**
+    Same move `namesOverlap` made when `Similar` became its second caller, for
+    the same reason: two copies of a folding rule is how one lookup strips an
+    edition and the next does not. Its narrowness is the half to keep — only a
+    TRAILING bracket, and only one whose words are editions — because
+    "(What's the Story) Morning Glory?" is bracketed at the front, Sigur Ros
+    named a record "( )", and "(Taylor's Version)" is a different record rather
+    than a dressed-up one. Stripping too eagerly puts the WRONG record in
+    somebody's queue, which is the thing this feature tries hardest never to
+    do. Shown by deleting the edition check and watching both the Pitchfork
+    test and the new one fail together.
   - **`RoonBrowse.attempts()` IS THE TEST, BECAUSE THERE CANNOT BE ANOTHER
     ONE.** Reported from the field: a suggested album that IS in the library
     was tapped and did not arrive in the queue. `/api/debug` had NOTHING to say
