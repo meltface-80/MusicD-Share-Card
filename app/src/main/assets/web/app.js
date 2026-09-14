@@ -357,6 +357,14 @@
   async function draw(mine, playing) {
     const album  = playing.album  || "";
     const artist = playing.artist || "";
+    /*
+     * Remembered from the CARD, not from the picker. "Whatever's playing"
+     * sends no zone at all, so the room that answered is the only one a queue
+     * could sensibly go to — and it has to be a Roon room, because "add to the
+     * end of the queue" names no queue anywhere else.
+     */
+    const uid = (playing.zone && playing.zone.uid) || "";
+    roonZone = uid.indexOf("roon:") === 0 ? uid : "";
     const params = new URLSearchParams({ album: album, artist: artist });
 
     let fast = EMPTY;
@@ -728,6 +736,65 @@
     return (j && Array.isArray(j.acts)) ? j.acts.filter((a) => a && a.name && a.url) : [];
   }
 
+  /**
+   * The Roon zone the card on screen is about, or "".
+   *
+   * Set from the card itself rather than from the picker: "Whatever's playing"
+   * sends no zone at all, and the room that answered is the one a queue would
+   * go to.
+   */
+  let roonZone = "";
+
+  /**
+   * Queue a suggestion in Roon instead of leaving the page for it.
+   *
+   * THE LINK STAYS ON THE CHIP AND IS THE FALLBACK. Roon may never have heard
+   * of the record — a suggestion is deliberately something you have not played
+   * — and a tap that does nothing would be worse than the streaming search it
+   * replaced. So: try to queue, and if Roon cannot find it, follow the link
+   * exactly as before. The tap always does something.
+   *
+   * `preventDefault` only once queueing is known to have worked would be too
+   * late (the navigation has already happened), so it is prevented up front
+   * and the navigation is done by hand if the queue attempt comes back empty.
+   */
+  function queueOnTap(chip, act) {
+    chip.classList.add("sim-queue");
+    chip.addEventListener("click", async (event) => {
+      event.preventDefault();
+      errEl.textContent = "";
+      const was = chip.textContent;
+      chip.textContent = "Queueing\u2026";
+      try {
+        const response = await fetch("/api/roon/queue" + pinParam(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            album: act.album || "",
+            // `name` IS the artist on a suggestion — the row is "act · record"
+            // and there is no separate artist field. Sending act.artist would
+            // have posted an empty string and matched the album by title
+            // alone, which is how a stranger's record ends up in the queue.
+            artist: act.name || "",
+            zone: roonZone
+          })
+        });
+        const answer = await response.json().catch(() => ({}));
+        if (response.ok && answer.queued) {
+          chip.textContent = "Queued in Roon";
+          chip.classList.add("sim-queued");
+          return;
+        }
+        // Roon could not, so do what the chip says it does.
+        chip.textContent = was;
+        window.open(chip.href, "_blank", "noopener");
+      } catch (e) {
+        chip.textContent = was;
+        window.open(chip.href, "_blank", "noopener");
+      }
+    });
+  }
+
   function drawSimilar(acts) {
     simEl.innerHTML = "";
     const label = document.createElement("p");
@@ -742,7 +809,26 @@
       // three rules that already live in StreamingLinks with a test each. A
       // second copy of them in this file is how they drift apart.
       if (!act.url) continue;
-      simEl.appendChild(link(act.url, actLabel(act), ""));
+      const chip = link(act.url, actLabel(act), "");
+      /*
+       * ON A ROON CARD, A TAP QUEUES IT INSTEAD OF LEAVING.
+       *
+       * Only there: the room has to be one Roon is playing to, or "add to the
+       * end of the queue" names no queue. The link stays on the chip and is
+       * what happens if Roon has never heard of the record — so the tap always
+       * does something, and the something it does when it can is the better
+       * one. Asked for as: if the card came from a Roon zone and the
+       * suggestion is in the library, put it on the end of the queue.
+       */
+      /*
+       * AN ACT WITH NO RECORD CANNOT BE QUEUED. Deezer's albums endpoint
+       * returns singles and EPs as well, so the lookup keeps only real albums
+       * — and an act whose only releases were singles keeps its name and
+       * loses the record. There is nothing to put in a queue then, so the
+       * chip stays an ordinary link.
+       */
+      if (roonZone && act.album) queueOnTap(chip, act);
+      simEl.appendChild(chip);
     }
     simEl.classList.remove("hidden");
     fitSuggestions();

@@ -225,6 +225,12 @@ There's no Roon link. Roon has no web player and no link scheme — still an
 open feature request, not an oversight — so there's nothing a tap could go
 to.
 
+**But on a card that came from a Roon zone, tapping a suggestion puts that
+record on the end of that zone's queue** instead of opening a search. Only
+that: it never starts or changes what is playing. If Roon doesn't have the
+record — likely, since a suggestion is something you haven't played — the tap
+opens the streaming search as it always did.
+
 ## If you like this, try these
 
 Three acts worth hearing next, with one album each, under the links. They come

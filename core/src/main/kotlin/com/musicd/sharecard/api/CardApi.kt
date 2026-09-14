@@ -11,6 +11,7 @@ import com.musicd.sharecard.http.Response
 import com.musicd.sharecard.meta.Metadata
 import com.musicd.sharecard.meta.Pitchfork
 import com.musicd.sharecard.meta.Reviews
+import com.musicd.sharecard.roon.RoonBrowse
 import com.musicd.sharecard.meta.QobuzAlbum
 import com.musicd.sharecard.meta.Similar
 import com.musicd.sharecard.meta.StreamingLinks
@@ -62,7 +63,9 @@ class CardApi(
      * Whether a device that is not this one needs the PIN to change anything.
      * The container turns this off unless a PIN is configured — see [Access].
      */
-    private val requirePin: Boolean = true
+    private val requirePin: Boolean = true,
+    /** Null where Roon is not in play, which is every test but one. */
+    private val roonBrowse: RoonBrowse? = null
 ) : HttpServer.Handler {
 
     private val access = Access({ webhooks.pin() }, requirePin)
@@ -134,6 +137,7 @@ class CardApi(
             else -> Json.error(405, "That method is not used here.")
         }
         "/api/setup" -> setup(request)
+        "/api/roon/queue" -> roonQueue(request)
         "/api/settings" -> when (request.method) {
             "POST" -> settingsWrite(request)
             in READ_METHODS -> settingsRead(request.param("zones") == "1")
@@ -216,6 +220,39 @@ class CardApi(
 
     /** What is switched on right now. Held in memory by the store. */
     private val enabledServices: Settings get() = settingsStore.read()
+
+    /**
+     * Put a record at the end of a Roon zone's queue.
+     *
+     * THE ONLY ROUTE IN THIS APP THAT CHANGES ANYTHING OUTSIDE IT, and it is
+     * shaped to stay that way. POST only, because a GET that starts music is
+     * one a link prefetch can fire by itself. Gated like a webhook, because it
+     * reaches into somebody's listening room. And it names a ROON zone or does
+     * nothing: the card has to already be about a Roon zone for this to be the
+     * thing a tap means.
+     */
+    private fun roonQueue(request: Request): Response {
+        if (request.method != "POST") return Json.error(405, "That method is not used here.")
+        if (!access.mayConfigure(request)) return needsPin()
+
+        val browse = roonBrowse ?: return Json.error(503, "Roon is not available here.")
+        val body = Json.body(request)
+        val album = body.str("album").trim()
+        val artist = body.str("artist").trim()
+        val zone = body.str("zone").trim()
+        if (album.isEmpty()) return Json.error(400, "No album named.")
+
+        // A zone from another source cannot take a Roon queue, and guessing one
+        // would be choosing a room on somebody's behalf.
+        if (!zone.startsWith(ROON_PREFIX)) {
+            return Json.error(400, "That room is not a Roon zone.")
+        }
+
+        val outcome = browse.queueAlbum(album, artist, zone)
+        return Json.obj(
+            JSONObject().put("queued", outcome.queued).put("detail", outcome.detail)
+        )
+    }
 
     // ------------------------------------------------------------- settings
 
@@ -929,6 +966,9 @@ class CardApi(
     private companion object {
         const val TAG = "CardApi"
 
+        /** Zone ids are prefixed with their source; Roon's is this one. */
+        const val ROON_PREFIX = "roon:"
+
         /**
          * The page is versioned by the APK, not by a URL, so a browser holding
          * yesterday's JavaScript against today's API is a real way for this to
@@ -947,7 +987,10 @@ class CardApi(
          * Every route not in here is GET-only.
          */
         val WRITE_ROUTES =
-            setOf("/api/webhooks", "/api/settings", "/api/update/check", "/api/update/apply")
+            setOf(
+                "/api/webhooks", "/api/settings", "/api/roon/queue",
+                "/api/update/check", "/api/update/apply"
+            )
 
         /** The methods a route that changes nothing may be asked with. */
         val READ_METHODS = setOf("GET", "HEAD")

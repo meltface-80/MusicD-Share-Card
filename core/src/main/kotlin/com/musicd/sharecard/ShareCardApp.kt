@@ -203,10 +203,19 @@ class ShareCardApp(
         )
     }
 
+    /**
+     * Putting a suggestion at the end of a Roon zone's queue.
+     *
+     * The one thing this app does that is not a read, and it is narrow on
+     * purpose: one action, on a card that already came from Roon, behind the
+     * configuration gate. See [com.musicd.sharecard.roon.RoonBrowse].
+     */
+    private val roonBrowse = com.musicd.sharecard.roon.RoonBrowse { roon.browseSocket() }
+
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
         webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz, similar,
-        settingsStore, requirePin
+        settingsStore, requirePin, roonBrowse
     )
 
     private val server = HttpServer(api, port, bindAddress)

@@ -1105,12 +1105,40 @@ was simply not there, however carefully the DIDL was parsed.
   `invoke` its Play Now with a `zone_or_output_id`. A "Play in Roon" BUTTON is
   entirely buildable and would do more than the six search links do.
 
-  It is left out because it would make this app able to start music. Every route
-  here is a read, `TokenStore` is the only thing that writes, and that rule is
-  load-bearing — see [Access]. Asked directly, the answer was to leave it out.
-  Reopen that decision with the owner, not on the grounds that it cannot be
-  done. One thing still unverified if it ever is: whether adding a service to
-  the registration re-prompts for approval in Roon → Settings → Extensions.
+  IT WAS REOPENED, AND THE ANSWER CHANGED — but not to what was asked for. Asked
+  for a Roon chip in the links row that opens the app on the album; re-checked
+  in 2026 and there is still no scheme and no web player, only a feature
+  request. Offered play-it, leave-it-out, or launch-the-app-blind, the owner
+  chose to leave it out of the links row and asked instead for this: a
+  SUGGESTION, on a card that came from a Roon zone, tapped to go on the END of
+  that zone's queue. That is `RoonBrowse`, and these are its rules:
+
+  - **ONE ACTION, AND IT IS "Queue".** Roon's album menu opens with Play Now,
+    so anything reaching for "the first action" would stop what somebody is
+    listening to and start something else, from a tap on a suggestion.
+    `pickQueueAction` requires the title to BE "Queue" — not a prefix, not a
+    contains, not the first action. An installation in another language finds
+    nothing and the tap falls back to opening the record in a streaming
+    service, which is the right way to be wrong. `RoonBrowseTest` is mostly
+    about this one function.
+  - **THE LINK STAYS ON THE CHIP AND IS THE FALLBACK.** A suggestion is
+    deliberately a record you have not played, so Roon often will not have it.
+    Queue if possible, open the search if not; the tap always does something.
+  - **BROWSE IS OPTIONAL, NOT REQUIRED.** A required service is a condition of
+    pairing at all — a Core that refused it would leave the app unable to read
+    what is playing, which is the whole product, to support one tap. STILL
+    UNVERIFIED, and it is the risk in the change: whether adding a service to
+    the registration re-prompts for approval in Roon → Settings → Extensions.
+  - **THE PARSING IS SEPARATED FROM THE SOCKET** because no Core is reachable
+    from here, so none of this has been seen on the wire. The shapes are the
+    ones `node-roon-api-browse` documents and MusicD Remote Lite drives against
+    real hardware; the decisions that can be wrong on their own are pure
+    functions with tests. Treat the first real run as the verification.
+  - **`/api/roon/queue` IS THE ONLY ROUTE THAT CHANGES ANYTHING OUTSIDE THIS
+    APP.** POST only, because a GET that touches playback is one a prefetch can
+    fire; gated by `Access.mayConfigure`; and it refuses any zone id that is
+    not `roon:`, because choosing a Roon room on somebody's behalf is choosing
+    which room to play into.
 - **`sharecard.js` is a port, not this project's code.** It is MusicD Remote
   Lite's file, and it is the card's visual definition. A change here that is not
   also made there means the two apps stop producing the same picture — which is
