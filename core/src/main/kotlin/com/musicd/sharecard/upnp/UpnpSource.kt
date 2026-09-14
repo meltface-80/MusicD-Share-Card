@@ -68,9 +68,20 @@ class UpnpSource(
         scan()
     }
 
+    /**
+     * AN EMPTY SWEEP IS AN ANSWER AND IS REMEMBERED LIKE ANY OTHER.
+     *
+     * `renderers.isNotEmpty()` defeated the TTL, so a network with no DLNA
+     * renderer on it was searched again on every question — a three-second
+     * SSDP window per interface, in the request, for ever. The fallback ladder
+     * asks each source and then each room, so one `/api/now-playing` paid it
+     * several times over. See Household.refresh for the measurements and for
+     * why this is the no-polling rule rather than a tuning choice.
+     */
     @Synchronized
     private fun scan() {
-        if (System.currentTimeMillis() - scannedAt < RESCAN_MS && renderers.isNotEmpty()) return
+        if (System.currentTimeMillis() - scannedAt < RESCAN_MS) return
+        scannedAt = System.currentTimeMillis()
         val found = ArrayList<Renderer>()
         val lines = ArrayList<String>()
 
@@ -97,7 +108,6 @@ class UpnpSource(
 
         renderers = found
         notes = lines
-        scannedAt = System.currentTimeMillis()
     }
 
     internal class Description(val renderer: Renderer, val isSonos: Boolean)

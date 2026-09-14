@@ -136,4 +136,51 @@ object Normalize {
     }
 
     private val DESCRIPTOR = Regex("\\b(album|band|musician|singer|song)\\b")
+
+    /**
+     * THE FIRST CREDITED ACT, FOR A SEARCH BOX AND NOTHING ELSE.
+     *
+     * A Roon card came back credited "Stan Getz / Cal Tjader / Alan Jay Lerner
+     * / Frederick Loewe" — a performer, a co-performer and the two men who
+     * wrote the songs — and every chip in the links row spent all four as one
+     * search term. AllMusic answered "No search results were found for Stan
+     * Getz Cal Tjader Alan Jay Lerner Frederick Loewe", which is correct: there
+     * is no such act. Reported with that page as the evidence.
+     *
+     * THE CARD STILL SAYS ALL OF THEM. This is for the query only — the credit
+     * under the cover is what the record says it is, and shortening that would
+     * be inventing a different record.
+     *
+     * THE SPLIT IS DELIBERATELY NARROW, because a false positive here throws
+     * away a real name and leaves a search that finds nothing — the exact
+     * failure being fixed. So:
+     *
+     *   - a SPACED slash separates, a bare one does not: "AC/DC" is one act,
+     *     and it is the case [StreamingLinks.searchQuery] already has a rule
+     *     and a test for;
+     *   - a semicolon separates, spaced or not — no act is named with one;
+     *   - "feat.", "ft." and "featuring" separate, which is the same shape
+     *     [namesOverlap] already accepts as a right-hand qualifier;
+     *   - a COMMA does NOT. "Earth, Wind & Fire" is one act.
+     *   - an AMPERSAND does NOT. "Nick Cave & the Bad Seeds", "Simon &
+     *     Garfunkel", "Hall & Oates" are each one act, and that is the same
+     *     conjunction [namesOverlap] drops rather than splits on.
+     *   - " with " does NOT. "Sleeping with Sirens".
+     *
+     * A string with none of those in it comes back exactly as it went in.
+     */
+    fun primaryArtist(artist: String?): String {
+        val whole = artist?.trim().orEmpty()
+        if (whole.isEmpty()) return ""
+        val first = CREDIT_SEPARATOR.split(whole).firstOrNull()?.trim().orEmpty()
+        // A credit that BEGINS with a separator would leave nothing at all,
+        // and no name is better answered by an empty search box than by the
+        // whole string.
+        return first.ifEmpty { whole }
+    }
+
+    private val CREDIT_SEPARATOR = Regex(
+        """\s+/\s*|\s*/\s+|\s*;\s*|\s+(?:feat\.?|ft\.?|featuring)\s+""",
+        RegexOption.IGNORE_CASE
+    )
 }

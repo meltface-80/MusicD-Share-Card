@@ -57,11 +57,19 @@ class LmsSource(
      * The found server is kept and re-asked rather than re-discovered, because
      * discovery is a broadcast and this runs on a device that is never switched
      * off. It is dropped only when it stops answering, or on Refresh.
+     *
+     * AND NOT FINDING ONE IS REMEMBERED TOO. `known != null` defeated the TTL,
+     * so every household WITHOUT a Lyrion server on it — which is most of them,
+     * this being one source of four — broadcast on UDP 3483 and then tried
+     * every seeded address on every single question. See Household.refresh:
+     * same fault, same reason, and the ladder multiplies it by the number of
+     * rooms that are switched on.
      */
     @Synchronized
     private fun scan() {
         val known = base
-        if (known != null && System.currentTimeMillis() - scannedAt < RESCAN_MS) return
+        if (System.currentTimeMillis() - scannedAt < RESCAN_MS) return
+        scannedAt = System.currentTimeMillis()
 
         val found = ArrayList<String>()
         val candidates = LinkedHashSet<String>()
@@ -90,7 +98,6 @@ class LmsSource(
             }
             base = candidate
             players = answered
-            scannedAt = System.currentTimeMillis()
             notes = found + "$candidate -> ${answered.size} player(s)"
             return
         }

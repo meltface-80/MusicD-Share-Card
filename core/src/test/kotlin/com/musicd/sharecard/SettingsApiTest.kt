@@ -372,8 +372,14 @@ class SettingsApiTest {
             mapOf("album" to "Spiderland", "artist" to "Slint", "fast" to "1")
         ).getJSONArray("reading")
         val names = (0 until reading.length()).map { reading.getJSONObject(it).getString("name") }
-        assertTrue("the artist chip names who it is about: $names",
-            names.any { it == "AllMusic: Slint" })
+        // THE CHIP SAYS WHICH SOURCE AND WHICH KIND, AND NOT WHO. It used to
+        // carry the artist — "AllMusic: Slint" — and a Roon card credited to
+        // four people made a chip six lines deep in a four-column grid, which
+        // took the whole row with it. See LinkChipsTest.
+        assertTrue("the artist chip says it is the artist one: $names",
+            names.any { it == "AllMusic artist" })
+        assertTrue("a chip label is carrying the record's artist: $names",
+            names.none { it.contains("Slint") })
     }
 
     @Test

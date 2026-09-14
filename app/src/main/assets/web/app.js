@@ -932,12 +932,28 @@
     }
   }
 
+  /*
+   * A chip.
+   *
+   * THE LABEL GOES IN A SPAN, WHICH IS NOT DECORATION. The links row gives
+   * every chip one fixed height so that no label can set the height of the row
+   * it is on — an artist chip labelled with a four-name Roon artist string
+   * turned a whole row into circles — and the clamp that keeps a long label
+   * inside that height needs `display: -webkit-box`, which the anchor itself
+   * cannot be: it is a flex box so that a one-line label sits centred in a
+   * two-line chip. See .links a in style.css.
+   *
+   * `a.textContent` still reads and writes the label either way, which is what
+   * the suggestion chips do while a queue request is in flight.
+   */
   function link(href, text, className) {
     const a = document.createElement("a");
     a.href = href;
     a.rel = "noreferrer";
     a.className = className;
-    a.textContent = text;
+    const label = document.createElement("span");
+    label.textContent = text;
+    a.appendChild(label);
     return a;
   }
 

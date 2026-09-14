@@ -1,5 +1,6 @@
 package com.musicd.sharecard.meta
 
+import com.musicd.sharecard.library.Normalize
 import java.net.URLEncoder
 import java.util.Locale
 
@@ -178,9 +179,18 @@ object StreamingLinks {
      * to be normalised by somebody's proxy. A slash carries no meaning to a
      * search box anyway, so it is spent as a space before anything else
      * happens, and "AC DC Back in Black" finds the record.
+     *
+     * ONLY THE FIRST CREDITED ACT GOES IN THE BOX. A Roon card credited "Stan
+     * Getz / Cal Tjader / Alan Jay Lerner / Frederick Loewe" searched for all
+     * four names at once, and AllMusic said so in as many words: no such act
+     * exists, so nothing matched — on that chip and on every service chip
+     * beside it. [Normalize.primaryArtist] is where the splitting rule and its
+     * limits live; note that it runs BEFORE the slash is spent as a space,
+     * because a spaced slash is the separator it reads.
      */
     internal fun searchQuery(artist: String?, album: String): String? {
-        val words = "${artist.orEmpty()} $album".replace(SLASH, " ").trim().replace(WHITESPACE, " ")
+        val act = Normalize.primaryArtist(artist)
+        val words = "$act $album".replace(SLASH, " ").trim().replace(WHITESPACE, " ")
         if (words.isEmpty()) return null
         return URLEncoder.encode(words, "UTF-8").replace("+", "%20")
     }

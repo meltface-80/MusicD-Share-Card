@@ -501,9 +501,21 @@ body {
  * THE TEXT WRAPS RATHER THAN TRUNCATING. "Amazon Music" does not fit one line
  * of a quarter-width cell on a phone, and the alternatives were shortening the
  * service names — which are the services' own — or an ellipsis, which hides
- * exactly the word that tells two of them apart. `align-items: stretch` then
- * makes the one-line chips as tall as the two-line ones, so the grid stays a
- * grid.
+ * exactly the word that tells two of them apart.
+ *
+ * EVERY CHIP IS ONE FIXED HEIGHT, AND THAT IS THE HALF THAT WAS MISSING.
+ * `align-items: stretch` was doing the work: one-line chips grew to match the
+ * two-line ones, so the grid stayed a grid — and equally, ONE tall chip made
+ * every chip on its row that tall. An artist review chip was labelled with the
+ * artist, a Roon card sent "Stan Getz / Cal Tjader / Alan Jay Lerner /
+ * Frederick Loewe", and the row came out as four circles with a small pill
+ * orphaned under them. Reported as "button sizes completely off".
+ *
+ * The label is a constant again (see Reviews.Source.chip), but a row whose
+ * height is set by its longest label is a trap that will be walked into again
+ * — so the height is stated here instead: two lines' worth, which is what
+ * "Amazon Music" needs and the most any chip gets. A longer label is clamped
+ * to those two lines rather than being allowed to push the row.
  *
  * With a Pitchfork review there are nine and the ninth starts a third row.
  * That is the honest outcome of a fixed grid and it is only drawn for records
@@ -533,12 +545,31 @@ body {
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 7px 6px;
+  padding: 4px 5px;
+  /* Two lines of 12px/1.2 text, plus the padding and the border. Stated
+     rather than grown into, so the row is the same height on every record. */
+  height: 44px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text-dim);
-  font-size: 12px;
+  /*
+   * THE TYPE FOLLOWS THE WIDTH, WITH NO BREAKPOINT ANYWHERE IN IT.
+   *
+   * A quarter of a 320px phone is 67px, and "Wikipedia" at 12px does not fit
+   * in it — so `overflow-wrap: break-word` did what it says and broke the word
+   * itself: "Wikipedi / a", "Qobu / z", "Bandca / mp". That is the same
+   * outcome `anywhere` was rejected for, arrived at honestly, because at that
+   * width the word genuinely will not fit.
+   *
+   * 12px above about 375px wide and smaller below it, continuously. A media
+   * query would have done this too and is the thing to avoid: an
+   * `@media (max-width: 420px)` rule is what made one reporter's Android and
+   * iPhone lay out differently and read as a platform bug. A size that follows
+   * the width has no edge for two devices to sit either side of, and it is the
+   * same answer the suggestion row already reaches by measuring.
+   */
+  font-size: clamp(10px, 3.2vw, 12px);
   font-weight: 600;
   line-height: 1.2;
   text-align: center;
@@ -553,6 +584,24 @@ body {
    * wanted.
    */
   overflow-wrap: break-word;
+  overflow: hidden;
+}
+
+/*
+ * THE LABEL, CLAMPED TO THE TWO LINES THE CHIP IS TALL.
+ *
+ * The chip itself is a flex box so that one line sits centred in a two-line
+ * box; the clamp needs -webkit-box, so it goes on a span inside rather than on
+ * the anchor. Without it a third line is sliced in half top and bottom by the
+ * overflow above, which looks like a rendering fault rather than a label that
+ * was too long.
+ */
+.links a > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 
 .links a:active { transform: scale(.97); }
