@@ -174,7 +174,8 @@ class CardApi(
             Diagnostics(
                 sources, hostNotes, pitchfork::attempts,
                 { similar?.attempts().orEmpty() },
-                art::attempts
+                art::attempts,
+                { roonBrowse?.attempts().orEmpty() }
             ).run()
         )
         else -> static(request.path)
