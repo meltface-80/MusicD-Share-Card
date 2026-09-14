@@ -137,4 +137,49 @@ class SettingsDrawnTest {
             code(page).any { it.contains("extras.reading") }
         )
     }
+
+    // ----------------------------------------- what the settings screens say
+
+    @Test
+    fun `the menu says which build this is and links to the project page`() {
+        val lines = code(page)
+        assertTrue(
+            "the settings menu never reads setup.version, so the server would " +
+                "be answering with a version nobody can see — which is how the " +
+                "similar diagnostic shipped",
+            lines.any { it.contains("setup.version") }
+        )
+        assertTrue(
+            "the menu must link somewhere for the release notes and the Docker " +
+                "commands",
+            lines.any { it.contains("meltface-80.github.io") }
+        )
+    }
+
+    @Test
+    fun `both halves of the Reviews screen are headed`() {
+        val lines = code(page)
+        // The artist half had a heading and the album half opened straight
+        // into a sentence, which read as a caption for the screen rather than
+        // as the name of the group above the switches.
+        for (heading in listOf("About the albums", "About the artist")) {
+            assertTrue(
+                "the Reviews screen has no \"$heading\" heading",
+                lines.any { it.contains(heading) }
+            )
+        }
+    }
+
+    @Test
+    fun `a suggestion offers somewhere to read about it`() {
+        val lines = code(page)
+        // Served and not drawn is the failure this family of scans exists for:
+        // /api/similar carries a review link per act, and a page that never
+        // reads it is correct, served and invisible.
+        assertTrue(
+            "the page never reads act.review, so the review link on every " +
+                "suggestion would be served to nobody",
+            lines.any { it.contains("act.review") }
+        )
+    }
 }

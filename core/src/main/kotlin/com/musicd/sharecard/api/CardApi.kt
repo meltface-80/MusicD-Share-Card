@@ -801,6 +801,19 @@ class CardApi(
                 // So the page can leave the PIN field out entirely rather than
                 // drawing an input nobody needs to fill in.
                 .put("needsPin", requirePin)
+                // WHAT THIS BUILD IS, ANSWERED ONCE AND EARLY.
+                //
+                // The version so the settings screen can show which build a
+                // bug report came from without opening the diagnostics, and
+                // the variant because the two shells do not want the same
+                // action row: a container is browsed from somewhere else,
+                // where the picture is saved by holding it or right-clicking
+                // it, so a Download button there is a third way to do what the
+                // browser already does. /api/update/status carries the same
+                // variant, but that is fetched for the update bar and may not
+                // have landed when the card is drawn.
+                .put("version", version)
+                .put("variant", (updater?.variant ?: Updater.Variant.ANDROID).wire)
         )
     }
 
@@ -864,6 +877,10 @@ class CardApi(
         // the worst case is a link to the first service instead of a 500.
         val service = request.param("service").orEmpty()
 
+        // Switched off in Settings -> Reviews means no review chip on a
+        // suggestion either, the same rule the card's own row follows.
+        val allmusicOn = settingsStore.read().reviewEnabled(Reviews.ALLMUSIC)
+
         val fast = request.param("fast") == "1"
         val acts = if (fast) s.cachedForArtist(artist)
         else s.forArtist(artist, metadata.extras(album, artist).artistMbid)
@@ -888,6 +905,38 @@ class CardApi(
                                 // how they drift. One chip, so one service —
                                 // the first, which is the storefront-aware one.
                                 .putOrNull("url", linkFor(it.name, it.album, service))
+                                /*
+                                 * SOMEWHERE TO READ ABOUT IT, NOT ONLY
+                                 * SOMEWHERE TO PLAY IT.
+                                 *
+                                 * Asked for directly: a suggestion should
+                                 * offer an album review the way the card does.
+                                 * ALLMUSIC IS THE ONE THAT COSTS NOTHING —
+                                 * its link is built from the two names with no
+                                 * lookup at all, which matters here because
+                                 * there are three of these and they are drawn
+                                 * after a card that must not wait for them.
+                                 * Wikipedia's is the ARTICLE the blurb came
+                                 * from and Pitchfork's is a real review, and
+                                 * neither exists for a record nobody has
+                                 * played: both are a request apiece, and for a
+                                 * row of suggestions that is six requests to
+                                 * two rate-gated hosts to decorate something
+                                 * nobody has tapped yet.
+                                 *
+                                 * It is a search link, exactly as the card's
+                                 * own AllMusic chip is — their album ids are
+                                 * opaque and cannot be built from a name — so
+                                 * this promises no more than that chip does.
+                                 * Switched off in Settings -> Reviews, there is
+                                 * no chip: switched off means not offered.
+                                 */
+                                .putOrNull(
+                                    "review",
+                                    it.album?.takeIf { allmusicOn }
+                                        ?.let { album -> Reviews.albumUrl(it.name, album) }
+                                )
+                                .put("reviewName", Reviews.chip(Reviews.ALLMUSIC).orEmpty())
                         }
                     )
                 )

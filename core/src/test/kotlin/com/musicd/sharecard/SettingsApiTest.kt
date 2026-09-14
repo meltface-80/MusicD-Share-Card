@@ -484,4 +484,38 @@ class SettingsApiTest {
         assertFalse(body.getBoolean("queued"))
         assertTrue(body.getString("detail"), body.getString("detail").isNotEmpty())
     }
+
+    // ------------------------------------------- what this build tells the page
+
+    /*
+     * ASKED FOR: the version at the foot of the settings menu, so "which
+     * version are you on" stops being the first line of every bug report. It
+     * was only ever in /api/debug, which is a wall of facts somebody has to be
+     * told to open.
+     *
+     * AND THE VARIANT, which is not cosmetic: the action row draws a Download
+     * button on Android and not on the container, where the browser saves the
+     * picture better than a button can. /api/update/status has carried the
+     * variant all along, but that is fetched for the update bar and may not
+     * have landed by the time the first card is painted.
+     */
+    @Test
+    fun `setup says which build this is and which shell it is`() {
+        val answer = get(api(), "/api/setup")
+        assertEquals("1.0.0", answer.getString("version"))
+        assertEquals("android", answer.getString("variant"))
+    }
+
+    @Test
+    fun `no updater is answered as android, which keeps the button`() {
+        // A shell that cannot install anything says nothing about whether the
+        // browser can save an image — and the safe answer is the one that
+        // KEEPS a control rather than the one that removes it on a guess.
+        val answer = get(api(), "/api/setup")
+        assertEquals("android", answer.getString("variant"))
+        assertFalse(
+            "the version must never be the literal string null on Android",
+            answer.getString("version") == "null"
+        )
+    }
 }
