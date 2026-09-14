@@ -22,6 +22,29 @@ and coming back does not throw it away.
 
 <img src="docs/screenshots/app.jpg" width="360" alt="The app: the card, the room it is playing in, a Download button, one row of links — Wikipedia, AllMusic, Wikipedia artist, AllMusic artist, then the streaming services — and three suggestions">
 
+## Discover
+
+A second tab at the top, for when nothing is on — or when what is on has been on
+long enough. It is a wall of sleeves and nothing else, and the order runs from
+most personal to least:
+
+1. **New records by acts you've actually played.** The app remembers the last
+   sixty records it drew a card for — the act and the album, on this device,
+   and nothing leaves it — and checks them against MusicBrainz's releases from
+   the last three weeks, through ListenBrainz. "Because you played Slint" is a
+   different promise from "out this week", and each sleeve says which it is.
+2. **What the press has just reviewed.** **Pitchfork**'s and **NME**'s album
+   review feeds, read as *records* rather than as articles: the headline is used
+   to work out which album it is and is then thrown away. Not a word of anybody's
+   writing is kept, shown or stored — tap the sleeve and the first link goes
+   straight to the review, with their name on it.
+3. **New this week**, from Deezer's editorial list — the same for everybody,
+   there so a fresh install is not an empty screen.
+
+Tap any sleeve and you get the same row of links the card has: the review it
+came from if it came from one, then Wikipedia, AllMusic and the services.
+
+
 It works out what's playing by asking whoever actually knows:
 
 - **Roon** — asked directly, through its own extension API

@@ -819,6 +819,66 @@ was simply not there, however carefully the DIDL was parsed.
   private to `Metadata` while Wikipedia was the only caller; `Similar` asks it
   of Deezer's top hit. Two copies that drift is how one lookup refuses a
   stranger and the next accepts them.
+- **THE PRESS IS READ AS RECORDS, NOT AS ARTICLES, AND THAT IS THE WHOLE
+  LEGAL POSITION.** Asked for as "what's good right now… as album cover art and
+  when tapped opens to the review sources as links", with "I just don't want to
+  breach copyright of articles" attached. So what `Editorial` takes out of a
+  feed is AN ARTIST AND AN ALBUM: the headline identifies the record and is then
+  thrown away, the article is never fetched, and the only thing that survives is
+  a link with the publisher's name on it. A feed's `description` is deliberately
+  NOT READ AT ALL — not to shorten, not to excerpt, not for a hover — because
+  the safest way not to publish somebody's writing is not to hold it, and
+  `NewMusicDrawnTest` asserts the word does not appear in the code rather than
+  trusting it.
+- **A TITLE ONLY YIELDS A RECORD WHERE THE PUBLISHER WRITES IT TO A SHAPE, SO
+  TWO OF THE FOUR FEEDS ASKED FOR WERE LEFT OUT.** Pitchfork's album feed is
+  "Artist: Album" and NME's is "Artist – 'Album' review: …", both declared per
+  feed in `Editorial.FEEDS` rather than guessed. The Quietus and Bandcamp Daily
+  mix features, lists and interviews into the same feed, so their headlines are
+  prose — "The Strange World of…" names no record, and guessing one out of it
+  puts a WRONG SLEEVE UNDER A RIGHT REVIEW, which is this repo's oldest rule
+  wearing another hat. A shape that cannot be read is skipped and `attempts()`
+  says so. `mustContain` is the second guard: a publisher putting a news item in
+  a review feed is ordinary, and the link's own path is what tells them apart.
+- **THE COLON IS THE FIRST ONE, BECAUSE AN ALBUM CARRIES ONE AND AN ARTIST DOES
+  NOT.** A subtitle, a reissue, a deluxe edition named after itself — all
+  ordinary; an act with a colon in its name is rare enough that nobody here can
+  name one. Splitting at the LAST put the album's own subtitle on the end of the
+  artist, which is a name that matches nothing and a row of links about nobody.
+- **THE REVIEW A RECORD CAME FROM REPLACES THE LOOKUP'S GUESS; IT DOES NOT SIT
+  BESIDE IT. A RENDER FOUND THAT.** Added as an extra chip, a record out of
+  Pitchfork's own feed drew TWO chips both reading "Pitchfork review" — one the
+  publisher's link, one a URL this app built from an artist and an album slug —
+  with nothing on the row to tell a reader which was which. The publisher's is
+  the one that is certainly right, so it takes the review slot. AND THE CHIP IS
+  NAMED BY WHOEVER WROTE IT: the label was the literal `"Pitchfork review"`,
+  true for as long as a review link could only come from the score lookup, so an
+  NME review drew under Pitchfork's byline. That is the `bioSource` rule —
+  "named by whoever the blurb came from rather than hard-coded" — made in the
+  one place it had not reached, and it took a browser to see. `readAtName` is
+  one of `FEEDS`' own names, never a string off the wire, which is what keeps it
+  inside a quarter of a phone (see `LinkChipsTest`).
+- **A SLEEVE SIZED BY ITS WIDTH CANNOT GIVE WAY, AND WHAT GETS CLIPPED IS THE
+  RECORD'S OWN NAME.** `.newone-art` was `width: 100%` with `aspect-ratio: 1/1`,
+  which derives the HEIGHT from the width — so the picture was 240px tall
+  whatever room the stage had. Measured at 320x700: stage 245px, panel 223, and
+  the album title and artist laid out at y=390 inside a stage that ends at 368
+  and clips. A detail screen that never says which record it is about, shipped
+  in 1.0.2 and invisible in every test here, because nothing reads a layout.
+  Driving it from the HEIGHT inverts it — the width follows the ratio, and
+  `flex: 0 1 auto` with `min-height: 0` lets the picture shrink while the two
+  lines of text keep theirs. Same trade the card makes on a short screen and for
+  the same reason: the picture is the one thing that can be smaller without
+  anything being lost. Re-measured at 320, 360, 390 and 430 with both lines
+  inside the stage every time, and `NewMusicDrawnTest` scans the declaration —
+  PER DECLARATION, not per substring, because `max-width: 100%` carries
+  `width: 100%` inside it and the first cut of that scan failed on the fix.
+- **NEITHER FEED HAS BEEN REACHED FROM HERE.** The proxy answers 403 to the
+  CONNECT for pitchfork.com and nme.com, checked rather than assumed, so the
+  shapes are the documented ones pinned as fixtures and the socket is kept out
+  of `parse`. Same posture as Lyrion and Roon: treat the first real run as the
+  verification, and read `/api/debug` first — the feed reads land in the same
+  section as the rest of Discover.
 - **SUGGESTIONS ARE ARTISTS, NOT ALBUMS, AND THE LABEL SAYS SO.** Nothing
   keyless does album-to-album similarity — every route without a developer
   account answers "artists like this artist". So `Similar` finds acts and then
