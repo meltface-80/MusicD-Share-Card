@@ -785,11 +785,21 @@
           chip.classList.add("sim-queued");
           return;
         }
-        // Roon could not, so do what the chip says it does.
+        // Roon could not, so do what the chip says it does — AND SAY SO.
+        //
+        // The reason was thrown away here: the server works out which of seven
+        // steps it stopped at and puts it in `detail`, and this opened a
+        // streaming search without showing a word of it. So a record sitting
+        // in the library that Roon would not queue looked exactly like a
+        // record Roon had never heard of, which is how this was reported with
+        // nothing to go on. /api/debug keeps the full note; this is the line
+        // somebody actually sees.
         chip.textContent = was;
+        if (answer.detail) errEl.textContent = answer.detail;
         window.open(chip.href, "_blank", "noopener");
       } catch (e) {
         chip.textContent = was;
+        errEl.textContent = (e && e.message) ? e.message : "Could not reach the card server.";
         window.open(chip.href, "_blank", "noopener");
       }
     });
@@ -1209,6 +1219,11 @@
     // and the four causes — no art url, a refused host, a 404, or bytes that
     // were not an image — want four different fixes.
     section("Album art", d.art);
+    // Every attempt to queue a suggestion into Roon, and where it stopped.
+    // Reported from the field as a record that IS in the library not arriving
+    // in the queue, against a chain with seven places to stop — and nothing
+    // anywhere saying which. See RoonBrowse.attempts().
+    section("Queue in Roon", d.queue);
     // Each source in its own words. Roon's line is where "not approved yet"
     // appears, and that is not a network problem however much it looks like one.
     section("Sources", d.sources);

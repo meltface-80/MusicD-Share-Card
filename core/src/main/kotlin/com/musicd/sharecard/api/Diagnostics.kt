@@ -53,7 +53,17 @@ class Diagnostics(
      * all, a host the proxy refused, a 404, or bytes that were not an image —
      * and telling them apart had already cost two rounds of diagnosis.
      */
-    private val artNotes: () -> List<String> = { emptyList() }
+    private val artNotes: () -> List<String> = { emptyList() },
+    /**
+     * The last few attempts to queue a suggestion into Roon.
+     *
+     * Reported from the field: a record that IS in the library was tapped and
+     * did not arrive in the queue, and this report had nothing at all to say
+     * about it. The chain has seven places to stop and they are seven different
+     * fixes — see [com.musicd.sharecard.roon.RoonBrowse.attempts]. Nothing
+     * here can be exercised without a Roon Core, so this section IS the test.
+     */
+    private val queueNotes: () -> List<String> = { emptyList() }
 ) {
 
     fun run(): JSONObject {
@@ -71,6 +81,8 @@ class Diagnostics(
         if (similar.isNotEmpty()) report.put("similar", Json.strings(similar))
         val art = runCatching { artNotes() }.getOrDefault(emptyList())
         if (art.isNotEmpty()) report.put("art", Json.strings(art))
+        val queue = runCatching { queueNotes() }.getOrDefault(emptyList())
+        if (queue.isNotEmpty()) report.put("queue", Json.strings(queue))
 
         // 1. What this device thinks it is attached to. An empty list here is
         //    the whole answer: no network, no speakers.

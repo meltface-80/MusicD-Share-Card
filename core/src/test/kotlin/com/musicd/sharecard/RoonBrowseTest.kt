@@ -2,7 +2,9 @@ package com.musicd.sharecard
 
 import com.musicd.sharecard.roon.RoonBrowse
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -178,5 +180,87 @@ class RoonBrowseTest {
         val outcome = browse.queueAlbum("Spiderland", "Slint", "roon:1")
         assertTrue(outcome.detail, !outcome.queued)
         assertTrue(outcome.detail, outcome.detail.contains("Roon"))
+    }
+
+    // ------------------------------------------------- what Roon said back
+
+    /*
+     * REPORTED FROM THE FIELD: a suggested album that IS in the library was
+     * tapped on a Roon card and never arrived in the queue.
+     *
+     * Every one of these browse replies used to be thrown away. That cost two
+     * separate things, and the second is very likely the shape of that report:
+     * a refusal partway down the chain was followed by a `load` of whatever
+     * screen was still open, so the reason finally given named the wrong step;
+     * and the FINAL invoke — the one that queues — was never read at all, so
+     * Roon refusing it reached the page as "Added to the end of the queue in
+     * Roon". A tap that claims to have worked is the one failure nobody goes
+     * looking for.
+     */
+
+    private fun reply(vararg pairs: Pair<String, Any?>) =
+        JSONObject().apply { pairs.forEach { (k, v) -> if (v != null) put(k, v) } }
+
+    @Test
+    fun `a list answer is how the chain goes on`() {
+        assertNull(RoonBrowse.refused(reply("action" to "list"), expectList = true))
+    }
+
+    @Test
+    fun `an error is reported in Roon's own words`() {
+        val why = RoonBrowse.refused(
+            reply("is_error" to true, "message" to "Zone is not available"),
+            expectList = true
+        )
+        assertEquals("Zone is not available", why)
+    }
+
+    @Test
+    fun `is_error written as the number 1 is still an error`() {
+        // optBoolean reads 1 as FALSE — the trap LmsClient.truthy already
+        // exists for, and is_error is exactly the field an encoder writes as 1.
+        assertNotNull(RoonBrowse.refused(reply("is_error" to 1, "message" to "No"), expectList = true))
+        assertNotNull(RoonBrowse.refused(reply("is_error" to "true"), expectList = true))
+        assertNull(RoonBrowse.refused(reply("is_error" to 0, "action" to "list"), expectList = true))
+    }
+
+    @Test
+    fun `a message where a list was expected does not go on to load a stale one`() {
+        val why = RoonBrowse.refused(
+            reply("action" to "message", "message" to "This is not available"),
+            expectList = true
+        )
+        assertEquals(
+            "a browse that answered in words left the PREVIOUS screen loaded, and " +
+                "the reason reported was whichever later step then failed",
+            "This is not available", why
+        )
+    }
+
+    @Test
+    fun `the performed action answers in words, and that is success`() {
+        // The last step must NOT expect a list: Roon answers a performed action
+        // with action "message" and the words it would have put on screen.
+        assertNull(
+            RoonBrowse.refused(
+                reply("action" to "message", "message" to "Added 12 tracks to queue"),
+                expectList = false
+            )
+        )
+        // But an error on that same step is still an error, and reporting it as
+        // success is the bug this whole section is about.
+        assertNotNull(
+            RoonBrowse.refused(
+                reply("action" to "message", "message" to "Zone is not available", "is_error" to true),
+                expectList = false
+            )
+        )
+    }
+
+    @Test
+    fun `an answer with no action at all is not taken for a list`() {
+        assertNotNull(RoonBrowse.refused(reply("message" to "nothing here"), expectList = true))
+        // And it still says something when Roon sent no words either.
+        assertNotNull(RoonBrowse.refused(reply(), expectList = true))
     }
 }

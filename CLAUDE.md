@@ -1200,6 +1200,35 @@ was simply not there, however carefully the DIDL was parsed.
     what is playing, which is the whole product, to support one tap. STILL
     UNVERIFIED, and it is the risk in the change: whether adding a service to
     the registration re-prompts for approval in Roon → Settings → Extensions.
+  - **EVERY BROWSE REPLY IS READ NOW, AND THE LAST ONE WAS THE EXPENSIVE
+    OMISSION.** Each `browse` was fired and its answer dropped. Roon does not
+    answer one with a list unconditionally: `action` may be `message` and
+    `is_error` may be set. So a refusal partway down was followed by a `load`
+    of whatever screen was still open, and the reason finally reported named
+    whichever LATER step then failed — the Pitchfork lesson again. Worse, the
+    FINAL invoke, the one that actually queues, was never read at all, so Roon
+    refusing it reached the page as "Added to the end of the queue in Roon". A
+    tap that claims to have worked is the one failure nobody goes looking for,
+    and that is very likely why this came back as "it hasn't been added"
+    rather than as an error. `is_error` is read with a lenient truthy, because
+    `optBoolean` reads the number 1 as false — same family as `LmsClient
+    .truthy`.
+  - **THE ZONE IS NAMED WHEN THE ACTION MENU IS OPENED, NOT ONLY WHEN THE
+    ACTION IS INVOKED.** Roon decides which actions to offer from the zone they
+    would apply to, so a menu opened without one can come back with no playback
+    actions in it — which the app then reported as "Roon offered no Queue
+    action", naming the wrong cause. UNVERIFIED, like everything else on this
+    wire.
+  - **`RoonBrowse.attempts()` IS THE TEST, BECAUSE THERE CANNOT BE ANOTHER
+    ONE.** Reported from the field: a suggested album that IS in the library
+    was tapped and did not arrive in the queue. `/api/debug` had NOTHING to say
+    about it — no section, no note — and the page threw the server's `detail`
+    away and silently opened a streaming search, so a record Roon refused
+    looked exactly like a record Roon had never heard of. The chain has seven
+    places to stop and they are seven different fixes. Each attempt is now a
+    line under "Queue in Roon" naming the step AND the rows Roon actually sent,
+    because "not in your library" and "it is right there and the match refused
+    it" are the same sentence from outside. The page shows the reason too.
   - **THE PARSING IS SEPARATED FROM THE SOCKET** because no Core is reachable
     from here, so none of this has been seen on the wire. The shapes are the
     ones `node-roon-api-browse` documents and MusicD Remote Lite drives against
