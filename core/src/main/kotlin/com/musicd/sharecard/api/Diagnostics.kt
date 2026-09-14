@@ -63,7 +63,17 @@ class Diagnostics(
      * fixes — see [com.musicd.sharecard.roon.RoonBrowse.attempts]. Nothing
      * here can be exercised without a Roon Core, so this section IS the test.
      */
-    private val queueNotes: () -> List<String> = { emptyList() }
+    private val queueNotes: () -> List<String> = { emptyList() },
+    /**
+     * The last few looks for new music.
+     *
+     * An empty Discover screen has three causes that look identical from it —
+     * nothing heard yet, neither endpoint answering, and a window with nothing
+     * in it — and only the first is not a bug. Neither of those endpoints has
+     * ever been reached from where this was written, so this section is the
+     * first evidence anybody will have about them.
+     */
+    private val newMusicNotes: () -> List<String> = { emptyList() }
 ) {
 
     fun run(): JSONObject {
@@ -83,6 +93,8 @@ class Diagnostics(
         if (art.isNotEmpty()) report.put("art", Json.strings(art))
         val queue = runCatching { queueNotes() }.getOrDefault(emptyList())
         if (queue.isNotEmpty()) report.put("queue", Json.strings(queue))
+        val discover = runCatching { newMusicNotes() }.getOrDefault(emptyList())
+        if (discover.isNotEmpty()) report.put("discover", Json.strings(discover))
 
         // 1. What this device thinks it is attached to. An empty list here is
         //    the whole answer: no network, no speakers.

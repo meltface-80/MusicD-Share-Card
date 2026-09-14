@@ -16,6 +16,7 @@ import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.roon.RoonClient
 import com.musicd.sharecard.roon.RoonSource
 import com.musicd.sharecard.roon.TokenStore
+import com.musicd.sharecard.discover.PlayHistory
 import com.musicd.sharecard.settings.SettingsStore
 import com.musicd.sharecard.sonos.Household
 import com.musicd.sharecard.sonos.SoapClient
@@ -99,6 +100,16 @@ class ShareCardApp(
      * from the real thing.
      */
     settingsStore: SettingsStore = SettingsStore.inMemory(),
+    /**
+     * What this app has made a card for, which is what the Discover screen is
+     * based on.
+     *
+     * Remembers nothing by default, so a host that passes no store — and every
+     * test — behaves exactly as this class did before it existed. See
+     * [com.musicd.sharecard.discover.PlayHistory] for what is kept and what
+     * deliberately is not.
+     */
+    history: PlayHistory = PlayHistory.inMemory(),
     /** See [com.musicd.sharecard.api.Access]. The container may turn this off. */
     requirePin: Boolean = true
 ) {
@@ -212,10 +223,19 @@ class ShareCardApp(
      */
     private val roonBrowse = com.musicd.sharecard.roon.RoonBrowse { roon.browseSocket() }
 
+    /**
+     * What is new, and which of it this house has a reason to care about.
+     *
+     * See [com.musicd.sharecard.discover.NewMusic]: two public endpoints, one
+     * request each, and the filtering against [history] happens here rather
+     * than as a request per act.
+     */
+    private val newMusic = com.musicd.sharecard.discover.NewMusic(metaHttp, userAgent(version), history)
+
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
         webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz, similar,
-        settingsStore, requirePin, roonBrowse
+        settingsStore, requirePin, roonBrowse, history, newMusic
     )
 
     private val server = HttpServer(api, port, bindAddress)

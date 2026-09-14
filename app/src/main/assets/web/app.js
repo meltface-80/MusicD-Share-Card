@@ -47,6 +47,8 @@
   const simEl    = document.getElementById("similar");
   const refresh  = document.getElementById("refresh");
   const settingsBtn = document.getElementById("settings");
+  const tabCard  = document.getElementById("tab-card");
+  const tabNew   = document.getElementById("tab-new");
 
   /*
    * Bumped on every load(), so a late redraw cannot land on a card the user
@@ -108,10 +110,31 @@
    */
   function show(html) {
     stage.innerHTML = html;
+    restage();
+  }
+
+  /** The same, for a screen that builds nodes rather than a string. */
+  function showNode(node) {
+    stage.innerHTML = "";
+    stage.appendChild(node);
+    restage();
+  }
+
+  /*
+   * WHICH KIND OF STAGE THIS IS, DECIDED FROM WHAT WENT INTO IT.
+   *
+   * Every one of these is read off the content rather than set by the caller,
+   * and that is the rule: a caller that has to remember to CLEAR a class is a
+   * caller that will one day leave the diagnostics' scroll on a card. Adding a
+   * screen means adding a line here, not a line in every screen.
+   */
+  function restage() {
     stage.classList.toggle("scrolls", !!stage.querySelector(".diag"));
-    // Decided from what actually went into the stage, like .scrolls above,
-    // rather than trusting every caller to remember to clear it.
     stage.classList.toggle("choosing", !!stage.querySelector(".rooms"));
+    stage.classList.toggle(
+      "browsing",
+      !!(stage.querySelector(".newgrid") || stage.querySelector(".newone"))
+    );
   }
 
   function busy(on) {
@@ -294,6 +317,10 @@
 
   async function load(force) {
     const mine = ++token;
+    // The card is the Playing tab whichever way it was reached — the cog, a
+    // tile on the chooser, Done in Settings. Setting it here rather than in
+    // every caller is what stops the tabs and the screen disagreeing.
+    selectTab("card");
     // Anything the last card was waiting on is no longer wanted.
     if (cardRequests) cardRequests.abort();
     cardRequests = typeof AbortController === "function" ? new AbortController() : null;
@@ -1340,6 +1367,12 @@
     // in the queue, against a chain with seven places to stop — and nothing
     // anywhere saying which. See RoonBrowse.attempts().
     section("Queue in Roon", d.queue);
+    // What the Discover screen was able to find. An empty screen there has
+    // three causes that look identical from it — nothing heard yet, neither
+    // endpoint answering, and a window with nothing in it — and only the first
+    // is not a bug. Neither endpoint has ever been reached from where this was
+    // written, so these lines are the first evidence anybody will have.
+    section("Discover", d.discover);
     // Each source in its own words. Roon's line is where "not approved yet"
     // appears, and that is not a network problem however much it looks like one.
     section("Sources", d.sources);
@@ -1495,6 +1528,139 @@
    * is not localStorage, which is where the one genuinely per-device
    * preference (the held-chip service tick) still lives.
    */
+  /*
+   * DISCOVER — NEW RECORDS, AS SLEEVES.
+   *
+   * Asked for as "new music based on listening", drawn as cover art and
+   * nothing else: tap a sleeve and the links open. That is not a style choice,
+   * it is the legal position. A title and an artist are facts and a sleeve
+   * identifies the record the same way the card already does; everything
+   * anybody has WRITTEN about it stays a link to whoever wrote it. No article
+   * text is reproduced here and no route could return any.
+   *
+   * THE SERVER DECIDES WHAT IS ON IT AND WHY. The page draws `why` rather than
+   * working it out — "Because you played Slint" against "New this week" is the
+   * difference between this screen meaning what its name says and being a
+   * new-releases list, and that rule lives in :core where it has tests.
+   */
+  let newMusicToken = 0;
+
+  async function showNewMusic() {
+    // Before any await, like every other screen: a load() already in flight
+    // will otherwise paint the card over this one. See claimStage.
+    claimStage();
+    clearCardRows();
+    errEl.textContent = "";
+    selectTab("new");
+    const mine = ++newMusicToken;
+    show('<div class="placeholder"><div class="spinner"></div>' +
+      "<div>Looking for new music\u2026</div></div>");
+
+    let picks = [];
+    try {
+      const data = await getJson("/api/new");
+      picks = (data && Array.isArray(data.picks)) ? data.picks : [];
+    } catch (e) {
+      if (mine !== newMusicToken) return;
+      message("Could not look for new music.");
+      errEl.textContent = (e && e.message) ? e.message : String(e);
+      return;
+    }
+    if (mine !== newMusicToken) return;
+
+    if (!picks.length) {
+      /*
+       * AN EMPTY SCREEN MUST NAME THE RIGHT CAUSE. "Nothing new" is a lie when
+       * the truth is "this app has not seen you play anything yet" — the same
+       * mistake as "no players found" for a household that is simply switched
+       * off, which sent somebody to hosts.txt and VLANs for a problem whose
+       * fix was two taps.
+       */
+      message("Nothing new yet.");
+      hintEl.textContent =
+        "This fills up as you play things \u2014 it is based on what this app " +
+        "has made a card for. It also needs a route to the internet.";
+      return;
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "newgrid";
+    for (const pick of picks) grid.appendChild(newTile(pick));
+    showNode(grid);
+    hintEl.textContent = "Tap a sleeve to read about it or find it.";
+  }
+
+  /** One sleeve, its record, and why it is on this screen. */
+  function newTile(pick) {
+    const tile = document.createElement("button");
+    tile.className = "newtile";
+    const art = pick.art
+      ? '<img class="newtile-art" src="' + escapeHtml(pick.art) + '" alt="" loading="lazy">'
+      // A record with no sleeve is still a record. The tile keeps its shape so
+      // the grid stays a grid.
+      : '<div class="newtile-art blank">\u266a</div>';
+    tile.innerHTML = art +
+      '<span class="newtile-name">' + escapeHtml(pick.album) + "</span>" +
+      '<span class="newtile-act">' + escapeHtml(pick.artist) + "</span>" +
+      '<span class="newtile-why' + (pick.heard ? " heard" : "") + '">' +
+      escapeHtml(pick.why || "") + "</span>";
+    tile.onclick = () => showNewRecord(pick);
+    return tile;
+  }
+
+  /*
+   * ONE RECORD, AND EVERYWHERE TO READ ABOUT IT OR HEAR IT.
+   *
+   * The links are the SAME ones the card has, built by the same server route,
+   * so a service switched off in Settings is switched off here too and the
+   * encoding rules have one home. This screen adds no new place a URL is
+   * built.
+   */
+  async function showNewRecord(pick) {
+    claimStage();
+    clearCardRows();
+    errEl.textContent = "";
+    const mine = ++newMusicToken;
+    show('<div class="placeholder"><div class="spinner"></div>' +
+      "<div>Looking it up\u2026</div></div>");
+
+    let extras = EMPTY;
+    try {
+      const params = new URLSearchParams({ album: pick.album, artist: pick.artist });
+      extras = extrasOf(await getJson("/api/extras?" + params));
+    } catch (e) { /* the sleeve and the name are still worth showing */ }
+    if (mine !== newMusicToken) return;
+
+    const panelEl = document.createElement("div");
+    panelEl.className = "newone";
+    panelEl.innerHTML =
+      (pick.art
+        ? '<img class="newone-art" src="' + escapeHtml(pick.art) + '" alt="">'
+        : '<div class="newone-art blank">\u266a</div>') +
+      '<p class="newone-name">' + escapeHtml(pick.album) + "</p>" +
+      '<p class="newone-act">' + escapeHtml(pick.artist) +
+      (pick.released ? " \u00b7 " + escapeHtml(pick.released) : "") + "</p>";
+    showNode(panelEl);
+
+    // The row under the card, unchanged and in the same place, so there is one
+    // set of rules about which links appear and what they promise.
+    buildLinks(extras);
+    hintEl.textContent = pick.why || "";
+    actions.innerHTML = "";
+    const back = button("", "Back to Discover", "");
+    back.onclick = showNewMusic;
+    actions.appendChild(back);
+  }
+
+  /** Which tab is lit. The card's own screens all put it back on Playing. */
+  function selectTab(which) {
+    const onNew = which === "new";
+    tabNew.setAttribute("aria-selected", onNew ? "true" : "false");
+    tabCard.setAttribute("aria-selected", onNew ? "false" : "true");
+    tabNew.classList.toggle("on", onNew);
+    tabCard.classList.toggle("on", !onNew);
+  }
+
   function showSettings() {
     /*
      * CLAIMED BEFORE ANY await, AND THE MENU ASKS THE SERVER FOR NOTHING.
@@ -1556,6 +1722,25 @@
   function panel(...parts) {
     claimStage();
     show('<div class="wh set">' + parts.join("") + "</div>");
+    clearCardRows();
+  }
+
+  /*
+   * EVERYTHING BELOW THE STAGE BELONGS TO THE CARD, AND ANOTHER SCREEN MUST
+   * TAKE IT DOWN.
+   *
+   * The caption, the action row, the links and the suggestions all describe a
+   * record, and a screen that is not about a record has no business leaving
+   * them up. Drawn over the Discover grid on the first cut: the sleeves came
+   * in, and under them sat "Playing in SR11 · via Roon", a Download button and
+   * two rows of links about something else entirely — and because those rows
+   * still had their height, the grid was squeezed into a strip and its first
+   * row of sleeves was clipped.
+   *
+   * One function rather than four lines in each screen, because the fourth
+   * screen is where somebody forgets one.
+   */
+  function clearCardRows() {
     actions.innerHTML = "";
     hintEl.textContent = "";
     nowEl.innerHTML = "";
@@ -2125,6 +2310,8 @@
 
   refresh.addEventListener("click", () => load(true));
   settingsBtn.addEventListener("click", showSettings);
+  tabCard.addEventListener("click", () => load(false));
+  tabNew.addEventListener("click", showNewMusic);
   zoneSel.addEventListener("change", () => {
     // From here on the picker outranks whatever the server remembers, which
     // is what lets "Whatever's playing" mean it.

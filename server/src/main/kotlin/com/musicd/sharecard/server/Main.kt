@@ -9,6 +9,7 @@ import com.musicd.sharecard.meta.FileCacheStore
 import com.musicd.sharecard.meta.ServerRelease
 import com.musicd.sharecard.meta.Updater
 import com.musicd.sharecard.roon.FileTokenStore
+import com.musicd.sharecard.discover.FilePlayHistory
 import com.musicd.sharecard.settings.FileSettingsStore
 import com.musicd.sharecard.webhook.FileWebhookStore
 import java.io.File
@@ -94,6 +95,10 @@ fun main() {
             // so a first run here shows the empty state and points at
             // Settings rather than drawing a card nobody asked for.
             settingsStore = FileSettingsStore(File(data, "settings.json")),
+            // What this box has drawn a card for — the Discover screen's only
+            // source of truth. Beside the other three files in the mounted
+            // directory, so it survives a restart like everything else here.
+            history = FilePlayHistory(File(data, "history.json")),
             requirePin = requirePin,
             /*
              * UPDATING FROM THE APP, THE SAME WAY ANDROID DOES.

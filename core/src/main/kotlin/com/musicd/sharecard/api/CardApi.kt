@@ -6,6 +6,8 @@ import com.musicd.sharecard.describe
 import com.musicd.sharecard.str
 import com.musicd.sharecard.api.Json.putOrNull
 import com.musicd.sharecard.http.HttpServer
+import com.musicd.sharecard.discover.NewMusic
+import com.musicd.sharecard.discover.PlayHistory
 import com.musicd.sharecard.http.Request
 import com.musicd.sharecard.http.Response
 import com.musicd.sharecard.meta.Metadata
@@ -65,7 +67,15 @@ class CardApi(
      */
     private val requirePin: Boolean = true,
     /** Null where Roon is not in play, which is every test but one. */
-    private val roonBrowse: RoonBrowse? = null
+    private val roonBrowse: RoonBrowse? = null,
+    /**
+     * What this app has drawn a card for, which is what "based on your
+     * listening" is based on. Remembers nothing by default, so a test and a
+     * host with no storage behave exactly as this class did before it existed.
+     */
+    private val history: PlayHistory = PlayHistory.inMemory(),
+    /** Null where this host has no route to the internet; the screen says so. */
+    private val newMusic: NewMusic? = null
 ) : HttpServer.Handler {
 
     private val access = Access({ webhooks.pin() }, requirePin)
@@ -92,6 +102,22 @@ class CardApi(
      */
     private val downloads = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
         Thread(r, "sharecard-update").apply { isDaemon = true }
+    }
+
+    /**
+     * WHERE THE HISTORY IS WRITTEN, AND IT IS NOT THE REQUEST THREAD.
+     *
+     * The rule every store here keeps: the cache is written by the lookup path
+     * on its own thread AFTER the request that triggered it has been answered,
+     * and nothing on the network ever waits on a disk write. A card must not be
+     * a millisecond slower because something is being remembered about it, and
+     * a disk that has filled up must not be able to fail a card.
+     *
+     * One thread, so two cards drawn at once cannot interleave into the file,
+     * and a daemon, so it cannot hold the process open.
+     */
+    private val remembering = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "sharecard-history").apply { isDaemon = true }
     }
 
     override fun handle(request: Request): Response {
@@ -169,13 +195,15 @@ class CardApi(
         "/api/extras" -> extras(request)
         "/api/qobuz" -> qobuzLink(request)
         "/api/similar" -> similarActs(request)
+        "/api/new" -> newMusicRoute()
         "/api/art" -> artwork(request)
         "/api/debug" -> Json.obj(
             Diagnostics(
                 sources, hostNotes, pitchfork::attempts,
                 { similar?.attempts().orEmpty() },
                 art::attempts,
-                { roonBrowse?.attempts().orEmpty() }
+                { roonBrowse?.attempts().orEmpty() },
+                { newMusic?.attempts().orEmpty() }
             ).run()
         )
         else -> static(request.path)
@@ -424,7 +452,35 @@ class CardApi(
         // answered this time: "whatever's playing" has to keep meaning that,
         // and pinning it made the next refresh answer about a room the user
         // never chose.
-        return Json.obj(cardJson(playing).put("notices", Json.strings(sources.notices())))
+        /*
+         * REMEMBERED AFTER THE ANSWER IS BUILT, NEVER BEFORE IT.
+         *
+         * This is the one place that knows a card was really drawn for a real
+         * record, which is what makes it the right place — and it is handed to
+         * another thread so that nothing about the card waits on a file. See
+         * [PlayHistory] for what is kept and what deliberately is not.
+         */
+        val answer = cardJson(playing).put("notices", Json.strings(sources.notices()))
+        val artist = playing.artist
+        val album = playing.album
+        if (artist.isNotBlank()) {
+            // Catch Throwable, not Exception, at both levels: a rejected
+            // execution and a class that will not initialise are both Errors,
+            // and neither may take a card down with it. Remembering is the
+            // least important thing this method does.
+            try {
+                remembering.execute {
+                    try {
+                        history.remember(artist, album)
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "could not remember $artist: $t")
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "could not queue the history write: $t")
+            }
+        }
+        return Json.obj(answer)
     }
 
     /**
@@ -865,6 +921,43 @@ class CardApi(
      * and a search of its own. `fast=1` answers from the shelf and opens no
      * socket.
      */
+    /**
+     * WHAT IS NEW, AND WHY EACH ONE IS ON THE SCREEN.
+     *
+     * A READ, like everything else that is not a webhook or an update: it
+     * reaches two public endpoints and returns titles, artists and sleeve
+     * URLs. NOTHING EDITORIAL COMES BACK THROUGH IT. What has been written
+     * about a record stays a link to whoever wrote it — the screen draws the
+     * sleeve, the tap opens the source — which is the whole reason this can be
+     * "our own page" without being anybody else's article.
+     *
+     * The sleeves go through the ART PROXY like the card's does, so the page
+     * stays same-origin and the host allowlist still applies to a URL that
+     * arrived over the network.
+     */
+    private fun newMusicRoute(): Response {
+        val engine = newMusic ?: return Json.obj(JSONObject().put("picks", JSONArray()))
+        val picks = runCatching { engine.picks() }
+            .onFailure { Log.w(TAG, "could not find new music: ${it.message}") }
+            .getOrDefault(emptyList())
+        return Json.obj(
+            JSONObject().put(
+                "picks",
+                JSONArray(
+                    picks.map {
+                        JSONObject()
+                            .put("artist", it.artist)
+                            .put("album", it.album)
+                            .put("released", it.released)
+                            .put("why", it.why)
+                            .put("heard", it.heard)
+                            .putOrNull("art", it.art?.let { url -> "/api/art?url=" + urlEncode(url) })
+                    }
+                )
+            )
+        )
+    }
+
     private fun similarActs(request: Request): Response {
         val artist = request.param("artist").orEmpty()
         val album = request.param("album").orEmpty()

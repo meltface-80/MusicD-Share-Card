@@ -84,6 +84,22 @@
 -->
 <div class="update hidden" id="update" role="status"></div>
 
+<!--
+  TWO SCREENS, AND THE TABS ARE THE ONLY WAY BETWEEN THEM.
+
+  The card is what this app is for and stays first. Discover is new records,
+  the ones by acts this house actually plays first — it needs the internet and
+  the card does not, so it is somewhere you GO rather than something that
+  loads beside the card.
+
+  Real buttons in a tablist, not divs painted to look like tabs, so the pair is
+  reachable by keyboard and announced as what it is.
+-->
+<nav class="tabs" role="tablist" aria-label="Screens">
+  <button class="tab" id="tab-card" role="tab" aria-selected="true">Playing</button>
+  <button class="tab" id="tab-new" role="tab" aria-selected="false">Discover</button>
+</nav>
+
 <main class="wrap">
   <div class="stage" id="stage">
     <div class="placeholder">

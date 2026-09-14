@@ -771,6 +771,185 @@ body {
 
 .now b { color: var(--text); font-weight: 600; }
 
+/* -------------------------------------------------------------------- tabs */
+
+/*
+ * TWO SCREENS, AND THE TABS ARE THE ONLY WAY BETWEEN THEM.
+ *
+ * Under the header rather than inside it: the header holds the things that are
+ * true of every screen — settings, which room, refresh — and these switch WHICH
+ * screen, which is a different job. Full width and split evenly, because there
+ * are two and there is no reason for either to be the bigger target.
+ *
+ * The lit one is marked by a rule under it rather than a filled pill: a filled
+ * tab beside the yellow cog is two accents competing in a strip 40px tall.
+ */
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.tab {
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 11px 8px;
+  cursor: pointer;
+}
+
+.tab.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- discover */
+
+/*
+ * NEW RECORDS, AS SLEEVES.
+ *
+ * Three across, because a sleeve is square and four on a 360px phone is 80px
+ * of cover — small enough that the art stops doing the one job it is here for.
+ * It SCROLLS, which is the third exception to the no-scroll rule and for the
+ * same reason as the other two: a list of records exists to be looked through,
+ * and one clipped off the bottom is one you cannot reach.
+ */
+/*
+ * NOT `.scrolls`, WHICH IS THE DIAGNOSTICS' CLASS AND SETS `flex: 1 1 auto`.
+ *
+ * Growing to fill drew a tall bordered panel with the sleeves floating in the
+ * middle of it and empty bands above and below — the same mistake the chooser
+ * grid already made once and has a comment about. The base `flex: 0 1 auto`
+ * lets the panel hug the sleeves and still SHRINK past them, which is what
+ * turns the overflow into a scroll when a fortnight has produced more records
+ * than fit.
+ */
+.stage.browsing {
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px;
+}
+
+.newgrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  padding: 2px;
+}
+
+.newtile {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 7px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.newtile:active { transform: scale(.98); }
+
+/* Square whatever the source sent, so the grid is a grid. */
+.newtile-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #1e2228;
+  margin-bottom: 4px;
+}
+
+.newtile-art.blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 22px;
+}
+
+.newtile-name,
+.newtile-act,
+.newtile-why {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  line-height: 1.25;
+}
+
+.newtile-name { font-size: 12px; font-weight: 600; }
+.newtile-act  { font-size: 11.5px; color: var(--text-dim); }
+
+/* WHY IT IS ON THE SCREEN, and the two answers must not look alike. "Because
+   you played Slint" is the feature; "New this week" is the filler that keeps a
+   first run from being empty. */
+.newtile-why {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.newtile-why.heard { color: var(--accent); }
+
+/* One record, opened from a tile. */
+.newone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 4px 2px;
+}
+
+.newone-art {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #1e2228;
+}
+
+.newone-art.blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 40px;
+}
+
+.newone-name {
+  margin: 10px 0 0;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.newone-act {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
 /* ----------------------------------------------------------------- actions */
 
 /*
