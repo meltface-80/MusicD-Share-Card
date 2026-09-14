@@ -1,5 +1,6 @@
 package com.musicd.sharecard
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -216,5 +217,74 @@ class NewMusicDrawnTest {
             "and the forced look has to reach the server as a forced one",
             code.contains("\"/api/new\" + (force ? \"?refresh=1\" : \"\")")
         )
+    }
+
+    @Test
+    fun `every picture this app serves is asked for by the name the route reads`() {
+        /*
+         * THE PARAMETER IS `u`, AND THE DISCOVER GRID WROTE `url=`.
+         *
+         * So every sleeve asked for a parameter `artwork()` does not read, was
+         * answered 400 before ArtProxy was ever called, and drew a broken
+         * image — twelve a screen, on a feature whose whole point is cover
+         * art. Shipped in 1.0.2 and survived two rounds of "no album artwork"
+         * because the sleeve LOOKUP was what got suspected both times, and by
+         * 1.0.4 the lookup was working perfectly: `/api/debug` said "sleeves
+         * -> 10 of 11 resolved from the record" over a grid of broken images.
+         *
+         * WHAT NAMED IT WAS THE DIAGNOSTICS BEING EMPTY. ArtProxy notes every
+         * outcome it has — refused, 404, not an image, and success — so a
+         * report with no "art" section at all means it was never reached. The
+         * absence of the report was the report.
+         *
+         * Asserted as an invariant rather than on the two routes somebody
+         * thought of: every art URL in CardApi comes out of one function.
+         */
+        val server = read("core/src/main/kotlin/com/musicd/sharecard/api/CardApi.kt")
+        val code = server.lines()
+            .filterNot { val t = it.trimStart(); t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") }
+            .joinToString("\n")
+
+        val built = Regex("\"/api/art\\?[a-zA-Z]+=").findAll(code).map { it.value }.toSet()
+        assertEquals(
+            "every art URL must be built by artLink, which is the one place " +
+                "that knows the parameter is `u`",
+            setOf("\"/api/art?u="), built
+        )
+        assertTrue(
+            "and the route has to read that same name",
+            code.contains("request.param(\"u\")")
+        )
+        assertTrue(
+            "/api/new must go through it rather than building its own",
+            code.contains("it.art?.let(::artLink)")
+        )
+    }
+
+    @Test
+    fun `an emptied row does not keep carrying its margin`() {
+        /*
+         * `clearCardRows()` empties the action row and the room caption and
+         * HIDES the links and suggestions — but `display: none` was only on
+         * the two it hides, so the other two kept 14px and 10px of top margin
+         * plus their own line boxes on every screen that has no card. Under
+         * the Discover grid that is dead space at the bottom of the phone,
+         * reported as "remove big black section at bottom of the screen", and
+         * it was equally there under the chooser.
+         *
+         * The rule already existed one element over: `.hint:empty` and
+         * `.err:empty` were added when an empty paragraph pushed the card and
+         * its caption apart. Measured at 390x780: 62px of dead space under the
+         * stage before, 26px after — and the 26px is the hint itself.
+         */
+        val css = read("app/src/main/assets/web/style.css")
+        for (row in listOf(".actions", ".now", ".hint", ".err")) {
+            assertTrue(
+                "$row:empty must take no space — an emptied row that keeps its " +
+                    "margin is a band of nothing on every screen without a card",
+                Regex(Regex.escape(row) + ":empty[^{]*\\{[^}]*display:\\s*none")
+                    .containsMatchIn(css)
+            )
+        }
     }
 }

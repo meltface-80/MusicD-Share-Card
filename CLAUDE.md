@@ -887,6 +887,44 @@ was simply not there, however carefully the DIDL was parsed.
   and both have to overlap on the ROW, because the first row is not the answer
   — `QobuzAlbum.pick` and the Deezer artist search are already written from
   that lesson.
+- **THE ART PARAMETER IS `u`, AND THE SECOND PLACE THAT BUILT THE STRING BY
+  HAND WROTE `url=`.** Every Discover sleeve asked for a parameter `artwork()`
+  does not read, was answered 400 before `ArtProxy` was ever called, and drew a
+  broken image — twelve a screen, on a feature whose whole point is cover art.
+  It shipped in 1.0.2 and survived TWO rounds of "no album artwork", because
+  the sleeve LOOKUP was what got suspected both times, and by 1.0.4 the lookup
+  was working perfectly: `/api/debug` said "sleeves -> 10 of 11 resolved from
+  the record" over a grid of broken images.
+  **WHAT NAMED IT WAS THE DIAGNOSTICS BEING EMPTY.** The report had no "art"
+  section at all — and `ArtProxy` notes every outcome it has, refusals
+  included, so no notes means it was never reached. The ABSENCE of the report
+  was the report, and it is the only thing that separated "the URL is wrong"
+  from "the host was refused". Every art URL goes through `artLink` now, and
+  `NewMusicDrawnTest` asserts that as an invariant — every `"/api/art?…="` in
+  `CardApi` is the same one — rather than naming the routes somebody thought
+  of, which is what the old assertion did and why it did not cover the third.
+- **A PART-FULL ROW OF CHIPS SITS IN THE MIDDLE.** A fixed four-column grid
+  left-aligns whatever it holds, so three review chips drew three-across with a
+  quarter of the row empty on the right and the block reading as if it had
+  slipped sideways. Reported as "centre the source and review buttons". A grid
+  CANNOT centre its own tracks while they are `1fr` — they fill by definition —
+  so the row is flex with a quarter-width basis: four fill it exactly and
+  anything fewer is centred. Every chip is still one size and a label still may
+  never set it. AND THE TEST THAT BROKE ON THIS WAS ASSERTING THE MECHANISM:
+  it named `repeat(4` and failed on a change that kept four across. Assert what
+  must be TRUE — four across, a quarter each — not how it is done.
+- **AN EMPTIED ROW STILL CARRIES ITS MARGIN, AND THREE OF THEM IS A BLACK
+  BAND.** `clearCardRows()` empties the action row and the room caption and
+  HIDES the links and suggestions — but `display: none` was only ever on the
+  two it hides, so the other two kept 14px and 10px of top margin plus their
+  own line boxes on every screen that has no card. Under the Discover grid that
+  is dead space at the bottom of the phone, reported as "remove big black
+  section at bottom of the screen", and it was equally there under the chooser
+  where nobody had noticed. The rule already existed one element over —
+  `.hint:empty` and `.err:empty` were added when an empty paragraph pushed the
+  card and its caption apart — so this is that rule reaching the rows it had
+  missed. Measured at 390x780: 62px of dead space under the stage before, 26px
+  after, and the 26px is the hint itself.
 - **A SLEEVE IS ASKED FOR AT TILE SIZE, AND THAT IS A CACHE DECISION.**
   Deezer's `cover_big` is 500px and its `cover_xl` is 1000px; a tile is about
   115px on a phone and the record a tile opens onto is 240px, so xl is four

@@ -8,7 +8,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * THE LINKS ROW IS A FOUR-COLUMN GRID, AND ONE CHIP MUST NOT SET ITS HEIGHT.
+ * THE LINKS ROW IS FOUR CHIPS ACROSS, AND ONE CHIP MUST NOT SET ITS SIZE.
  *
  * `align-items: stretch` makes the one-line chips as tall as the two-line ones
  * so the grid stays a grid. It works the other way too: ONE tall chip makes
@@ -144,16 +144,60 @@ class LinkChipsTest {
 
     @Test
     fun `the four columns are on the row, not on the container`() {
-        // `.links` being the grid is what made them share one. It is the column
-        // now; each `.links-row` is the four-column grid it used to be.
+        /*
+         * `.links` being the grid is what made both kinds of chip share one
+         * flow and let a service finish the review line. It is the column now
+         * and each `.links-row` lays its own chips out four across.
+         *
+         * ASSERTED AS THE INVARIANT, NOT AS THE MECHANISM, because this test
+         * named `repeat(4` and then failed on a change that kept four across
+         * and merely centred a part-full line. What has to be true is that the
+         * ROW sizes the chips a quarter each — however it does it — and that
+         * the container does not lay them out at all.
+         */
+        val row = ruleFor(".links-row") + ruleFor(".links-row > a")
         assertTrue(
-            "`.links-row` is not a four-column grid, so the chips would stack",
-            ruleFor(".links-row").contains("repeat(4")
+            "`.links-row` no longer puts four chips across, so they would stack " +
+                "or run to their own widths",
+            row.contains("repeat(4") || row.contains("calc(25%")
         )
         assertFalse(
-            "`.links` is a grid again, which puts both kinds of chip back on " +
-                "one flow and lets a service finish the review line",
-            ruleFor(".links").contains(Regex("""display:\s*grid"""))
+            "`.links` lays out chips again, which puts both kinds back on one " +
+                "flow and lets a service finish the review line",
+            ruleFor(".links").contains(Regex("""display:\s*(grid|flex)"""))
+        )
+    }
+
+    @Test
+    fun `a part-full row of chips sits in the middle of the width`() {
+        /*
+         * Reported as "centre the source and review buttons". A fixed
+         * four-column grid left-aligns whatever it holds, so three review
+         * chips drew three-across with a quarter of the row empty on the right
+         * and the block reading as if it had slipped sideways. A grid cannot
+         * centre `1fr` tracks — they fill by definition — so the row is flex
+         * with a quarter-width basis: four fill it exactly and anything fewer
+         * is centred.
+         *
+         * Measured in a browser at 320, 390 and 430 with the reporter's own
+         * shape (three reviews, three services) and with five and seven: every
+         * part-full line centred to the pixel, every full line edge to edge,
+         * chip width constant and height 44px throughout.
+         */
+        val css = File("../app/src/main/assets/web/style.css").readText()
+        val row = css.substringAfter(".links-row {").substringBefore("}")
+        assertTrue(".links-row not found in the stylesheet", row.isNotEmpty())
+        val declared = row.split(";").map { it.trim() }
+        assertTrue(
+            "a part-full row has to be centred, and a grid of 1fr tracks cannot be",
+            declared.contains("display: flex") && declared.contains("justify-content: center")
+        )
+
+        val item = css.substringAfter(".links-row > a {").substringBefore("}")
+        assertTrue(
+            "and the chip is still A QUARTER OF THE ROW whatever its label says " +
+                "— the width may never be set by the words in it",
+            item.contains("flex: 0 1 calc(25%") && item.contains("min-width: 0")
         )
     }
 }

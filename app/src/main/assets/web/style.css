@@ -541,11 +541,32 @@ body {
   padding: 0;
 }
 
+/*
+ * FOUR EVEN COLUMNS, AND A PART-FULL ROW SITS IN THE MIDDLE OF THEM.
+ *
+ * A fixed four-column grid left-aligns whatever it holds, so three review
+ * chips drew three-across with a quarter of the row empty on the right and
+ * the whole block reading as if it had slipped sideways. Reported as exactly
+ * that. A grid cannot centre its own tracks while they are `1fr` — they fill
+ * by definition — so this is a flex row whose items are a quarter wide: four
+ * fill it exactly (4 x (25% - 5.25px) + 3 x 7px = 100%), and anything fewer
+ * is centred by `justify-content`.
+ *
+ * Every chip is still ONE SIZE and a label still may never set it: the basis
+ * is a quarter of the row whatever the words are, and the height is stated in
+ * `.links a` rather than grown into. See LinkChipsTest.
+ */
 .links-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: stretch;
   gap: 7px;
+}
+
+.links-row > a {
+  flex: 0 1 calc(25% - 5.25px);
+  min-width: 0;
 }
 
 /* The gap between the two rows, and only between them: the first row sits
@@ -869,6 +890,9 @@ body {
 .wrap.edge {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+  /* The home indicator's inset is the only space here that cannot be given
+     back; the 12px this page keeps under a card buys nothing under a grid. */
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* The prose under it is still prose and must not touch the glass. */
@@ -1046,6 +1070,23 @@ body {
   gap: 8px;
   margin-top: 14px;
 }
+
+/*
+ * AN EMPTIED ROW STILL CARRIES ITS MARGIN, AND THREE OF THEM IS A BLACK BAND.
+ *
+ * `clearCardRows()` empties the action row and the room caption and hides the
+ * links and suggestions — but `display: none` was only ever on the two it
+ * hides, so the other two kept 14px and 10px of top margin plus their own line
+ * boxes on every screen that has no card. Under the Discover grid that is dead
+ * space at the bottom of the phone, reported as "remove big black section at
+ * bottom of the screen", and it was equally there under the chooser.
+ *
+ * The rule already existed one element over — `.hint:empty` and `.err:empty`
+ * were added for exactly this, when an empty paragraph pushed the card and the
+ * caption apart. This is the same rule reaching the rows that were missed.
+ */
+.actions:empty,
+.now:empty { display: none; }
 
 .actions button,
 .actions a {
