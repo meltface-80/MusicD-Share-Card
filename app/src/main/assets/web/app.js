@@ -1755,11 +1755,22 @@
     updateEl.classList.remove("hidden");
 
     const phase = (state.phase && state.phase.name) || "idle";
+    /*
+     * THE LAST STEP IS NOT THE SAME STEP ON BOTH BUILDS, and saying it was
+     * left a container stuck under "Android is asking you to confirm" for
+     * ever. Nothing is asking: Android hands an APK to the system installer
+     * and waits for a human, while the container has already unpacked the new
+     * build and is about to exit so the launcher can start it. Reported from
+     * a Docker install, where there is no Android in the picture at all.
+     */
+    const onServer = state.variant === "server";
     const busyText = {
       checking: "Checking\u2026",
       downloading: "Downloading\u2026",
       verifying: "Checking the download\u2026",
-      installing: "Android is asking you to confirm\u2026"
+      installing: onServer
+        ? "Restarting into the new version\u2026"
+        : "Android is asking you to confirm\u2026"
     }[phase];
 
     if (phase === "error" && state.phase.error) {
@@ -1799,20 +1810,63 @@
   }
 
   /* Runs only while a download is in flight, and stops the moment it is not. */
+  /**
+   * Follow an update that is already running. Ends when it does.
+   *
+   * A BOUNDED POLL DURING SOMETHING SOMEBODY JUST PRESSED, which is not the
+   * timer the no-polling rule forbids: that one interrogates the household all
+   * day to answer a question nobody is reading. This one has a beginning, an
+   * end and a person watching it.
+   */
   function watchUpdate() {
+    let restarting = false;
+    let tries = 0;
     const timer = setInterval(async () => {
+      /*
+       * THE SERVER GOING AWAY IS THE UPDATE WORKING, not the update failing.
+       * The container exits so its launcher can start the build it just
+       * unpacked, so the status request fails for a few seconds by design.
+       * Giving up there is what froze the bar on the last message it managed
+       * to read.
+       */
+      if (++tries > MAX_UPDATE_POLLS) {
+        clearInterval(timer);
+        if (restarting) {
+          updateEl.innerHTML = '<span class="update-text">' +
+            "Still restarting. Reload the page in a moment.</span>";
+        }
+        return;
+      }
+
       let state;
       try {
         state = await getJson("/api/update/status");
       } catch (e) {
+        if (restarting) return;
         clearInterval(timer);
         return;
       }
+
+      if (restarting) {
+        // It answered again, so the new build is up. Reload rather than patch
+        // the bar: everything on this page came from the old one.
+        clearInterval(timer);
+        location.reload();
+        return;
+      }
+
       showUpdate(state);
       const phase = (state.phase && state.phase.name) || "idle";
+      if (phase === "installing" && state.variant === "server") {
+        restarting = true;
+        return;
+      }
       if (phase !== "downloading" && phase !== "verifying") clearInterval(timer);
     }, 1500);
   }
+
+  /** Ninety seconds at 1.5s a go. A restart that takes longer has gone wrong. */
+  const MAX_UPDATE_POLLS = 60;
 
   // ---------------------------------------------------------------- wiring
 

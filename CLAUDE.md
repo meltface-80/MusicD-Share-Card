@@ -1191,6 +1191,31 @@ was simply not there, however carefully the DIDL was parsed.
   let `restart: unless-stopped` bring the container back on it. The cost is
   stated in the README rather than hidden — the JRE and the OS packages
   underneath change only when somebody pulls an image by hand.
+- **THE TWO BUILDS DO NOT SHARE A LAST STEP, AND THE BAR SAID THEY DID.**
+  Android writes an APK and hands it to the system installer, which asks a
+  human; the container has already unpacked the new build and is about to exit
+  so its launcher can start it. One message served both, so a Docker install
+  sat under "Android is asking you to confirm…" — reported from a machine with
+  no Android anywhere near it. `/api/update/status` carries `variant`; the page
+  branches on it, and `UpdateDrawnTest` scans for the wording going back to
+  being unconditional.
+- **AND THE WATCHER GAVE UP EXACTLY WHEN THE UPDATE WAS WORKING.** The
+  container exits mid-update by design, so the status request fails for a few
+  seconds — and `watchUpdate` called `clearInterval` on the first failure,
+  freezing the bar on whatever it had last read. It waits through the gap now,
+  bounded by `MAX_UPDATE_POLLS`, and reloads the page once the server answers
+  again, because everything on it came from the build that just went away.
+- **PROMOTE WHAT THE LAUNCHER LAUNCHED, NOT WHAT THE BUILD CALLS ITSELF.** The
+  version directory is named after the MANIFEST; the running process reports
+  whatever was baked into it. Two names for one thing, from different places —
+  and `promote` wrote the second into the file the launcher reads as the first.
+  The moment they disagree, `active` names a directory that does not exist, the
+  next boot finds nothing there and falls back to the build in the image: an
+  update that appears to work and quietly undoes itself, which is close to
+  undiagnosable from outside. In practice they agree, because both come from
+  `versionName` — `SHARECARD_VERSION` is the documented way to make them
+  differ, and it is what exposed this while watching a real update restart.
+  `promote` reads the `trying` marker now, so the launcher is the only source.
 - **THE INSTALLER IS TOLD THE VERSION; IT MUST NEVER READ IT OFF A FILENAME.**
   The downloader writes one fixed name, replaced each time, and that name has
   never carried a version — so the container's installer parsed nothing and

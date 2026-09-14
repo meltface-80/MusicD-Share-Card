@@ -134,7 +134,7 @@ class ServerReleaseTest {
     fun `a build that serves is kept`() {
         val dir = temp.newFolder("updates")
         File(dir, ServerRelease.TRYING).writeText("9.9.9")
-        ServerRelease.promote(dir, "9.9.9")
+        ServerRelease.promote(dir)
 
         assertEquals("9.9.9", File(dir, ServerRelease.ACTIVE).readText())
         // Cleared, so the NEXT boot does not read this as a failed attempt.
@@ -147,7 +147,7 @@ class ServerReleaseTest {
         // must not rewrite `active` behind the launcher's back.
         val dir = temp.newFolder("updates")
         File(dir, ServerRelease.ACTIVE).writeText("1.0.0")
-        ServerRelease.promote(dir, "1.0.0")
+        ServerRelease.promote(dir)
         assertEquals("1.0.0", File(dir, ServerRelease.ACTIVE).readText())
         assertFalse(File(dir, ServerRelease.TRYING).exists())
     }
@@ -223,5 +223,43 @@ class ServerReleaseTest {
 
         assertTrue("the unpacked build was deleted by a download", File(out, "bin/server").isFile)
         assertTrue("the marker was deleted by a download", File(updates, ServerRelease.PENDING).isFile)
+    }
+
+    @Test
+    fun `what is promoted is the directory the launcher started`() {
+        /*
+         * THE BUG THIS PINS, CAUGHT BY WATCHING A REAL UPDATE RESTART.
+         *
+         * The directory is named after the MANIFEST's version; the running
+         * process reports whatever version was baked into it. Two names for
+         * one thing, from different places. Promote used to write the second
+         * into the file the launcher reads as the first, so the moment they
+         * disagreed `active` named a directory that does not exist — the next
+         * boot found nothing there and fell back to the build in the image.
+         * An update that appeared to work and then quietly undid itself.
+         */
+        val dir = temp.newFolder("updates")
+        ServerRelease.unpack(ordinary("0.49.0"), dir, "0.49.0")
+        File(dir, ServerRelease.TRYING).writeText("0.49.0")
+
+        // The process believes it is something else entirely.
+        ServerRelease.promote(dir)
+
+        val active = File(dir, ServerRelease.ACTIVE).readText().trim()
+        assertEquals("0.49.0", active)
+        assertTrue(
+            "active must name a build that is actually on disk",
+            File(File(dir, ServerRelease.VERSIONS), active).isDirectory
+        )
+    }
+
+    @Test
+    fun `an empty trying marker promotes nothing`() {
+        // A half-written marker must not make `active` point at nowhere, which
+        // would cost the next boot its update for no reason.
+        val dir = temp.newFolder("updates")
+        File(dir, ServerRelease.TRYING).writeText("   ")
+        ServerRelease.promote(dir)
+        assertFalse(File(dir, ServerRelease.ACTIVE).exists())
     }
 }
