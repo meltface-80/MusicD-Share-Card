@@ -639,34 +639,30 @@ body {
 }
 
 /*
- * "If you like this" — a list, every row the width of the longest.
+ * "IF YOU LIKE THIS" — A ROW EACH: THE RECORD, AND SOMEWHERE TO READ ABOUT IT.
  *
- * ONE COLUMN OF max-content, WHICH IS THE WHOLE TRICK. The column is sized to
- * the widest chip in it and every chip then stretches to fill the column, so
- * five rows of wildly different names come out one length instead of a ragged
- * staircase. `justify-content: center` centres that column on the page rather
- * than pinning it left.
+ * THE TYPE IS NO LONGER MEASURED, AND THAT IS THE CHANGE. `fitSuggestions()`
+ * sized the longest label on a canvas and set one font size on the whole row,
+ * because the chips were full width, single line, and at any fixed size the
+ * longest clipped while the shortest floated in nothing. It was the right
+ * answer to that layout and it is gone with it.
  *
- * NOT full width: these are suggestions, and a column of five screen-wide
- * buttons would shout louder than the card they sit under.
- */
-/*
- * FULL WIDTH, AND THE LONGEST NAME SETS THE TYPE SIZE FOR ALL THREE.
+ * A suggestion is a ROW now — the record on the left, a review pill on the end
+ * — so nothing here is full width any more, and the label WRAPS rather than
+ * being shrunk to fit. Wrapping is the better trade for the names this row
+ * actually gets: "The Chemical Brothers · Live in Leicester 1995 (1995)" set
+ * at 9.5px to stay on one line is smaller than the credit under the card. The
+ * height that costs came out of the action row above, which is why those
+ * became pills in the same change.
  *
- * These were sized to their own content, so three suggestions of very
- * different lengths left a ragged column against a full-width row of links
- * above them. They now span the width, and the font size is computed once per
- * row from the LONGEST label so that one exactly fills a chip — see
- * fitSuggestions() in app.js. CSS cannot do that: there is no way to ask for
- * "the size at which this text fits", so it is measured and set.
- *
- * The size is set on this element and inherited, which is what keeps all three
- * the same: sizing each chip to its own text would make the short ones huge.
+ * THE REVIEW PILL DOES NOT SHRINK AND THE RECORD DOES. `flex: none` on one and
+ * `min-width: 0` on the other is what decides which of the two gives way when
+ * a name is long — and it must be the name, because "AllMusic" clipped to
+ * "AllMu" is a chip nobody can read.
  */
 .similar {
   display: grid;
   grid-template-columns: 1fr;
-  align-items: stretch;
   gap: 6px;
   margin-top: 12px;
   font-size: 12.5px;
@@ -677,17 +673,45 @@ body {
   text-align: center;
 }
 
+.sim-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+
 .similar a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
   font-weight: 500;
   font-size: inherit;
   color: var(--text-faint);
+  text-align: center;
+  text-decoration: none;
+  padding: 7px 12px;
+  min-height: 38px;
+  /* break-word, never anywhere: `anywhere` counts a break between any two
+     letters when it works out how narrow the row may be, and takes them at the
+     first opportunity. See the links row, where that shipped once. */
+  overflow-wrap: break-word;
+}
+
+.similar a:active { transform: scale(.98); }
+
+/* The record. It is the one that gives way, so it carries the min-width: 0. */
+.sim-main { flex: 1 1 auto; min-width: 0; }
+
+/* Somewhere to read about it. Sized to its own name and never squeezed. */
+.sim-review {
+  flex: none;
+  color: var(--accent);
+  border-color: var(--accent);
+  padding: 7px 10px;
   white-space: nowrap;
-  overflow-wrap: normal;
-  padding: 8px 10px;
-  /* A backstop only. The fit above should land exactly, but it is clamped at
-     a legible minimum, so a freakishly long pair of names must clip rather
-     than push the row wider than the screen. */
-  overflow: hidden;
 }
 
 .placeholder {
@@ -733,24 +757,32 @@ body {
  *
  * These wrapped, and on a phone that meant Share on its own line, then the
  * webhook, then the cog — three rows of buttons between the card and the links
- * and everything below them pushed off the screen. They are now a single row
- * of equal cells: `flex: 1 1 0` makes every button the same width regardless
- * of its label, and `min-width: 0` is the half that actually stops the
- * overhang, because a flex item refuses to shrink below its content without
- * it.
+ * and everything below them pushed off the screen. They are a single row of
+ * equal cells: `flex: 1 1 0` makes every button the same width regardless of
+ * its label, and `min-width: 0` is the half that actually stops the overhang,
+ * because a flex item refuses to shrink below its content without it.
  *
- * THE LABEL WRAPS INSIDE THE BUTTON, and the icon sits above it rather than
- * beside it. One of these buttons is named by the user — it is their webhook —
- * so "Discord Now Playing" is a label this cannot shorten and must not clip.
- * Stacking gives the text the whole width of the cell to wrap in, and
- * `align-items: stretch` keeps every button the height of the tallest.
+ * PILLS, THE SAME SHAPE AND HEIGHT AS THE REVIEW CHIPS BELOW. They were tall
+ * rounded rectangles with the icon stacked above the label — a block of
+ * furniture between the card and the row of links, in a page whose whole
+ * promise is that everything fits one screen without scrolling. Asked for
+ * directly, and the reason is the suggestions: they carry a review link now
+ * and their names WRAP, so the height has to come from somewhere. It comes
+ * from here. Same 44px, same 999px radius, same clamped type as `.links a`, so
+ * the three rows below the card read as one family instead of three.
+ *
+ * THE ICON SITS BESIDE THE LABEL NOW, not above it. Stacking was what made
+ * these tall, and it existed to give a user-named webhook the full width of
+ * its cell to wrap in. A pill is wide and shallow, so the label still wraps —
+ * to two lines, clamped exactly as a review chip's is — and "Discord Now
+ * Playing" still cannot clip.
  */
 .actions {
   display: flex;
   flex-wrap: nowrap;
   align-items: stretch;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
 .actions button,
@@ -758,23 +790,40 @@ body {
   flex: 1 1 0;
   min-width: 0;
   display: inline-flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 10px 6px;
-  border-radius: 11px;
+  gap: 6px;
+  padding: 4px 8px;
+  height: 44px;
+  border-radius: 999px;
   border: 1px solid var(--line);
-  background: #1e2228;
+  background: var(--surface);
   color: var(--text);
   font: inherit;
-  font-size: 12.5px;
+  font-size: clamp(10px, 3.2vw, 12px);
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.2;
   text-align: center;
   cursor: pointer;
   text-decoration: none;
+  overflow-wrap: break-word;
+  overflow: hidden;
 }
+
+/* The label, clamped to the two lines the pill is tall — the same rule the
+   review chips use, and for the same reason: one long label must not be able
+   to decide how tall the row is. */
+.actions button > span,
+.actions a > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.actions svg { flex: none; }
 
 .actions .primary {
   background: var(--accent);
@@ -785,7 +834,7 @@ body {
 .actions button:active,
 .actions a:active { transform: scale(.97); }
 .actions button[disabled] { opacity: .5; cursor: default; }
-.actions svg { width: 17px; height: 17px; }
+.actions svg { width: 15px; height: 15px; }
 
 .hint {
   color: var(--text-faint);
@@ -1124,6 +1173,23 @@ body {
   font-weight: 600;
   color: var(--accent);
 }
+
+/*
+ * WHICH BUILD THIS IS, at the foot of the settings menu.
+ *
+ * The version was only ever in /api/debug, which is a wall of facts somebody
+ * has to be told to open — so every bug report started by asking which version
+ * it came from. Quiet type: it is a fact to look up, not a thing to read every
+ * time the menu opens.
+ */
+.set-foot {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.set-foot a { color: var(--text-dim); }
 
 /* A suggestion that will go into Roon's queue rather than open a search. It
    is still a link — that is the fallback when Roon has never heard of the

@@ -58,7 +58,7 @@ class Updater(
      */
     private val install: (File, String) -> Unit,
     /** Which build this host runs, and therefore which half of the manifest. */
-    private val variant: Variant = Variant.ANDROID
+    val variant: Variant = Variant.ANDROID
 ) {
 
     /**

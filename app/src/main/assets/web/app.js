@@ -61,8 +61,23 @@
   /** Configured webhooks, masked — the page never sees a webhook URL. */
   let webhooks = [];
 
-  /** The PIN, when this page is the one running on the device itself. */
-  let setup = { onDevice: false, mayConfigure: false, pin: null, needsPin: true };
+  /**
+   * The PIN, the version and which shell this is.
+   *
+   * `variant` decides whether the action row draws a Download button, so it
+   * has to be in hand before the first card is painted rather than arriving
+   * with the update bar. "android" is the default because it is the one that
+   * KEEPS the button: a page that has not been told what it is running on
+   * should not remove a control on a guess.
+   */
+  let setup = {
+    onDevice: false, mayConfigure: false, pin: null, needsPin: true,
+    version: "", variant: "android"
+  };
+
+  /** The project page — release notes, the APK link and the Docker commands. */
+  const PROJECT_URL = "https://meltface-80.github.io/MusicD-Share-Card/";
+  const PROJECT_HOST = "meltface-80.github.io";
 
   /** What the settings screens last read back from the server. */
   let settings = { services: [], zones: [], anyZoneEnabled: false };
@@ -133,10 +148,29 @@
       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]}</svg>`;
   }
 
+  /*
+   * An action button.
+   *
+   * NO ICON ON THE ACTION ROW ANY MORE, AND THAT IS WHAT MAKES THE LABEL FIT.
+   * These became pills the height of a review chip — asked for, and the height
+   * it saves is what lets a suggestion's name wrap below. A pill is wide and
+   * shallow, so an icon beside the label eats the width the label needs: at
+   * 320px "Discord Now Playing" came out as "Discord Now…", and that label is
+   * the user's own webhook name, which this page has a standing rule never to
+   * clip. Without the icon it wraps to two lines and fits.
+   *
+   * It also finishes the thing that was actually asked for. The review chips
+   * these are now sized to are words and nothing else, so an action row with
+   * icons would be the same shape as them and not the same furniture.
+   *
+   * `icon()` is untouched and still used by the header, the update bar and
+   * "Find my speakers", which is alone in its row and has the width for one.
+   */
   function button(cls, label, name) {
     const b = document.createElement("button");
     b.className = cls;
-    b.innerHTML = icon(name) + "<span>" + label + "</span>";
+    b.dataset.icon = name || "";
+    b.innerHTML = "<span>" + label + "</span>";
     return b;
   }
 
@@ -279,6 +313,11 @@
 
     try {
       await loadZones(force, signal);
+      // Once per page, not once per card: the version and the variant cannot
+      // change while this page is open, and this route opens no socket to
+      // anything. buildActions needs the variant, so it must be in hand before
+      // the first paint rather than arriving with the update bar.
+      if (!setup.version) await refreshSetup();
       await loadWebhooks(signal);
       if (mine !== token) return;
 
@@ -862,7 +901,19 @@
       // three rules that already live in StreamingLinks with a test each. A
       // second copy of them in this file is how they drift apart.
       if (!act.url) continue;
-      const chip = link(act.url, actLabel(act), "");
+      /*
+       * A ROW, NOT A CHIP, SO THAT A REVIEW CAN SIT BESIDE IT.
+       *
+       * Asked for: somewhere to read about a suggestion, the way the card has
+       * under it. The record link keeps the width it had and the review is a
+       * short pill on the end — AllMusic, built on the server from the two
+       * names with no lookup, which is why three of them cost nothing. It is
+       * absent when AllMusic is switched off in Settings, and absent for an
+       * act with no album, because there is nothing to review.
+       */
+      const row = document.createElement("div");
+      row.className = "sim-row";
+      const chip = link(act.url, actLabel(act), "sim-main");
       /*
        * ON A ROON CARD, A TAP QUEUES IT INSTEAD OF LEAVING.
        *
@@ -881,65 +932,35 @@
        * chip stays an ordinary link.
        */
       if (roonZone && act.album) queueOnTap(chip, act);
-      simEl.appendChild(chip);
+      row.appendChild(chip);
+      if (act.review && act.reviewName) {
+        row.appendChild(link(act.review, act.reviewName, "sim-review"));
+      }
+      simEl.appendChild(row);
     }
     simEl.classList.remove("hidden");
-    fitSuggestions();
-    // Manrope is a webfont, and a width measured in the fallback face is the
-    // wrong width. The card's own render waits for it, so by here it is
-    // normally in — this is for the run where it is not.
-    if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(fitSuggestions).catch(() => { /* fallback face it is */ });
-    }
   }
 
   /*
-   * SIZE THE TYPE SO THE LONGEST SUGGESTION FILLS ITS CHIP.
+   * THE TYPE IS NOT MEASURED ANY MORE, AND THAT IS A DELETION WORTH
+   * EXPLAINING.
    *
-   * The three chips are full width, and at one fixed size the longest of them
-   * wraps or clips while the shortest floats in a sea of nothing. What is
-   * wanted is the size at which the longest exactly fits — and CSS has no way
-   * to ask for that, so it is measured.
+   * `fitSuggestions` measured the longest label on a canvas and set one font
+   * size on the whole row, because the chips were full width, single line, and
+   * at any one fixed size the longest clipped while the shortest floated in
+   * nothing. It was the right answer to that layout.
    *
-   * MEASURED ON A CANVAS, NOT BY LAYING TEXT OUT AND READING IT BACK. A canvas
-   * gives the width of a string in one call, without touching the DOM, so
-   * there is no write-read-write cycle and nothing reflows twice. Measure once
-   * at a big size and scale: text width is linear in font size for the same
-   * string and family.
+   * The layout changed underneath it. A suggestion is a ROW now — the record
+   * on the left and a review pill on the end — so no chip is full width any
+   * more, and the label WRAPS instead of being shrunk to fit. Wrapping is what
+   * was asked for, and it is the better trade for the names this row actually
+   * gets: "The Chemical Brothers · Live in Leicester 1995 (1995)" set at 9.5px
+   * to avoid a second line is smaller than the credit under the card.
    *
-   * The size is set on the ROW and inherited by all three, which is the whole
-   * point — sizing each chip to its own text would make "Moby · Disco Lies"
-   * enormous next to "The Chemical Brothers · Live in Leicester 1995".
+   * With the text wrapping there is nothing left to measure: the size is
+   * fixed, the row is as tall as its label needs, and the resize listener and
+   * the fonts.ready re-fit went with it.
    */
-  const FIT_MIN = 9.5;
-  const FIT_MAX = 16;
-  const FIT_PROBE = 100;
-  let fitCanvas = null;
-
-  function fitSuggestions() {
-    const chips = simEl.querySelectorAll("a");
-    if (!chips.length) return;
-
-    // Inner width of a chip: the row's width less this chip's own padding and
-    // border. Taken from a real chip so the CSS stays the one source of it.
-    const style = getComputedStyle(chips[0]);
-    const chrome = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) +
-      parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
-    const room = simEl.clientWidth - chrome;
-    if (!(room > 0)) return;
-
-    fitCanvas = fitCanvas || document.createElement("canvas");
-    const ctx = fitCanvas.getContext("2d");
-    if (!ctx) return;
-    ctx.font = style.fontWeight + " " + FIT_PROBE + "px " + style.fontFamily;
-
-    let widest = 0;
-    for (const chip of chips) widest = Math.max(widest, ctx.measureText(chip.textContent).width);
-    if (!(widest > 0)) return;
-
-    const size = Math.min(FIT_MAX, Math.max(FIT_MIN, FIT_PROBE * room / widest));
-    simEl.style.fontSize = size.toFixed(2) + "px";
-  }
 
   function actLabel(act) {
     if (!act.album) return act.name;
@@ -1174,14 +1195,33 @@
       actions.appendChild(b);
     }
 
-    // A download anchor is removed outright by the Android shell — scoped
-    // storage makes it a no-op there — so its absence in the app is expected.
-    const a = document.createElement("a");
-    a.className = "";
-    a.href = URL.createObjectURL(current.blob);
-    a.download = name;
-    a.innerHTML = icon("download") + "<span>Download</span>";
-    actions.appendChild(a);
+    /*
+     * DOWNLOAD, ONLY WHERE THE BROWSER ITSELF WILL NOT DO IT.
+     *
+     * The card is an <img>, so on iOS holding it gives Save to Photos, Copy
+     * and Share, and in a desktop browser right-clicking it gives Save image
+     * as. On both of those the button is a third way to do something the
+     * platform already does better — and the row it sits in is the space the
+     * suggestions below need in order to wrap. Asked for as exactly that:
+     * remove it on iOS and on the container, because iOS can long press.
+     *
+     * The ANDROID app keeps it. Its WebView has no long-press save at all, and
+     * the shell removes the anchor there anyway when scoped storage makes it a
+     * no-op — so what is drawn is decided in one place rather than two.
+     *
+     * "android" is the default variant, so a page that has not been told what
+     * it is running on keeps the button. Removing a control on a guess is the
+     * wrong way round.
+     */
+    const savesItself = isIOS || setup.variant === "server";
+    if (!savesItself) {
+      const a = document.createElement("a");
+      a.className = "";
+      a.href = URL.createObjectURL(current.blob);
+      a.download = name;
+      a.innerHTML = "<span>Download</span>";
+      actions.appendChild(a);
+    }
 
     // One button per configured webhook, then the way to add more.
     for (const hook of webhooks) {
@@ -1206,6 +1246,12 @@
       hintEl.textContent = noticeText;
     } else if (isIOS) {
       hintEl.textContent = "Press and hold the card to copy it, save it to Photos or share it.";
+    } else if (savesItself) {
+      // The container, browsed from somewhere else. The Download button is
+      // gone because the browser does this better — but a control that is
+      // simply absent teaches nobody, so the row it left says what to do
+      // instead.
+      hintEl.textContent = "Right-click or press and hold the card to save or copy it.";
     } else {
       hintEl.textContent = "";
     }
@@ -1221,6 +1267,9 @@
   function offerDiagnostics() {
     actions.innerHTML = "";
     var b = button("primary", "Find my speakers", "search");
+    // Alone in the row and the one thing worth doing at that moment, so it has
+    // the width for an icon where the everyday row does not.
+    b.innerHTML = icon("search") + b.innerHTML;
     b.onclick = async () => {
       errEl.textContent = "";
       b.disabled = true;
@@ -1443,7 +1492,21 @@
       // NO PIN FIELD ON THE MENU — nothing here writes — but there must be a
       // way out. The first cut had none, and the only route back to the card
       // was reloading the page.
-      '<div class="wh-buttons"><button id="set-back">Done</button></div>'
+      '<div class="wh-buttons"><button id="set-back">Done</button></div>',
+      /*
+       * WHICH BUILD THIS IS, AND WHERE IT LIVES.
+       *
+       * The version was only ever in /api/debug, which is a wall of facts
+       * somebody has to be told to open — so "which version are you on" was a
+       * question every bug report started with. It is one line at the foot of
+       * the one screen people already go to.
+       *
+       * Asked for alongside a link to the project page, which is also where
+       * the release notes and the Docker instructions are.
+       */
+      '<p class="set-foot">MusicD Share Card ' + escapeHtml(setup.version || "") +
+      ' &middot; <a href="' + PROJECT_URL + '" rel="noreferrer">' +
+      escapeHtml(PROJECT_HOST) + "</a></p>"
     );
     bind("settings-services", showServices);
     bind("settings-reviews", showReviews);
@@ -1658,7 +1721,13 @@
      * are asked for.
      */
     panel(
-      '<p class="wh-note">About the record. Switched off, a source is not ' +
+      // BOTH GROUPS ARE HEADED NOW. The artist half had a heading and the
+      // album half did not — it opened straight into a sentence beginning
+      // "About the record", which read as a caption for the screen rather
+      // than as the name of the group above the switches. Same element, same
+      // colour, so the two halves look like two halves.
+      '<h3 class="set-group">About the albums</h3>',
+      '<p class="wh-note">Switched off, a source is not ' +
       "looked up and its words do not appear on the card.</p>",
       group("album"),
       '<h3 class="set-group">About the artist</h3>',
@@ -2075,19 +2144,6 @@
   for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
     document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
   }
-
-  /*
-   * Rotating the phone changes the width the suggestions were fitted to, so
-   * the size is recomputed. This redraws NOTHING and asks the network for
-   * NOTHING — it reads three strings and sets one font size. It is not the
-   * banned kind of listener: those reload the card when the app comes back,
-   * and this one cannot, because it does not know what is playing.
-   */
-  let refit = null;
-  window.addEventListener("resize", () => {
-    if (refit) clearTimeout(refit);
-    refit = setTimeout(fitSuggestions, 120);
-  });
 
   // AFTER the first load, not beside it: whether this browser may ask the
   // device to check comes back with the webhook list, which load() fetches.

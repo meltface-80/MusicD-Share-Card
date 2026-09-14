@@ -659,14 +659,54 @@ was simply not there, however carefully the DIDL was parsed.
   out, so clipping them is worse than the scrolling they replace. `show()`
   decides it from what actually went into the stage — `stage.classList.toggle
   ("scrolls", …)` — rather than trusting a caller to remember.
-- **THE SUGGESTION TYPE IS MEASURED, NOT CHOSEN.** The three chips span the
-  full width, and at any one fixed size the longest clips while the shortest
-  floats in nothing. `fitSuggestions()` measures the longest label ON A CANVAS
-  — one call, no DOM write-read-write — and sets the size on the ROW so all
-  three inherit it. Sizing each chip to its own text would make "Moby · Disco
-  Lies" enormous beside "The Chemical Brothers · Live in Leicester 1995". It is
-  re-run on resize and again on `document.fonts.ready`, because a width
-  measured in the fallback face is the wrong width.
+- **THE SUGGESTION TYPE WAS MEASURED, AND IS NOT ANY MORE — THE LAYOUT MOVED
+  UNDERNEATH IT.** `fitSuggestions()` measured the longest label on a canvas
+  and set one font size on the whole row, because the chips were full width,
+  single line, and at any fixed size the longest clipped while the shortest
+  floated in nothing. It was the right answer to that layout. A suggestion is a
+  ROW now — the record on the left, a review pill on the end — so nothing is
+  full width, and the label WRAPS rather than being shrunk: "The Chemical
+  Brothers · Live in Leicester 1995 (1995)" set at 9.5px to stay on one line is
+  smaller than the credit under the card. With the text wrapping there is
+  nothing left to measure, and the resize listener that existed only to re-fit
+  went with it. THE HEIGHT WRAPPING COSTS CAME OUT OF THE ACTION ROW, which is
+  why those became pills in the same change.
+- **THE ACTION ROW IS PILLS, THE SAME 44px AS A REVIEW CHIP, AND WITH NO
+  ICONS.** Asked for: "pill shaped and sized the same as the review pill
+  buttons". The icons went too, and that is not tidying — a pill is wide and
+  shallow, so an icon beside the label eats the width the label needs, and at
+  320px "Discord Now Playing" came out as "Discord Now…". That label is the
+  user's own webhook name and this page has a standing rule never to clip it.
+  Without the icon it wraps to two lines and fits, measured at 320 and 390.
+  `icon()` is untouched and still used by the header, the update bar and "Find
+  my speakers" — that one is alone in its row and has the width for one.
+- **DOWNLOAD IS DRAWN ONLY WHERE THE BROWSER WILL NOT DO IT.** The card is an
+  `<img>`, so iOS long-press gives Save to Photos and a desktop right-click
+  gives Save image as — on both, the button is a third way to do something the
+  platform already does better, and the row it sits in is the height the
+  suggestions need. Asked for as exactly that: remove it on iOS and on the
+  container. The ANDROID app keeps it, because its WebView has no long-press
+  save at all. `/api/setup` carries `variant` for this — `/api/update/status`
+  has carried it all along but is fetched for the update bar and may not have
+  landed when the first card is painted. "android" is the DEFAULT, because a
+  page that has not been told what it is running on should keep a control
+  rather than remove it on a guess. Where the button goes, the hint says what
+  to do instead: a control that is simply absent teaches nobody.
+- **A SUGGESTION OFFERS SOMEWHERE TO READ ABOUT IT, AND ALLMUSIC IS THE ONE
+  THAT COSTS NOTHING.** Asked for: an album review link on each suggestion,
+  "either wiki, pitchfork or Allmusic". AllMusic's is built from the two names
+  with no lookup at all, which is what makes three of them free — Wikipedia's
+  is the ARTICLE the blurb came from and Pitchfork's is a real review, and
+  neither exists for a record nobody has played, so both are a request apiece:
+  six requests to two rate-gated hosts to decorate something nobody has tapped
+  yet. It is a search link exactly as the card's own AllMusic chip is, so it
+  promises no more than that chip does, and switched off in Settings → Reviews
+  there is no chip at all.
+- **THE VERSION IS AT THE FOOT OF THE SETTINGS MENU.** It was only ever in
+  `/api/debug`, which is a wall of facts somebody has to be told to open — so
+  "which version are you on" was the first line of every bug report. One quiet
+  line on the screen people already go to, beside a link to the project page
+  where the release notes and the Docker commands are.
 - **THE ACTION ROW IS UNIFORM ON BOTH PLATFORMS, and the filled Share button
   was the last thing making them differ.** iOS has no Share button at all —
   its share sheet is reached by holding the card — so it draws Download, the
@@ -1543,6 +1583,16 @@ was simply not there, however carefully the DIDL was parsed.
   build meant to be installed; Android refuses to install over an equal or lower
   `versionCode`. The workflow publishes `dist/` and rewrites the README link from
   `versionName`.
+- **THE NUMBERING IS v1.0.x, AND v1.1.x ONLY WHEN THE OWNER SAYS.** Every
+  incremental build is the next 1.0.x; a jump to 1.1.x is a decision, not
+  something to take because a change felt large. `1.0.0` itself came out of a
+  near miss worth remembering: the next release after 0.56.0 was asked for as
+  **0.6.0**, and `Updater.compareVersions` is NUMERIC PER COMPONENT — 6 is less
+  than 56, so every installed app would have read it as older and never offered
+  the update. Nobody would have seen it in the app again until a version above
+  0.56.0 shipped. Put to the owner with that spelled out, the answer was 1.0.0.
+  **A version number is published to every device and cannot be walked back, so
+  it is the owner's to choose — ask.**
 - **The signing keystore is private key material.** It lives in CI secrets. Do
   not commit it, and do not change the key: an APK signed with a different one
   cannot install over the existing app.
