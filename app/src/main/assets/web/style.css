@@ -884,23 +884,41 @@ body {
   border: 0;
   border-radius: 0;
   background: transparent;
-  padding: 8px 10px 10px;
+  /*
+   * NO PADDING AT ALL, AND THE HOME INDICATOR'S INSET GOES INSIDE THE
+   * SCROLLER RATHER THAN UNDER IT.
+   *
+   * 10px each side was still a frame — a scrolling grid clipped top and
+   * bottom, inset from every edge, which is the "window" this was twice asked
+   * to stop being. And an inset held OUTSIDE a scrolling element is a
+   * permanent band of nothing: the grid could never reach it however far you
+   * scrolled. Inside, the sleeves run through it and the band only appears at
+   * the very end of the list, which is where a home indicator belongs.
+   */
+  padding: 0 0 env(safe-area-inset-bottom);
 }
 
+/*
+ * THE WALL STARTS AT THE TABS AND ENDS AT THE GLASS.
+ *
+ * Every other screen here is a column of rows that finishes, so the page's
+ * own padding is what keeps it off the edges. A wall of sleeves is not that:
+ * it is clipped at both ends by definition, so the same padding reads as a
+ * mount around a picture. There is nothing left for it to hold off.
+ */
 .wrap.edge {
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
-  /* The home indicator's inset is the only space here that cannot be given
-     back; the 12px this page keeps under a card buys nothing under a grid. */
-  padding-bottom: env(safe-area-inset-bottom);
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 
-/* The prose under it is still prose and must not touch the glass. */
-.wrap.edge > .hint,
-.wrap.edge > .err {
-  padding-left: 14px;
-  padding-right: 14px;
-}
+/*
+ * AND THE CAPTION GOES WITH IT, on this screen only.
+ *
+ * "Tap a sleeve to read about it or find it" is 26px of the bar underneath,
+ * and what it explains is a grid of pictures with borders on them that are
+ * visibly buttons. Every other screen keeps its hint; this is the one where
+ * the thing being described says it better than the sentence does.
+ */
+.wrap.edge > .hint { display: none; }
 
 .newgrid {
   display: grid;
