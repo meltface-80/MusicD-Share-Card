@@ -68,7 +68,21 @@ class DeviceAudio(private val read: () -> Report = { Report.UNSUPPORTED }) {
         val artBitmap: String = ""
     )
 
-    data class Report(val access: Access, val sessions: List<Session> = emptyList()) {
+    /**
+     * [detail] is WHAT THE SHELL ACTUALLY SAW while deciding [access].
+     *
+     * Added because the first real run said NOT GRANTED to somebody who had
+     * just granted it, and the report stopped exactly there — three different
+     * causes wearing one sentence: the grant did not take, the grant went to
+     * something else, or this app's own reading of it is wrong. The same one
+     * step short as the ListenBrainz 400 and the silent Pitchfork index, in the
+     * one place that cannot be tested here.
+     */
+    data class Report(
+        val access: Access,
+        val sessions: List<Session> = emptyList(),
+        val detail: String = ""
+    ) {
         companion object {
             val UNSUPPORTED = Report(Access.UNSUPPORTED)
             val DENIED = Report(Access.DENIED)
@@ -99,10 +113,10 @@ class DeviceAudio(private val read: () -> Report = { Report.UNSUPPORTED }) {
             )
 
             Access.DENIED -> listOf(
-                "NOTIFICATION ACCESS IS NOT GRANTED, so Android answers with an empty",
-                "  list rather than an error — this is NOT the same as nothing playing.",
+                "NOTIFICATION ACCESS IS NOT GRANTED — this is NOT the same as",
+                "  nothing playing.",
                 "  Settings -> Apps -> Special app access -> Notification access"
-            )
+            ) + detailLines(report)
 
             Access.GRANTED -> {
                 val out = ArrayList<String>()
@@ -112,6 +126,9 @@ class DeviceAudio(private val read: () -> Report = { Report.UNSUPPORTED }) {
                     // a screenshot of this line settles it on its own.
                     out += "notification access granted, and no app is holding a media session"
                     out += "  (so nothing on this phone is playing — the permission is fine)"
+                    // Carried here too: "the permission is fine" is a claim, and
+                    // the evidence for it belongs beside it.
+                    out += detailLines(report)
                 } else {
                     out += "notification access granted, ${sessions.size} session(s)"
                     for (session in sessions.take(MAX_SESSIONS)) out += line(session)
@@ -121,6 +138,46 @@ class DeviceAudio(private val read: () -> Report = { Report.UNSUPPORTED }) {
                 }
                 out
             }
+        }
+
+        private fun detailLines(report: Report): List<String> =
+            report.detail.split("\n").filter { it.isNotBlank() }.map { "  $it" }
+
+        /**
+         * WHAT WAS LOOKED FOR, AND WHAT THE SYSTEM HOLDS — IN COUNTS, NOT NAMES.
+         *
+         * Three causes read as one "not granted": the grant did not take, it
+         * went to a different app, or this app's reading of the setting is
+         * wrong. [listed] separates the last from the first two, and [refused]
+         * says whether the SYSTEM turned the call down or merely answered with
+         * nothing — which is the difference between a permission problem and a
+         * quiet phone.
+         *
+         * **NO OTHER APP IS NAMED, DELIBERATELY.** That setting is the list of
+         * every app somebody has given notification access to, and this report
+         * is pasted into chat windows and bug reports. A count answers the
+         * question; the list would be somebody's installed software.
+         */
+        internal fun listenerNote(
+            component: String,
+            listed: Boolean,
+            total: Int,
+            refused: Boolean
+        ): String {
+            val where = if (listed) {
+                "this app IS one of the $total the system lists"
+            } else {
+                "this app is NOT among the $total the system lists"
+            }
+            val what = when {
+                refused && listed ->
+                    "the system REFUSED the call even so — the grant is there and " +
+                        "something else is wrong"
+                refused -> "the system refused the call"
+                listed -> "and no session came back, so nothing is playing"
+                else -> "and no session came back"
+            }
+            return "looked for $component\n$where, $what"
         }
 
         /** One session, as one line plus what it offers for a cover. */

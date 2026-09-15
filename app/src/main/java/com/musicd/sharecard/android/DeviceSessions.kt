@@ -20,11 +20,19 @@ import com.musicd.sharecard.device.DeviceAudio
  * is the repository's oldest rule and it is the entire reason this file is
  * short.
  *
- * **AN EMPTY LIST IS NOT AN ANSWER UNTIL THE PERMISSION IS KNOWN.** Android
- * does not refuse an unpermitted caller; it hands back nothing, which reads
- * exactly like a phone with no music on it. So the grant is checked FIRST and
- * carried separately, and [DeviceAudio] prints the two cases in different
- * words.
+ * **AN EMPTY LIST IS NOT AN ANSWER UNTIL THE PERMISSION IS KNOWN**, and BOTH
+ * WAYS ANDROID CAN SAY NO ARE HANDLED because which one it takes could not be
+ * verified from where this was written. An earlier version of this comment
+ * stated flatly that an unpermitted caller gets an empty list rather than an
+ * exception; that was asserted, not checked, and it is the kind of claim this
+ * repository is supposed to refuse. A `SecurityException` is caught AND an
+ * empty list is disambiguated, so the report is right under either.
+ *
+ * AND THE CALL DECIDES, NOT THE SETTING. The first cut read
+ * `enabled_notification_listeners` and used its own reading of it as the
+ * permission — so when it disagreed with a phone whose owner had just granted
+ * access, there was nothing to say which of the two was wrong. The setting is
+ * still read, to EXPLAIN rather than to decide.
  *
  * NOTHING HERE IS TESTED. `MediaSessionManager` cannot be reached from a JVM
  * and there is no device in this repository — CI compiles it, and the first
@@ -41,50 +49,87 @@ object DeviceSessions {
      * no probe. A class that fails to initialise throws an Error.
      */
     fun read(context: Context): DeviceAudio.Report = try {
-        if (!granted(context)) {
-            DeviceAudio.Report.DENIED
+        val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE)
+            as? MediaSessionManager
+        if (manager == null) {
+            DeviceAudio.Report.UNSUPPORTED
         } else {
-            val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE)
-                as? MediaSessionManager
-            if (manager == null) {
-                DeviceAudio.Report.UNSUPPORTED
-            } else {
-                val controllers = manager.getActiveSessions(
-                    ComponentName(context, MediaAccess::class.java)
+            val listener = ComponentName(context, MediaAccess::class.java)
+            /*
+             * ASK THE SYSTEM, DO NOT INFER FROM A SETTING.
+             *
+             * The first cut decided the permission by reading
+             * `enabled_notification_listeners` and only then called. That is
+             * this app's READING of the grant standing in for the grant, and
+             * when it disagreed with a phone whose owner had just granted it
+             * there was no way to tell which of the two was wrong. The call
+             * itself is the authority: a SecurityException is the system
+             * turning it down, and anything else means it did not.
+             *
+             * The setting is still read, but only to EXPLAIN — never to decide.
+             */
+            val sessions = try {
+                manager.getActiveSessions(listener)
+            } catch (e: SecurityException) {
+                return DeviceAudio.Report(
+                    DeviceAudio.Access.DENIED, emptyList(), note(context, listener, refused = true)
                 )
-                DeviceAudio.Report(
+            }
+            when {
+                sessions.isNotEmpty() -> DeviceAudio.Report(
                     DeviceAudio.Access.GRANTED,
-                    controllers.mapNotNull { describe(context, it) }
+                    sessions.mapNotNull { describe(context, it) }
+                )
+                // Nothing came back and nothing was refused. THIS is the case
+                // the whole type exists for, and the setting is what separates
+                // a quiet phone from a grant that never landed.
+                listeners(context).contains(context.packageName) -> DeviceAudio.Report(
+                    DeviceAudio.Access.GRANTED, emptyList(), note(context, listener, refused = false)
+                )
+                else -> DeviceAudio.Report(
+                    DeviceAudio.Access.DENIED, emptyList(), note(context, listener, refused = false)
                 )
             }
         }
-    } catch (e: SecurityException) {
-        // The grant was revoked between the check and the call, or the listener
-        // is declared and not enabled. Either way it is the permission.
-        DeviceAudio.Report.DENIED
     } catch (e: Throwable) {
         DeviceAudio.Report.UNSUPPORTED
     }
 
     /**
-     * Whether this app is an enabled notification listener.
+     * What was looked for and what the system holds, for the report.
      *
-     * Read from the setting rather than inferred from an empty result, which is
-     * the whole point: those two are indistinguishable at the call itself.
+     * The words are [DeviceAudio.listenerNote]'s — including the decision to
+     * count other listeners rather than name them — because that is a judgement
+     * and judgements live in the module with tests.
+     */
+    private fun note(context: Context, listener: ComponentName, refused: Boolean): String {
+        val packages = listeners(context)
+        return DeviceAudio.listenerNote(
+            component = listener.flattenToString(),
+            listed = packages.contains(context.packageName),
+            total = packages.size,
+            refused = refused
+        )
+    }
+
+    /**
+     * Every package the system currently counts as an enabled listener.
+     *
+     * ONE PARSE, TWO CALLERS. Deciding with one reading of this setting and
+     * explaining with another is how a report ends up contradicting the thing
+     * it is reporting on.
+     *
      * `Settings.Secure.ENABLED_NOTIFICATION_LISTENERS` is hidden from the SDK,
      * so the key is spelled out — it is the documented name and has been stable
-     * since Jelly Bean.
+     * since Jelly Bean. The value is flattened ComponentNames separated by ':'.
      */
-    private fun granted(context: Context): Boolean {
-        val enabled = Settings.Secure.getString(
-            context.contentResolver, "enabled_notification_listeners"
-        ).orEmpty()
-        val me = context.packageName
-        return enabled.split(':').any { entry ->
-            entry.isNotBlank() &&
-                ComponentName.unflattenFromString(entry.trim())?.packageName == me
-        }
-    }
+    private fun listeners(context: Context): List<String> = runCatching {
+        Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+            .orEmpty()
+            .split(':')
+            .filter { it.isNotBlank() }
+            .mapNotNull { ComponentName.unflattenFromString(it.trim())?.packageName }
+    }.getOrDefault(emptyList())
 
     private fun describe(context: Context, controller: MediaController): DeviceAudio.Session? = try {
         val metadata = controller.metadata
