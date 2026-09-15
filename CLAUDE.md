@@ -1871,6 +1871,32 @@ was simply not there, however carefully the DIDL was parsed.
   uri". A confident wrong answer that would have closed the question. The
   hazard was reasoned about before the device was seen; the device then
   demonstrated it.
+- **AND THE SCPD SETTLED IT: `AppendQueue` EXISTS.** The WiiM published
+  thirty-four actions, and the two that matter are `AppendQueue` and
+  `AppendTracksInQueue` — a queue that can be APPENDED to is one a suggestion
+  can join without stopping what somebody is listening to. `ReplaceQueue`
+  sitting beside them is the proof the device draws that distinction too, and
+  it is the verb this app must never reach for by accident: exactly what
+  `RoonBrowse.pickQueueAction` exists for, one protocol over. `BrowseQueue`
+  means an append can be VERIFIED rather than assumed, which is the omission
+  that cost the Roon queue four releases.
+- **SO THE ARGUMENTS ARE PRINTED TOO, FOR THE VERBS THAT ADD.** A name says a
+  queue can be appended to; it does not say what to put in one, and that is the
+  whole remaining question. The same SCPD answers it at no extra request.
+  `worthSigning` is a RULE and not a list — append/insert/add/search/browse/
+  online — because the next box will name its verbs differently and a list
+  would silently answer "nothing" for it. Thirty-four signatures would bury the
+  answer rather than give it, so the ones that log a user in, set a loop mode
+  or rate a track are left out.
+- **THE REMAINING WALL IS WHAT GOES IN IT, NOT WHETHER IT CAN BE SENT.** A
+  suggestion comes from Deezer, and Deezer gives a thirty-second preview, not a
+  track a renderer can play. `SearchQueueOnline(in QueueName, in SearchKey, out
+  Queue)` is the interesting shape, because it would have the DEVICE resolve a
+  record from a service it is already logged into — `UserLogin`, `GetUserInfo`
+  and `SetSpotifyPreset` on that same list say the credentials live on the box.
+  That would be keyless from this app's side, which is the only shape the
+  owner's decision leaves open. UNVERIFIED: what it accepts, what it returns,
+  and whether it reaches a service at all.
 - **NO OPENHOME ON THAT BOX, WHICH IS WORTH KNOWING BEFORE BUILDING
   ANYTHING.** WiiM is widely described as an OpenHome renderer and this one
   advertises no `av-openhome-org` service at all. `tencent/QPlay` is QQ

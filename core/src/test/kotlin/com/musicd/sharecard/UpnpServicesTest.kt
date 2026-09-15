@@ -223,4 +223,105 @@ class UpnpServicesTest {
         assertEquals(emptyList<String>(), UpnpSource.parseActions("not xml at all"))
         assertEquals(emptyList<String>(), UpnpSource.parseActions("<scpd></scpd>"))
     }
+
+    // ------------------------------------------------- and what to put in it
+
+    /*
+     * A WiiM Pro Plus published all thirty-four of these off a real network.
+     * The two that matter are AppendQueue and AppendTracksInQueue: a queue
+     * that can be APPENDED to is one a suggestion can join without stopping
+     * what somebody is listening to, which is the distinction this whole
+     * feature turns on. ReplaceQueue sitting beside them is the proof the
+     * device draws it too.
+     */
+    private val playQueueScpd = """
+        <scpd xmlns="urn:schemas-upnp-org:service-1-0">
+          <actionList>
+            <action><name>CreateQueue</name>
+              <argumentList><argument>
+                <name>QueueContext</name><direction>in</direction>
+              </argument></argumentList>
+            </action>
+            <action><name>ReplaceQueue</name>
+              <argumentList><argument>
+                <name>QueueContext</name><direction>in</direction>
+              </argument></argumentList>
+            </action>
+            <action><name>AppendQueue</name>
+              <argumentList><argument>
+                <name>QueueContext</name><direction>in</direction>
+              </argument></argumentList>
+            </action>
+            <action><name>SearchQueueOnline</name>
+              <argumentList>
+                <argument><name>QueueName</name><direction>in</direction></argument>
+                <argument><name>SearchKey</name><direction>in</direction></argument>
+                <argument><name>Queue</name><direction>out</direction></argument>
+              </argumentList>
+            </action>
+            <action><name>SetQueueLoopMode</name>
+              <argumentList><argument>
+                <name>LoopMode</name><direction>in</direction>
+              </argument></argumentList>
+            </action>
+          </actionList>
+        </scpd>
+    """.trimIndent()
+
+    @Test
+    fun `the verbs that ADD a record are the ones signed`() {
+        val signed = UpnpSource.parseSignatures(playQueueScpd)
+        assertEquals(
+            listOf(
+                "AppendQueue(in QueueContext)",
+                "SearchQueueOnline(in QueueName, in SearchKey, out Queue)"
+            ),
+            signed
+        )
+    }
+
+    @Test
+    fun `setting a loop mode is not one of them, and neither is replacing`() {
+        /*
+         * A service can publish thirty-four actions and printing every
+         * argument of every one buries the answer rather than giving it. And
+         * REPLACE is deliberately not here: it is the verb that stops what
+         * somebody is listening to, so it must never be the one this app
+         * reaches for by accident — the rule RoonBrowse.pickQueueAction exists
+         * for, one protocol over.
+         */
+        val signed = UpnpSource.parseSignatures(playQueueScpd)
+        assertTrue(signed.none { it.startsWith("SetQueueLoopMode") })
+        assertTrue(signed.none { it.startsWith("ReplaceQueue") })
+        assertTrue(signed.none { it.startsWith("CreateQueue") })
+    }
+
+    @Test
+    fun `it is a rule rather than a list, because the next box names them differently`() {
+        assertTrue(UpnpSource.worthSigning("AppendTracksInQueueEx"))
+        assertTrue(UpnpSource.worthSigning("Insert"))
+        assertTrue(UpnpSource.worthSigning("AddURIToQueue"))
+        assertTrue(UpnpSource.worthSigning("GetQueueOnline"))
+        assertFalse(UpnpSource.worthSigning("UserLogin"))
+        assertFalse(UpnpSource.worthSigning("SetRating"))
+        assertFalse(UpnpSource.worthSigning("TakePlayControl"))
+    }
+
+    @Test
+    fun `an argument with no direction is still named`() {
+        // Lenient like every other parser here: a field missing costs its own
+        // detail and never the line it is on.
+        val scpd = """
+            <scpd><actionList><action><name>AppendQueue</name>
+              <argumentList><argument><name>QueueContext</name></argument></argumentList>
+            </action></actionList></scpd>
+        """.trimIndent()
+        assertEquals(listOf("AppendQueue(QueueContext)"), UpnpSource.parseSignatures(scpd))
+    }
+
+    @Test
+    fun `an action with no arguments at all reads as taking none`() {
+        val scpd = "<scpd><actionList><action><name>BrowseQueue</name></action></actionList></scpd>"
+        assertEquals(listOf("BrowseQueue()"), UpnpSource.parseSignatures(scpd))
+    }
 }
