@@ -56,6 +56,32 @@ class DeviceAudioTest {
         assertFalse("a silent phone must not read as a refusal", silent.contains("NOT GRANTED"))
     }
 
+    /**
+     * THE PATH IT NAMES MUST BE ONE THAT WORKS.
+     *
+     * Photographed from a real phone: tapping the toggle the report pointed at
+     * gave "App was denied access — access to this permission can put your
+     * personal and financial info at risk". That is Android's RESTRICTED
+     * SETTINGS, which refuses notification-listener access to anything
+     * installed outside the Play Store — so the grant could never land and the
+     * report was sending somebody back to the same refusal.
+     *
+     * And `ApkInstaller` uses the legacy ACTION_VIEW install flow, so every
+     * self-update is restricted the same way and the block returns each time.
+     * A path already walked and refused is worse than no path.
+     */
+    @Test
+    fun `a refusal names the way past Android's restricted settings`() {
+        val text = lines(Report.DENIED)
+        assertTrue(text, text.contains("Notification access"))
+        // The escape, in the words the system uses, so it is recognisable.
+        assertTrue(text, text.contains("denied access"))
+        assertTrue(text, text.contains("restricted settings"))
+        // And that it is not a one-off, or somebody does it once and is puzzled
+        // when the next update takes it away again.
+        assertTrue(text, text.contains("after every update"))
+    }
+
     @Test
     fun `the container says it is the container, rather than saying nothing`() {
         val text = lines(Report.UNSUPPORTED)
