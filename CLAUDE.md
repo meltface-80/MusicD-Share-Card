@@ -2100,6 +2100,28 @@ was simply not there, however carefully the DIDL was parsed.
   is read only to say what was looked for and how many listeners the system
   holds. ONE PARSE, TWO CALLERS: deciding with one reading and explaining with
   another is how a report contradicts the thing it reports on.
+- **AND THE ANSWER WAS ANDROID REFUSING THE GRANT OUTRIGHT: RESTRICTED
+  SETTINGS.** Photographed from the phone: tapping the toggle the report
+  pointed at gave *"App was denied access — access to this permission can put
+  your personal and financial info at risk"*. Since Android 13 a
+  notification-listener grant is refused to anything installed outside the Play
+  Store; the switch appears, does nothing, and the setting never changes. So
+  the grant genuinely never landed — the probe's reading was right all along,
+  and what was missing was the way PAST it: Settings → Apps → this app → the
+  three dots → **Allow restricted settings**.
+  **A PATH SOMEBODY HAS ALREADY WALKED AND BEEN REFUSED ON IS WORSE THAN NO
+  PATH** — it reads as the app being wrong about the state rather than as a
+  block with a key. The refusal names the escape now, in the system's own
+  words ("App was denied access") so it is recognisable on the screen it
+  appears on.
+- **AND IT IS NOT A ONE-OFF SIDELOAD.** `ApkInstaller` hands the APK to
+  `ACTION_VIEW`, the legacy install flow, so EVERY self-update this app
+  performs is marked restricted the same way and the block returns after each
+  one — which is why the message says so rather than reading as a first-run
+  chore. The session-based `PackageInstaller` API is the shape that would avoid
+  it, and it is a real change rather than a line: a session, a status receiver
+  and the APK streamed in, none of which can be exercised from here. Not built;
+  reopen it if the repeat becomes annoying.
 - **THE NOTE COUNTS THE OTHER LISTENERS AND NEVER NAMES THEM.** That setting is
   every app somebody has given notification access to, and this report gets
   pasted into chat windows and bug reports. A count answers the question; the

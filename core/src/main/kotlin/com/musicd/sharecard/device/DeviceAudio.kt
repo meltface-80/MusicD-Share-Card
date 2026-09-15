@@ -124,10 +124,34 @@ class DeviceAudio(private val read: () -> Report = { Report.UNSUPPORTED }) {
                 "  (this is the container; only the app on a phone can see its own audio)"
             )
 
+            /*
+             * THE SECOND LINE IS THE ONE THAT MATTERS, AND IT COST A ROUND.
+             *
+             * Photographed from a real phone: the toggle was tapped and Android
+             * answered "App was denied access — access to this permission can
+             * put your personal and financial info at risk". That is RESTRICTED
+             * SETTINGS, which since Android 13 refuses notification-listener
+             * access to anything installed outside the Play Store. The grant
+             * never lands, the setting never changes, and the report was
+             * sending somebody back to the same screen to do the same thing.
+             *
+             * IT IS NOT A ONE-OFF SIDELOAD EITHER. `ApkInstaller` hands the APK
+             * to `ACTION_VIEW`, the legacy install flow, so every self-update
+             * this app performs is marked restricted the same way — the block
+             * comes back after each one.
+             *
+             * A path somebody has already walked and been refused on is worse
+             * than no path: it reads as the app being wrong about the state.
+             */
             Access.DENIED -> listOf(
                 "NOTIFICATION ACCESS IS NOT GRANTED — this is NOT the same as",
                 "  nothing playing.",
-                "  Settings -> Apps -> Special app access -> Notification access"
+                "  Settings -> Apps -> Special app access -> Notification access",
+                "  IF THAT TOGGLE REFUSES (\"App was denied access\"), Android is",
+                "  blocking it because this app was not installed from the Play",
+                "  Store. Settings -> Apps -> this app -> the three dots at the",
+                "  top -> Allow restricted settings, then grant it. It comes back",
+                "  after every update, because the updater sideloads too."
             ) + detailLines(report)
 
             Access.GRANTED -> {
