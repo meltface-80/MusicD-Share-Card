@@ -73,7 +73,17 @@ class Diagnostics(
      * ever been reached from where this was written, so this section is the
      * first evidence anybody will have about them.
      */
-    private val newMusicNotes: () -> List<String> = { emptyList() }
+    private val newMusicNotes: () -> List<String> = { emptyList() },
+    /**
+     * What the device itself is playing, where the shell can see that at all.
+     *
+     * A PROBE, NOT A SOURCE — see [com.musicd.sharecard.device.DeviceAudio].
+     * Every other source here is a network source, so music playing on the
+     * phone's own speaker is invisible to all of them; this says what Android's
+     * media sessions actually hold on one real phone, which is the thing that
+     * has to be known before any of it could become a card.
+     */
+    private val deviceNotes: () -> List<String> = { emptyList() }
 ) {
 
     fun run(): JSONObject {
@@ -95,6 +105,9 @@ class Diagnostics(
         if (queue.isNotEmpty()) report.put("queue", Json.strings(queue))
         val discover = runCatching { newMusicNotes() }.getOrDefault(emptyList())
         if (discover.isNotEmpty()) report.put("discover", Json.strings(discover))
+
+        val device = runCatching { deviceNotes() }.getOrDefault(emptyList())
+        if (device.isNotEmpty()) report.put("device", Json.strings(device))
 
         // 1. What this device thinks it is attached to. An empty list here is
         //    the whole answer: no network, no speakers.

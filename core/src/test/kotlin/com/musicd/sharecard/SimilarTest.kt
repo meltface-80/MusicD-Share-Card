@@ -177,6 +177,112 @@ class SimilarTest {
         )
     }
 
+    // --------------------------------- why a refusal was a refusal
+
+    /**
+     * THE ONE FROM THE FIELD, SECOND EDITION. ListenBrainz answered for the
+     * first time ever on a real network and said 400 — which the status note
+     * correctly read as "a parameter was refused" and which stops exactly one
+     * word short of WHICH parameter. The body says. It was being discarded.
+     */
+    @Test
+    fun `a refusal carries its reason into the diagnostics`() {
+        val host = serve { request ->
+            val path = request.path.orEmpty()
+            when {
+                path.startsWith("/similar-artists/json") -> MockResponse()
+                    .setResponseCode(400)
+                    .setBody("""{"error": "Unknown algorithm: session_based_days_7500"}""")
+                path.startsWith("/search/artist") ->
+                    ok("""{"data": [{"id": 4050, "name": "Talk Talk", "nb_fan": 900}]}""")
+                path.startsWith("/artist/4050/related") -> ok("""{"data": []}""")
+                else -> missing()
+            }
+        }
+        val similar = Similar(
+            metadataHttpClient(), "test",
+            listenBrainz = base(host), musicBrainz = base(host), deezer = base(host)
+        )
+        similar.forArtist("Talk Talk", "mbid")
+
+        val note = similar.attempts().first { it.contains("listenbrainz") }
+        assertTrue(note, note.contains("HTTP 400"))
+        assertTrue("the reason is the whole point", note.contains("Unknown algorithm"))
+        // And it still says what it did next.
+        assertTrue(note, note.contains("falling through"))
+    }
+
+    @Test
+    fun `a refusal with no body reads exactly as it always did`() {
+        val host = serve { request ->
+            val path = request.path.orEmpty()
+            when {
+                path.startsWith("/similar-artists/json") -> missing()
+                path.startsWith("/search/artist") ->
+                    ok("""{"data": [{"id": 4050, "name": "Talk Talk", "nb_fan": 900}]}""")
+                path.startsWith("/artist/4050/related") -> ok("""{"data": []}""")
+                else -> missing()
+            }
+        }
+        val similar = Similar(
+            metadataHttpClient(), "test",
+            listenBrainz = base(host), musicBrainz = base(host), deezer = base(host)
+        )
+        similar.forArtist("Talk Talk", "mbid")
+
+        val note = similar.attempts().first { it.contains("listenbrainz") }
+        assertEquals("listenbrainz(mbid) -> HTTP 404, falling through to Deezer", note)
+    }
+
+    /**
+     * A REFUSAL'S BODY IS NOT AN ANSWER. `text()` used to mean "the body, or
+     * null if it failed", with null-ness doing the work — so the moment a
+     * refusal started carrying one, a MusicBrainz 404 page would have been
+     * handed to a JSON parser as though it were a release list.
+     */
+    @Test
+    fun `a refused MusicBrainz page is never read as releases`() {
+        val host = serve { request ->
+            val path = request.path.orEmpty()
+            when {
+                path.startsWith("/similar-artists/json") -> ok(listenBrainzAnswer)
+                // A 404 that carries a body, the way a real one does.
+                path.startsWith("/ws/2/release-group") -> MockResponse()
+                    .setResponseCode(404)
+                    .setBody("""{"release-groups": [{"title": "Not An Album",
+                                  "first-release-date": "1990-01-01",
+                                  "primary-type": "Album", "secondary-types": []}]}""")
+                else -> missing()
+            }
+        }
+        val similar = Similar(
+            metadataHttpClient(), "test",
+            listenBrainz = base(host), musicBrainz = base(host), deezer = base(host)
+        )
+        val acts = similar.forArtist("Talk Talk", "mbid")
+        // The acts still come back; the record behind the refused page does not.
+        assertEquals(listOf("Bark Psychosis", "Slint"), acts.map { it.name })
+        assertTrue(
+            "a refused page must not become an album",
+            acts.none { it.album == "Not An Album" }
+        )
+    }
+
+    @Test
+    fun `a reason is flattened to one line and capped`() {
+        val sprawling = "  Bad\n\n  Request:\t the algorithm\r\n  was not found  "
+        assertEquals(" (Bad Request: the algorithm was not found)", Similar.reason(sprawling))
+
+        // Nothing to say stays nothing, so the note is unchanged.
+        assertEquals("", Similar.reason(null))
+        assertEquals("", Similar.reason("   \n  "))
+
+        // An error PAGE is cut rather than filling the screen.
+        val long = Similar.reason("x".repeat(5000))
+        assertTrue(long, long.length <= Similar.MAX_REASON + 4)
+        assertTrue(long, long.endsWith("\u2026)"))
+    }
+
     /**
      * THE ONE FROM THE FIELD. Sting got no suggestions while The Police,
      * Calexico and The Sea Within all got three — and the diagnostics said

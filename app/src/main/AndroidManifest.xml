@@ -72,5 +72,24 @@
             android:name=".CardService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!--
+          Declared so that "what is playing on this phone" can be asked at all.
+
+          MediaSessionManager.getActiveSessions only answers an enabled
+          notification listener, and this is how Android expresses that: a
+          declared service the user switches on by hand. It reads NO
+          notifications - see MediaAccess - and exported must be true or the
+          system cannot bind it.
+        -->
+        <service
+            android:name=".MediaAccess"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

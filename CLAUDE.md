@@ -1038,6 +1038,28 @@ was simply not there, however carefully the DIDL was parsed.
   rejected dataset name (400) from a moved endpoint (404) from a host that was
   never reached (0, which is not a status — it means the request got no answer
   at all). Three different fixes, so the note names which.
+- **AND IT ANSWERED — 400 — AND THE STATUS STOPPED ONE WORD SHORT.** Off a real
+  network: `listenbrainz(a2eb319d-…) -> HTTP 400, falling through to Deezer`,
+  with the MBID resolved and Deezer picking up behind it exactly as designed.
+  That is the class comment's own prediction coming true ("A wrong one is a
+  400, which is why Deezer is behind it rather than beside it"), so the
+  UNVERIFIED `ALGORITHM` string is wrong. What the note could NOT say is WHICH
+  parameter — and the answer was in the response body, which `fetch` threw away
+  on every non-2xx (`response.code to null`). **THE BODY OF A REFUSAL IS THE
+  THING THAT SAYS WHY.** Same fault as the Roon invoke that was never read, and
+  the same fix as the notes carrying `reply.toString()` rather than this app's
+  reading of it. It is peeked and BOUNDED (an error page is not necessarily
+  small and this runs on a phone), flattened to one line and capped, and an
+  empty body still reads exactly as it always did.
+- **`ok` IS WHAT SEPARATES AN ANSWER FROM A REFUSAL, NEVER THE BODY BEING
+  NULL.** That was the old meaning, and the moment a refusal started carrying a
+  body, `text()` — which is what MusicBrainz and Deezer read through — would
+  have handed a 404 page to a JSON parser as though it were a release list. A
+  test drives exactly that.
+- **THE ALGORITHM STRING IS STILL NOT SETTLED, AND IT CANNOT BE SETTLED HERE.**
+  Both hosts were re-checked rather than assumed and the proxy still refuses
+  them outright. The next `/api/debug` off a real network carries ListenBrainz's
+  own words for why, which is a fix rather than another guess.
 - **A FILTER THE SERVER APPLIES IS NOT EVIDENCE THE SERVER APPLIED IT.** The
   MusicBrainz browse asks for `type=album` and now also checks `primary-type`
   on every group that comes back. It was only asking, which is the same trust
@@ -1984,6 +2006,70 @@ was simply not there, however carefully the DIDL was parsed.
   SERVICE's own protocol; UPnP is only reporting the metadata, which is how
   `UpnpSource` reads it. So even on a box with a real queue service, sending to
   it does not join a Connect session — it takes the device off one.
+
+## What is playing on the phone itself
+
+- **EVERY SOURCE IN THIS APP IS A NETWORK SOURCE, AND THAT IS WHY THE PHONE IS
+  INVISIBLE.** Roon over a socket, Lyrion over JSON-RPC, Sonos and UPnP over
+  SOAP — not one of them can see the device's own audio. So the distinction is
+  not Spotify against Qobuz against Roon ARC, it is WHERE THE SOUND COMES OUT:
+  casting to a speaker has always worked (Spotify Connect and Qobuz Connect to
+  a Sonos are the same `SonosSource` path), and the same app playing to
+  headphones is seen by nothing. Asked directly whether the Android app could
+  detect it.
+- **ANDROID CAN ANSWER IT AND iOS CANNOT, WHICH IS THE WHOLE REASON IT IS
+  WORTH DOING.** `MediaSessionManager` is what drives the lock screen, the
+  Bluetooth buttons and Android Auto, so anything with those controls publishes
+  a session. iOS gives a third-party app no equivalent — `MPNowPlayingInfoCenter`
+  reports only that app's own playback. A fifth source is buildable on one
+  platform and not the other.
+- **IT IS A PROBE, AND NOTHING ELSE WAS BUILT.** No zone, no card, no route —
+  one `/api/debug` section. The same decision as the UPnP queue exploration one
+  section up, for the same reason: three rounds of the Roon queue were spent
+  reasoning about a protocol nobody here could reach, and the round that fixed
+  it printed what the Core actually sent.
+- **THE PERMISSION IS THE TRAP, AND IT IS THE REASON `DeviceAudio` EXISTS AT
+  ALL.** `getActiveSessions` needs an enabled notification listener, and without
+  it Android DOES NOT THROW — it returns an empty list. So "no app is playing"
+  and "you never granted access" arrive as the same value, which is the
+  `Pitchfork.Outcome` lesson waiting to be repeated. [Access] is carried
+  separately from the sessions, the three states are printed in different words,
+  and the refused one names the Settings screen. `DeviceAudioTest` asserts the
+  two can never read the same.
+- **THE SHELL READS, `:core` DECIDES.** `DeviceSessions` copies Android's
+  objects into plain data classes and judges nothing; every line of the report —
+  what a cover situation means, what to tell somebody to do — is in `:core`
+  where it has tests. Same seam `LmsSource` uses for discovery, "injected so a
+  test need not open a socket". `MediaAccess` is an EMPTY
+  `NotificationListenerService`: it exists only so the permission can be
+  granted, and it deliberately overrides nothing, because a listener that
+  actually read notifications would be a different app with a different privacy
+  question.
+- **WHAT A CARD COULD DRAW IS THE OPEN QUESTION, SO THE THREE ART CASES ARE
+  NEVER COLLAPSED.** The art pipeline is a URL fetched by `ArtProxy`, and a
+  media session reliably offers neither half: `ART_URI` is usually a
+  `content://` belonging to the OTHER app, which this process has no grant to
+  read and no proxy can fetch; a bitmap is already in memory with no URL at all;
+  and plenty of sessions carry nothing. Three different amounts of work, so the
+  report names which — and both a uri and a bitmap are printed when both exist,
+  because a chain that stops at the first candidate is not a chain (the Lyrion
+  coverid lesson).
+- **A NULL DEFAULT MADE THE HONEST BRANCH UNREACHABLE, AND ONLY THE REAL SERVER
+  FOUND IT.** `DeviceAudio` has an UNSUPPORTED branch saying "not an Android
+  build … this is the container", written deliberately so a section does not
+  silently vanish on one of the two shells. It was unit-tested and it never ran:
+  `ShareCardApp` took `DeviceAudio? = null`, so the container printed no section
+  at all. Correct, served and invisible — this repository's oldest diagnostics
+  fault, in a change whose whole subject is diagnostics. No test of `DeviceAudio`
+  could see it, because the fault was in how a HOST wired it; driving
+  `:server:installDist` with curl is what showed it. The parameter is
+  non-nullable now, so "no probe" cannot be expressed at all.
+- **NOTHING IN `app/` HERE IS TESTED.** `MediaSessionManager` cannot be reached
+  from a JVM and there is no device in this repository, so CI compiles
+  `DeviceSessions` and `MediaAccess` and that is the whole of it. Re-reading the
+  file adversarially before pushing caught a real compile error — `when (state?
+  .state) { null -> … else -> state.state }` does not smart-cast `state`, so the
+  else branch would not build. Treat the first real run as the verification.
 
 ## Scope and process
 
