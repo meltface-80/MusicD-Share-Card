@@ -221,10 +221,88 @@ class DeviceSource(
             artist = session.artist.trim(),
             track = session.title.trim(),
             state = state(session.state),
-            artUrl = session.artUri.trim().takeIf {
-                it.startsWith("https://") || it.startsWith("http://")
-            }.orEmpty()
+            artUrl = artUrl(session.artUri.trim())
         )
+
+        /**
+         * A COVER THE PROXY CAN ACTUALLY FETCH, OR NOTHING.
+         *
+         * An http(s) uri is carried through unchanged - Qobuz gives
+         * `https://static.qobuz.com/...`, which [ArtProxy] already allows on
+         * its public-https rule, and those cards have drawn a sleeve since the
+         * source existed.
+         *
+         * SPOTIFY IS THE OTHER CASE AND IT IS RECONSTRUCTED, WHICH I REFUSED
+         * ONCE AND THE FIELD OVERTURNED. Its `ART_URI` is a `content://`
+         * belonging to Spotify, which this process holds no grant to read. The
+         * refusal was right at the time: the uri's SHAPE had already changed
+         * between two dumps minutes apart, so a parser written against the
+         * first found nothing in the second, and neither dump proved the
+         * rebuilt url would fetch. THE REPORT THEN SUPPLIED BOTH HALVES. Under
+         * "Album art" a real run carried
+         * `https://i.scdn.co/image/ab67616d0000b2736900383e72eb02bf27bbd482 ->
+         * 79813 bytes, image/jpeg` - an id BYTE-IDENTICAL to the one inside the
+         * previous dump's content uri, fetched successfully through this app's
+         * own proxy. Nothing here builds an i.scdn.co url, so that came from a
+         * source reporting one: Spotify Connect to a Sonos, which is the
+         * absolute-CDN case [ArtProxy] was widened for long ago. Two sources
+         * seeing one record is a free control experiment - one row was the
+         * failure and the row beside it was the answer.
+         *
+         * SO THE ID IS TAKEN AND THE HOST IS NOT. Both observed uri shapes -
+         * `.../image/<id>?cdn=i.scdn.co` and `.../spotify%3Aimage%3A<id>` -
+         * carry the same 40-character hex id, so THAT is what is read, and the
+         * differing path around it is ignored rather than parsed. The `cdn`
+         * parameter is deliberately NOT honoured even where it is present: it
+         * is a string another app put in its own metadata, and composing a url
+         * from it would let any app on the phone choose a host this one
+         * fetches. `i.scdn.co` is hard-coded, which is the only value ever
+         * observed and the one the report proved.
+         *
+         * AND IT FAILS TO "NO COVER", WHICH IS TODAY'S BEHAVIOUR. An authority
+         * that is not Spotify's, or a uri with no id in it, yields nothing
+         * rather than a guess - a wrong sleeve under a right record is the
+         * failure this app refuses everywhere else.
+         */
+        internal fun artUrl(uri: String): String {
+            if (uri.startsWith("https://") || uri.startsWith("http://")) return uri
+            if (!uri.startsWith(SPOTIFY_ART)) return ""
+            val id = hexRun(uri, SPOTIFY_ART_ID_LENGTH) ?: return ""
+            return "https://i.scdn.co/image/" + id
+        }
+
+        /** `content://` plus Spotify's own media authority, and nothing else. */
+        const val SPOTIFY_ART = "content://com.spotify."
+
+        /** Every id observed has been exactly this, and they are Spotify's. */
+        const val SPOTIFY_ART_ID_LENGTH = 40
+
+        /**
+         * The first run of exactly [length] lowercase hex characters, or null.
+         *
+         * A CHARACTER SCAN RATHER THAN A `Regex`, deliberately: a Regex in a
+         * companion object is a static initialiser, and Android's ICU engine is
+         * stricter than this JVM's - a fault that has taken this app down three
+         * times. A loop cannot be refused on a device that this JVM accepted.
+         *
+         * EXACTLY, not at-least: a longer run is not an id that happens to be
+         * padded, it is something else, and taking 40 characters out of the
+         * middle of it would invent one.
+         */
+        internal fun hexRun(text: String, length: Int): String? {
+            var start = -1
+            for (i in text.indices) {
+                val hex = text[i].isDigit() || text[i] in 'a'..'f'
+                if (hex) {
+                    if (start < 0) start = i
+                } else {
+                    if (start >= 0 && i - start == length) return text.substring(start, i)
+                    start = -1
+                }
+            }
+            if (start >= 0 && text.length - start == length) return text.substring(start)
+            return null
+        }
 
         /**
          * Android's state name as this app's.

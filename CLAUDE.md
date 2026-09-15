@@ -1097,10 +1097,38 @@ was simply not there, however carefully the DIDL was parsed.
   body, `text()` — which is what MusicBrainz and Deezer read through — would
   have handed a 404 page to a JSON parser as though it were a release list. A
   test drives exactly that.
-- **THE ALGORITHM STRING IS STILL NOT SETTLED, AND IT CANNOT BE SETTLED HERE.**
-  Both hosts were re-checked rather than assumed and the proxy still refuses
-  them outright. The next `/api/debug` off a real network carries ListenBrainz's
-  own words for why, which is a fix rather than another guess.
+- **THE ALGORITHM STRING IS STILL NOT SETTLED, AND THE APP THREW AWAY THE
+  ANSWER TWICE.** Both hosts were re-checked rather than assumed and the proxy
+  still refuses them outright, so this cannot be settled from here. What CAN be
+  done from here is carrying ListenBrainz's own words back, and that took two
+  goes: the first release did not read a refusal's body at all, and the second
+  read it and then CUT IT OFF ONE WORD SHORT. Off a real network the note read,
+  in full:
+
+      listenbrainz(88679ca2-...) -> HTTP 400 (<!doctype html> <html lang=en>
+      <title>400 Bad Request</title> <h1>Bad Request</h1> <p>1 validation error
+      for SimilarArtistsViewerInput<br>algorithm<br> value is not a valid
+      enumeration member; permitt...), falling through to Deezer
+
+  `permitt` is where `MAX_REASON` fell, which is the exact word that introduces
+  the list of values the request needs. TWO CAUSES AND ONLY ONE OF THEM WAS THE
+  NUMBER: **88 of those 200 characters were markup** - doctype, html, title, h1
+  and p - so nearly half a budget meant for a sentence was spent on tags.
+  `Similar.unmarkup` strips them, and the cap is then large enough for a LIST
+  rather than for its heading.
+  **AND THE TEST FOR IT MUST NOT OVERCLAIM.** The observed body ends at
+  `permitt`; what a pydantic enumeration error lists after that has not been
+  seen, so the fixture says which half is real and asserts only the two things
+  that are certain - the markup does not eat the budget, and a list survives the
+  cap. Raising the cap alone proved nothing until the fixture carried two values
+  rather than one: with the markup gone, 200 was enough for the fixture and the
+  new number was decoration, by this repository's own rule. Both halves are now
+  shown failing separately.
+  **THE STRIP ONLY RUNS ON SOMETHING THAT ANNOUNCES ITSELF AS MARKUP**, because
+  an error message may legitimately contain an angle bracket ("expected
+  <artist>"), and deleting the words this exists to carry is the expensive way
+  to be wrong. An unclosed `<` is kept literally rather than swallowing the rest
+  - a scan with no bottom is how a body silently becomes empty.
 - **A FILTER THE SERVER APPLIES IS NOT EVIDENCE THE SERVER APPLIED IT.** The
   MusicBrainz browse asks for `type=album` and now also checks `primary-type`
   on every group that comes back. It was only asking, which is the same trust
@@ -2185,29 +2213,51 @@ was simply not there, however carefully the DIDL was parsed.
   hand, and when both are playing a full record the house is what this app is
   for. Naming the zone still reaches it directly, because a named zone is a
   lock rather than a preference.
-- **ONLY AN http(s) ART URL IS CARRIED, AND THE SPOTIFY RECONSTRUCTION WAS
-  CONSIDERED AND REFUSED.** Qobuz's session gave
+- **SPOTIFY'S COVER IS RECONSTRUCTED FROM ITS `content://`, AND I REFUSED THAT
+  ONCE BEFORE THE FIELD OVERTURNED IT.** Qobuz's session gives
   `https://static.qobuz.com/...`, which `ArtProxy` allows unchanged on its
-  public-https rule, so those cards draw a cover today. Spotify's gave a
-  `content://` belonging to Spotify, which this process holds no grant to read
-  and no proxy can fetch. Rebuilding its CDN url out of that uri LOOKED free
-  for one dump - `.../image/<id>?cdn=i.scdn.co` carries both halves, and
-  `/api/debug` had already proved the proxy fetches `i.scdn.co`. THE NEXT DUMP
-  OFF THE SAME PHONE, MINUTES LATER, CARRIED A DIFFERENT SHAPE:
-  `.../spotify%3Aimage%3A<id>` with no cdn parameter at all. A parser written
-  against the first finds nothing in the second, and one written against both
-  has to INVENT the host. A rule falsified within minutes of being proposed is
-  the clearest possible argument for this repository's standing refusal of
-  confident wrong answers. Passing the uri on regardless was refused too: the
-  proxy would note an identical refusal on every card for ever, which is
-  informative once and noise afterwards. Empty means no cover, and the reason
-  is printed in full under "Playing on this device".
-- **WHAT IS STILL OPEN IS THE SPOTIFY SLEEVE, AND THERE ARE EXACTLY TWO HONEST
-  WAYS.** Resolve it from the RECORD, the way `NewMusic.sleeveFor` already
-  resolves one out of Deezer with a loose search and a strict check - that rule
-  is written and tested, and would need extracting from `NewMusic` rather than
-  copied. Or have the SHELL serve the bitmap it already holds, which is a new
-  art path rather than a new url. Neither is built.
+  public-https rule, so those cards always drew a sleeve. Spotify's is a
+  `content://` belonging to Spotify, which this process holds no grant to read -
+  reported plainly as "Spotify no artwork / Qobuz has artwork".
+  THE FIRST REFUSAL WAS RIGHT ON THE EVIDENCE THEN AVAILABLE. One dump carried
+  `.../image/<id>?cdn=i.scdn.co` and the next, minutes later off the same phone,
+  carried `.../spotify%3Aimage%3A<id>` with no cdn at all - a parser written
+  against the first finds nothing in the second - and nothing proved a rebuilt
+  url would actually fetch.
+  **THE REPORT THEN SUPPLIED BOTH MISSING HALVES IN ONE LINE.** Under "Album
+  art": `https://i.scdn.co/image/ab67616d0000b2736900383e72eb02bf27bbd482 ->
+  79813 bytes, image/jpeg` - an id BYTE-IDENTICAL to the one inside the previous
+  dump's content uri, fetched successfully through this app's own proxy. Nothing
+  here builds an i.scdn.co url, so it came from a SOURCE reporting one: Spotify
+  Connect to a Sonos, the absolute-CDN case `ArtProxy` was widened for long ago.
+  That is the free control experiment again - one row was the failure and the
+  row beside it was the answer. And three observed uris across three dumps all
+  carry the same 40-character hex id whatever the path around it, so the ID is
+  read and the PATH is ignored rather than parsed.
+- **THE ID IS THEIRS; THE HOST IS OURS.** The `cdn` parameter is NOT honoured
+  even where it is present. It is a string another app put in its own metadata,
+  and composing a url from it would let any app on the phone choose a host this
+  one fetches - the `StreamHosts` rule ("nothing is inferred from the ART url,
+  which is the part an attacker would control") one protocol over. `i.scdn.co`
+  is hard-coded: the only value ever observed, and the one the report proved.
+  Only Spotify's own authority is reconstructed, and anything else yields
+  nothing rather than a guess. A `content://` still never reaches `ArtProxy`,
+  where it would be refused on every card for ever.
+- **AND TWO TESTS HAD TO BE CORRECTED BEFORE THEY PROVED ANYTHING.** The old
+  assertion said a Spotify session yields NO art, which is the behaviour this
+  change deliberately reverses - so it was REWRITTEN to the invariant it was
+  actually guarding rather than deleted. And the length guard's test exercised
+  the wrong branch: its 41-character case ran off the END of the string, while
+  every real uri carries `?transformation=NONE` after the id, so relaxing
+  "exactly 40" to "at least 40" slipped straight past it. A tail was added and
+  the mutation then failed. WHEN PROVING A GUARD, CHECK THE FIXTURE TAKES THE
+  SAME PATH THE REAL INPUT DOES.
+- **WHAT IS STILL NOT DONE IS A SLEEVE FOR EVERY OTHER APP.** This is Spotify
+  and Qobuz; a third music app with a `content://` and no known CDN still draws
+  no cover. Resolving one from the RECORD, the way `NewMusic.sleeveFor` already
+  does out of Deezer with a loose search and a strict check, is the universal
+  version and would need extracting from `NewMusic` rather than copied. Serving
+  the bitmap the shell already holds is the other. Neither is built.
 - **THE PERMISSION IS THE TRAP, AND IT IS THE REASON `DeviceAudio` EXISTS AT
   ALL.** `getActiveSessions` needs an enabled notification listener, and an
   empty list is what a silent phone looks like too. So "no app is playing" and

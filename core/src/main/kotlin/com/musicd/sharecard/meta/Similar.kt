@@ -481,8 +481,25 @@ class Similar(
          */
         const val MAX_ERROR_BYTES = 2048L
 
-        /** As much of it as fits a diagnostics line read off a phone screen. */
-        const val MAX_REASON = 200
+        /**
+         * As much of it as is worth reading off a phone screen.
+         *
+         * IT WAS 200 AND THAT STOPPED ONE WORD SHORT OF THE ANSWER. Off a real
+         * network the note read `... value is not a valid enumeration member;
+         * permitt` and ended there - cut at the exact word that introduces the
+         * list of values this app needs. The whole point of carrying a refusal's
+         * body is that the body says why, and a cap that clips the why is the
+         * same fault one layer further in.
+         *
+         * Two things were wrong and only one of them was the number: 88 of
+         * those 200 characters were `<!doctype html> <html lang=en>
+         * <title>400 Bad Request</title> <h1>Bad Request</h1> <p>`, so nearly
+         * half the budget was spent on markup. [reason] strips that first. The
+         * cap is then large enough for a list rather than for its heading -
+         * a judgement, not a measurement, because nobody here has seen the
+         * whole list yet.
+         */
+        const val MAX_REASON = 500
 
         /**
          * A refusal's body, flattened to one line for the diagnostics.
@@ -507,11 +524,52 @@ class Similar(
                     flat.append(c)
                 }
             }
-            val text = flat.toString()
+            val text = unmarkup(flat.toString())
             if (text.isEmpty()) return ""
             val cut =
                 if (text.length > MAX_REASON) text.take(MAX_REASON).trimEnd() + "\u2026" else text
             return " ($cut)"
+        }
+
+        /**
+         * Markup out of something that ANNOUNCES ITSELF as markup.
+         *
+         * A framework's 400 page is mostly tags, and every one of them is a
+         * character not spent on the sentence that says what was wrong. But an
+         * error message may legitimately contain an angle bracket - "expected
+         * <artist>" - so this only runs on a body that says it is a document.
+         * Narrow on purpose: the cost of being wrong here is deleting the very
+         * words this exists to carry.
+         *
+         * NO REGEX, for [reason]'s reason: a `Regex` in a companion object is a
+         * static initialiser and Android's ICU engine is stricter than this
+         * JVM's. And an unclosed `<` is kept LITERALLY rather than swallowing
+         * everything after it, because a scan with no bottom is how a body
+         * silently becomes empty.
+         */
+        internal fun unmarkup(text: String): String {
+            val lower = text.lowercase()
+            val looksLikeHtml = text.startsWith("<") ||
+                lower.contains("<html") ||
+                lower.contains("<!doctype")
+            if (!looksLikeHtml) return text
+
+            val out = StringBuilder()
+            var i = 0
+            while (i < text.length) {
+                if (text[i] == '<') {
+                    val close = text.indexOf('>', i)
+                    if (close >= 0) {
+                        out.append(' ')
+                        i = close + 1
+                        continue
+                    }
+                }
+                out.append(text[i])
+                i++
+            }
+            // Collapse again: removing tags leaves the gaps they sat in.
+            return out.toString().split(" ").filter { it.isNotEmpty() }.joinToString(" ")
         }
 
         /** A week. Who sounds like whom does not change by Tuesday. */
