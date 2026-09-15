@@ -1823,6 +1823,53 @@ was simply not there, however carefully the DIDL was parsed.
   to CLEAR a class is a caller that will one day leave the diagnostics' scroll
   on a card.
 
+## Queueing a suggestion into a zone that is not Roon
+
+- **THE REPORT CAME FIRST, AND NOTHING ELSE WAS BUILT.** Asked to explore adding
+  suggestions to other zones — Lyrion first, then "Spotify, Qobuz and Tidal
+  which are all detected on UPnP zones". The honest answer to the second half is
+  that it depends entirely on the box and CANNOT BE SETTLED FROM THIS MACHINE,
+  so the only thing shipped was a probe: `UpnpSource` now carries every
+  `serviceType` its description lists and `/api/debug` prints them with a
+  one-line reading. Chosen deliberately over writing speculative queue code —
+  three rounds of the Roon queue were spent reasoning about a protocol nobody
+  here could reach, and the round that fixed it printed what the Core actually
+  sent and read the answer off the first two lines.
+- **BASE UPnP HAS NO QUEUE, AND THAT IS THE WHOLE DIFFICULTY.** `AVTransport`
+  holds ONE uri plus one "next" slot, so anything sent to it REPLACES what is
+  playing rather than joining a list behind it. "Queue" and "play" are one word
+  apart and a very long way apart in what they do to a room somebody is
+  listening to — the same rule `RoonBrowse.pickQueueAction` exists for. Every
+  real queue is a VENDOR EXTENSION: OpenHome's `Playlist` (Linn, WiiM, Volumio,
+  BubbleUPnP), Sonos's `Queue`, LinkPlay's `PlayQueue`. Which of those a box
+  speaks is written in its description and nowhere else.
+- **THE WALK MUST NOT STOP AT AVTransport, AND IT USED TO.** `parseDescription`
+  broke out of the service loop the moment it had the control URL — correct
+  while that URL was the only thing wanted, and it would have made this report
+  depend on a manufacturer's ordering. OpenHome's `Playlist` is commonly listed
+  AFTER `AVTransport`, so the one service this probe exists to find is exactly
+  the one the old loop would have hidden. Shown by putting the `break` back and
+  watching both tests fail.
+- **A REPORT THAT REWRITES WHAT IT WAS GIVEN IS WORSE THAN NONE.** `shortService`
+  tidies a URN for reading off a phone in another room, and anything that is not
+  a service URN is printed exactly as it arrived. `queueability` names what the
+  box ADVERTISES — which is not the same as it working, not the same as having a
+  URI worth sending, and not the same as this app being able to build one.
+- **SPOTIFY, TIDAL AND QOBUZ CANNOT BE QUEUED KEYLESSLY, AND THAT WAS DECIDED
+  RATHER THAN OVERLOOKED.** Spotify's queue endpoint needs OAuth, a registered
+  application and Premium; TIDAL needs OAuth and a developer account; Qobuz has
+  no public API at all, which is why `QobuzAlbum` reads their search PAGE. Put
+  to the owner with that laid out, the answer was to keep the app keyless: no
+  OAuth, no fourth credential on disk, and those suggestions keep opening in
+  their own app as they do today. Reopen it as a product question, not as
+  something nobody thought of — the same shape as the Roon-link decision and the
+  link row's "does this service carry the record" decision above.
+- **AND A CONNECT SESSION IS NOT A UPnP SESSION.** When Spotify Connect, Qobuz
+  Connect or TIDAL Connect plays to a renderer, the device is driven by the
+  SERVICE's own protocol; UPnP is only reporting the metadata, which is how
+  `UpnpSource` reads it. So even on a box with a real queue service, sending to
+  it does not join a Connect session — it takes the device off one.
+
 ## Scope and process
 
 - Develop on the branch named in the task. Never push to another branch.
