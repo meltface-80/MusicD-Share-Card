@@ -130,13 +130,16 @@ class CardService : Service() {
                         // the same from outside — see LinkLog.
                         LinkLog.lines().map { "Link: $it" }
                 },
-                // Roon's pairing token, so the extension is approved once and
-                // not on every restart.
                 // What this phone itself is playing, which no network source
                 // can see. A PROBE: it reaches /api/debug and nothing else.
+                // Lazy, so nothing is asked of the system inside
+                // startForeground()'s five seconds — it runs when somebody
+                // opens the report.
                 deviceAudio = com.musicd.sharecard.device.DeviceAudio {
                     DeviceSessions.read(this)
                 },
+                // Roon's pairing token, so the extension is approved once and
+                // not on every restart.
                 tokenStore = RoonTokenFile(this),
                 // Discord webhooks. Private storage, and never handed back out
                 // over the network — only a mask is.
