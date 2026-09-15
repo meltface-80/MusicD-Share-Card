@@ -108,16 +108,23 @@ class Similar(
     private fun viaListenBrainz(mbid: String): List<Act> {
         val url = "$listenBrainz/similar-artists/json?artist_mbids=" + urlEncode(mbid) +
             "&algorithm=" + urlEncode(ALGORITHM)
-        val (status, body) = lbGate.run { fetch(url) }
-        if (body == null) {
+        val answer = lbGate.run { fetch(url) }
+        if (!answer.ok) {
             // THE STATUS, NOT JUST "no answer". This has never once answered in
             // the field, and "no answer" cannot tell a rejected dataset name
             // (400) from a moved endpoint (404) from a host that is simply not
             // reachable (0) — which are three different fixes.
-            note("listenbrainz($mbid) -> HTTP $status, falling through to Deezer")
+            //
+            // AND THE STATUS ALONE STOPPED ONE WORD SHORT. 400 came back from a
+            // real network and says a parameter was refused without saying
+            // which; the reason is in the body, so the body is in the note.
+            note(
+                "listenbrainz($mbid) -> HTTP ${answer.status}" + reason(answer.body) +
+                    ", falling through to Deezer"
+            )
             return emptyList()
         }
-        val acts = readListenBrainz(body)
+        val acts = readListenBrainz(answer.body.orEmpty())
         if (acts.isEmpty()) {
             note("listenbrainz($mbid) -> answered, NOTHING USABLE IN IT, falling through")
             return emptyList()
@@ -361,10 +368,26 @@ class Similar(
     private fun getJson(url: String): JSONObject? =
         text(url)?.let { runCatching { JSONObject(it) }.getOrNull() }
 
-    private fun text(url: String): String? = fetch(url).second
+    /**
+     * The body of a GOOD answer, or null.
+     *
+     * Gated on [Answer.ok] rather than on the body being null, now that a
+     * refusal carries one: MusicBrainz's 404 page handed to a JSON parser is
+     * not an answer, and must not read as one.
+     */
+    private fun text(url: String): String? = fetch(url).let { if (it.ok) it.body else null }
 
     /** The status and the body, so a diagnostic can say which failure it was. */
-    private fun fetch(url: String): Pair<Int, String?> {
+    /**
+     * One HTTP answer, INCLUDING THE BODY OF A REFUSAL.
+     *
+     * [ok] is what separates an answer from a refusal — never the body being
+     * null, which is what this used to mean and what cost the reason for a
+     * 400 that a real network finally produced.
+     */
+    private data class Answer(val status: Int, val body: String?, val ok: Boolean)
+
+    private fun fetch(url: String): Answer {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", userAgent)
@@ -373,16 +396,32 @@ class Similar(
             http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     Log.d(TAG, "$url -> ${response.code}")
-                    response.code to null
+                    /*
+                     * THE BODY OF A REFUSAL IS THE THING THAT SAYS WHY, AND IT
+                     * WAS BEING THROWN AWAY. ListenBrainz answered 400 in the
+                     * field — the status alone says "a parameter was rejected"
+                     * and stops exactly one word short of WHICH, which is the
+                     * difference between a fix and another guess at a dataset
+                     * name nobody here can reach. Same lesson as the Roon
+                     * queue carrying `reply.toString()` rather than this app's
+                     * reading of it.
+                     *
+                     * PEEKED AND BOUNDED, because an error page is not
+                     * necessarily small and this runs on a phone.
+                     */
+                    val why = runCatching {
+                        response.peekBody(MAX_ERROR_BYTES).string()
+                    }.getOrNull()
+                    Answer(response.code, why, ok = false)
                 } else {
-                    response.code to response.body?.string()
+                    Answer(response.code, response.body?.string(), ok = true)
                 }
             }
         } catch (e: Exception) {
             Log.d(TAG, "$url failed: ${e.message}")
             // 0 is not a status. It is "the request never got an answer", which
             // is a different thing from one that came back refused.
-            0 to null
+            Answer(0, null, ok = false)
         }
     }
 
@@ -432,6 +471,48 @@ class Similar(
          */
         const val ALGORITHM =
             "session_based_days_7500_session_300_contribution_5_threshold_15_limit_50_skip_30"
+
+        /**
+         * How much of a refused answer's body to read.
+         *
+         * Bounded because an error page is not necessarily small and this runs
+         * on a phone — and PEEKED, so a refusal never pulls a whole document
+         * into memory to print one sentence of it.
+         */
+        const val MAX_ERROR_BYTES = 2048L
+
+        /** As much of it as fits a diagnostics line read off a phone screen. */
+        const val MAX_REASON = 200
+
+        /**
+         * A refusal's body, flattened to one line for the diagnostics.
+         *
+         * NO REGEX, DELIBERATELY. A `Regex` in a companion object is a static
+         * initialiser, and Android's ICU engine is stricter than this JVM's —
+         * that has taken this app down three times. A loop cannot fail to
+         * compile on a device that this JVM accepted.
+         *
+         * Empty in, empty out, so a refusal with no body reads exactly as it
+         * did before any of this: "HTTP 404, falling through to Deezer".
+         */
+        internal fun reason(body: String?): String {
+            val flat = StringBuilder()
+            var pending = false
+            for (c in body.orEmpty()) {
+                if (c.isWhitespace()) {
+                    pending = flat.isNotEmpty()
+                } else {
+                    if (pending) flat.append(' ')
+                    pending = false
+                    flat.append(c)
+                }
+            }
+            val text = flat.toString()
+            if (text.isEmpty()) return ""
+            val cut =
+                if (text.length > MAX_REASON) text.take(MAX_REASON).trimEnd() + "\u2026" else text
+            return " ($cut)"
+        }
 
         /** A week. Who sounds like whom does not change by Tuesday. */
         const val TTL_MS = 7L * 24 * 60 * 60 * 1000

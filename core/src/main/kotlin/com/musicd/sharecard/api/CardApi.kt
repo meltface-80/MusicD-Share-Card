@@ -9,6 +9,7 @@ import com.musicd.sharecard.http.HttpServer
 import com.musicd.sharecard.discover.Editorial
 import com.musicd.sharecard.discover.NewMusic
 import com.musicd.sharecard.lms.LmsQueue
+import com.musicd.sharecard.device.DeviceAudio
 import com.musicd.sharecard.discover.PlayHistory
 import com.musicd.sharecard.http.Request
 import com.musicd.sharecard.http.Response
@@ -72,6 +73,14 @@ class CardApi(
     private val roonBrowse: RoonBrowse? = null,
     /** Lyrion's half of the same feature. Null where no server is configured. */
     private val lmsQueue: LmsQueue? = null,
+    /**
+     * What is playing on the device running this, where it can tell.
+     *
+     * A PROBE, NOT A SOURCE: it never reaches a card and has no zone. Null on
+     * any host that cannot see its own audio, which is every host but the
+     * Android app — see [com.musicd.sharecard.device.DeviceAudio].
+     */
+    private val deviceAudio: DeviceAudio? = null,
     /**
      * What this app has drawn a card for, which is what "based on your
      * listening" is based on. Remembers nothing by default, so a test and a
@@ -219,7 +228,8 @@ class CardApi(
                     roonBrowse?.attempts().orEmpty().map { "Roon: $it" } +
                         lmsQueue?.attempts().orEmpty().map { "Lyrion: $it" }
                 },
-                { newMusic?.attempts().orEmpty() + editorial?.attempts().orEmpty() }
+                { newMusic?.attempts().orEmpty() + editorial?.attempts().orEmpty() },
+                { deviceAudio?.diagnostics().orEmpty() }
             ).run()
         )
         else -> static(request.path)

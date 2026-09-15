@@ -1418,6 +1418,9 @@
     // is not a bug. Neither endpoint has ever been reached from where this was
     // written, so these lines are the first evidence anybody will have.
     section("Discover", d.discover);
+    // Playing on THIS phone, which no network source can see. Named for the
+    // device rather than for a source, because it is not one — see DeviceAudio.
+    section("Playing on this device", d.device);
     // Each source in its own words. Roon's line is where "not approved yet"
     // appears, and that is not a network problem however much it looks like one.
     section("Sources", d.sources);

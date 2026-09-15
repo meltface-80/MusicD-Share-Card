@@ -16,6 +16,7 @@ import com.musicd.sharecard.meta.metadataHttpClient
 import com.musicd.sharecard.roon.RoonClient
 import com.musicd.sharecard.roon.RoonSource
 import com.musicd.sharecard.roon.TokenStore
+import com.musicd.sharecard.device.DeviceAudio
 import com.musicd.sharecard.discover.PlayHistory
 import com.musicd.sharecard.settings.SettingsStore
 import com.musicd.sharecard.sonos.Household
@@ -111,7 +112,24 @@ class ShareCardApp(
      */
     history: PlayHistory = PlayHistory.inMemory(),
     /** See [com.musicd.sharecard.api.Access]. The container may turn this off. */
-    requirePin: Boolean = true
+    requirePin: Boolean = true,
+    /**
+     * How this host sees its OWN audio.
+     *
+     * Every source in this app is a network source, so music playing on the
+     * phone's own speaker is invisible to all of them. Android can answer that
+     * and a container cannot — a PROBE for now, reported under /api/debug and
+     * reaching no card.
+     *
+     * **THE DEFAULT SAYS SO RATHER THAN SAYING NOTHING, AND A NULL HERE SAID
+     * NOTHING.** Driven against the real server, the container printed no
+     * section at all: the honest "not an Android build" branch existed, was
+     * unit-tested, and was unreachable because the host passed nothing. That is
+     * this repository's oldest diagnostics fault — correct, served and
+     * invisible — so the default is a probe that reports it cannot see, not the
+     * absence of a probe. See [com.musicd.sharecard.device.DeviceAudio].
+     */
+    deviceAudio: DeviceAudio = DeviceAudio()
 ) {
 
     /**
@@ -251,10 +269,23 @@ class ShareCardApp(
         metaHttp, userAgent(version), history, editorial, store = cacheStore
     )
 
+    /*
+     * THE TAIL IS NAMED, AND THAT IS NOT TIDYING. This was positional to the
+     * last argument, so adding `deviceAudio` in the middle of CardApi's
+     * parameters slid `history` into its slot — caught here only because the
+     * types disagreed. The next insertion between two arguments of the SAME
+     * type would not be caught by anything.
+     */
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
         webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz, similar,
-        settingsStore, requirePin, roonBrowse, lmsQueue, history, newMusic, editorial
+        settingsStore, requirePin,
+        roonBrowse = roonBrowse,
+        lmsQueue = lmsQueue,
+        deviceAudio = deviceAudio,
+        history = history,
+        newMusic = newMusic,
+        editorial = editorial
     )
 
     private val server = HttpServer(api, port, bindAddress)
