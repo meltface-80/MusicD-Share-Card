@@ -48,7 +48,16 @@ class UpnpSource(
         val udn: String,
         val friendlyName: String,
         val host: String,
-        val controlUrl: String
+        val controlUrl: String,
+        /**
+         * EVERY SERVICE THE DESCRIPTION LISTS, AND IT IS A REPORT, NOT A
+         * DECISION. Nothing here reads this to choose a code path — it is
+         * carried so [diagnostics] can print it, because what a renderer can
+         * be ASKED to do cannot be settled from this machine and a device
+         * description is the only place it is written down. See the note on
+         * [shortService].
+         */
+        val services: List<String> = emptyList()
     )
 
     @Volatile
@@ -149,14 +158,24 @@ class UpnpSource(
         // controlURL in the document, which belongs to whichever service the
         // manufacturer happened to list first.
         var control: String? = null
+        val services = ArrayList<String>()
         for (service in Xml.descendants(root)) {
             if (Xml.localName(service) != "service") continue
             val type = Xml.children(service)
                 .firstOrNull { Xml.localName(it) == "serviceType" }?.let(Xml::text).orEmpty()
+            if (type.isEmpty()) continue
+            if (services.size < MAX_SERVICES) services += type
             if (!type.contains("AVTransport", ignoreCase = true)) continue
-            control = Xml.children(service)
-                .firstOrNull { Xml.localName(it) == "controlURL" }?.let(Xml::text)
-            if (!control.isNullOrEmpty()) break
+            // NOT `break` ANY MORE. The loop used to stop at AVTransport, which
+            // was right while its control URL was the only thing wanted — and
+            // would now report the services listed BEFORE it and none after,
+            // which is a report that quietly depends on a manufacturer's
+            // ordering. The first AVTransport control URL is still the one
+            // taken; the walk simply finishes.
+            if (control.isNullOrEmpty()) {
+                control = Xml.children(service)
+                    .firstOrNull { Xml.localName(it) == "controlURL" }?.let(Xml::text)
+            }
         }
         val controlUrl = control?.takeIf { it.isNotEmpty() }?.let { resolve(documentUrl, it) }
             ?: return null
@@ -169,7 +188,8 @@ class UpnpSource(
                 udn = udn,
                 friendlyName = friendly.ifEmpty { modelName.ifEmpty { host } },
                 host = host,
-                controlUrl = controlUrl
+                controlUrl = controlUrl,
+                services = services
             ),
             isSonos = manufacturer.contains("Sonos", ignoreCase = true) ||
                 modelName.contains("Sonos", ignoreCase = true)
@@ -247,15 +267,84 @@ class UpnpSource(
 
     override fun diagnostics(): List<String> {
         scan()
-        return notes + renderers.map { "  ${it.friendlyName} -> ${it.controlUrl}" }
+        return notes + renderers.flatMap {
+            listOf(
+                "  ${it.friendlyName} -> ${it.controlUrl}",
+                "    services: " + it.services.joinToString(", ", transform = ::shortService)
+                    .ifEmpty { "none listed" },
+                "    can be asked to queue: " + queueability(it.services)
+            )
+        }
     }
 
-    private companion object {
+    internal companion object {
         const val TAG = "Upnp"
         const val NAME = "UPnP"
         const val MEDIA_RENDERER_ST = "urn:schemas-upnp-org:device:MediaRenderer:1"
         const val AV_TRANSPORT = "urn:schemas-upnp-org:service:AVTransport:1"
 
         const val RESCAN_MS = 60_000L
+
+        /** A description with more than this is listing more than is readable. */
+        const val MAX_SERVICES = 16
+
+        /**
+         * A service URN, short enough to read off a phone in another room.
+         *
+         * `urn:av-openhome-org:service:Playlist:1` becomes `openhome/Playlist`.
+         * The VENDOR half is the point: base UPnP gives a renderer one track
+         * and a "play this next" slot, and every real QUEUE is somebody's
+         * extension — OpenHome's, Sonos's, LinkPlay's. Which of those a box
+         * speaks is written in its description and nowhere else, and cannot be
+         * discovered from a machine that is not on the network with it.
+         */
+        internal fun shortService(urn: String): String {
+            val parts = urn.split(':')
+            if (parts.size < 4) return urn
+            // `schemas-upnp-org`, `av-openhome-org`, `schemas-sonos-com`,
+            // `schemas-wiimu-com` — the decoration differs per vendor and none
+            // of it carries meaning, so both ends come off.
+            val vendor = parts[1]
+                .removePrefix("schemas-").removePrefix("av-")
+                .removeSuffix("-org").removeSuffix("-com")
+            val name = parts.getOrNull(parts.indexOf("service") + 1) ?: return urn
+            return (if (vendor == "upnp") "upnp" else vendor) + "/" + name
+        }
+
+        /**
+         * WHAT THIS BOX COULD BE ASKED TO DO, READ OFF ITS OWN DESCRIPTION.
+         *
+         * A REPORT AND NOT A PROMISE. Naming a service here says the device
+         * advertises it, which is not the same as it working, not the same as
+         * having a URI worth sending, and not the same as this app being able
+         * to build one. Base UPnP `AVTransport` has NO queue at all: it holds
+         * one URI, plus one "next" slot, so anything sent to it REPLACES what
+         * is playing rather than joining a list behind it. That distinction is
+         * the whole reason this line exists — "queue" and "play" are one word
+         * apart and a very long way apart in what they do to a room somebody
+         * is listening to.
+         */
+        internal fun queueability(services: List<String>): String {
+            val found = ArrayList<String>()
+            if (services.any { it.contains("av-openhome-org", true) && it.contains("Playlist", true) }) {
+                found += "OpenHome Playlist (a real queue: Insert/DeleteId/ReadList)"
+            }
+            if (services.any { it.contains("sonos", true) && it.contains("Queue", true) }) {
+                found += "Sonos Queue (AddURIToQueue)"
+            }
+            if (services.any { it.contains("wiimu", true) || it.contains("PlayQueue", true) }) {
+                found += "LinkPlay PlayQueue"
+            }
+            if (found.isEmpty()) {
+                val avt = services.any { it.contains("AVTransport", true) }
+                return if (avt) {
+                    "nothing. AVTransport alone holds ONE uri and one next slot, " +
+                        "so sending to it replaces what is playing"
+                } else {
+                    "nothing, and it lists no AVTransport either"
+                }
+            }
+            return found.joinToString("; ")
+        }
     }
 }
