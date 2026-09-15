@@ -808,6 +808,25 @@ was simply not there, however carefully the DIDL was parsed.
   window for a `load()` to overtake it, and scanning every `show*` swept in
   render helpers (`showNode`, `showChooser`, `showUpdate`) that take a value
   and paint it and have no stage to claim.
+- **AND THE SCAN LOOKED ONE WAY ONLY, WHICH LEFT TWO DEAD READS IN THE ROOMS
+  SECTION SINCE THE DAY IT WAS WRITTEN.** `DiagnosticsDrawnTest` asked "is
+  everything SERVED also DRAWN", which is the fault it was written for. The
+  converse was never asked, so the page read `z.ip` off every zone row and
+  nothing in any version of `Diagnostics` has ever put an `ip` - every row of
+  every report anybody has ever read said **"Stereo Fives (undefined)"**.
+  `z.raw` was the same fault with a worse consequence: the whole "Raw reply"
+  section was gated on it, so a section whose own comment calls it "the section
+  to send on when a card comes out wrong for one source and right for another"
+  had NEVER ONCE BEEN DRAWN. Both are invisible in a running app - `undefined`
+  reads as a missing value, and a section that never renders reads as a section
+  with nothing to say. Found in a field dump where one room appeared twice
+  under two sources, which is precisely the case the missing field distinguishes.
+  **AND THE FIRST CUT OF THE NEW SCAN LIED IN THE OTHER DIRECTION**: it matched
+  `z.` anywhere in the page, and three other places map a zone from
+  `/api/zones` and also call it `z` - rows that genuinely carry `uid` and
+  `enabled`. So the debug row is named `debugZone`, the scan keys on that, and
+  it refuses to find NOTHING, because a scan quietly matching nothing is how
+  one becomes decoration.
 - **A DIAGNOSTIC THE PAGE DOES NOT DRAW IS WORSE THAN NONE.** The
   similar-artist lookup gained `attempts()` and a `"similar"` key in the
   report, and the page was never taught to draw it — correct, served, and
@@ -2047,13 +2066,42 @@ was simply not there, however carefully the DIDL was parsed.
   or rate a track are left out.
 - **THE REMAINING WALL IS WHAT GOES IN IT, NOT WHETHER IT CAN BE SENT.** A
   suggestion comes from Deezer, and Deezer gives a thirty-second preview, not a
-  track a renderer can play. `SearchQueueOnline(in QueueName, in SearchKey, out
-  Queue)` is the interesting shape, because it would have the DEVICE resolve a
-  record from a service it is already logged into — `UserLogin`, `GetUserInfo`
-  and `SetSpotifyPreset` on that same list say the credentials live on the box.
-  That would be keyless from this app's side, which is the only shape the
-  owner's decision leaves open. UNVERIFIED: what it accepts, what it returns,
-  and whether it reaches a service at all.
+  track a renderer can play. `SearchQueueOnline` is the interesting shape,
+  because it would have the DEVICE resolve a record from a service it is
+  already logged into - `UserLogin`, `GetUserInfo` and `SetSpotifyPreset` on
+  that same list say the credentials live on the box. That would be keyless
+  from this app's side, which is the only shape the owner's decision leaves
+  open.
+- **AND THE TWO SIGNATURES FIT EACH OTHER, WHICH IS THE WHOLE FINDING.** Read
+  off the device rather than guessed:
+
+      SearchQueueOnline(in QueueName, in SearchKey, in Queuelimit,
+                        out QueueContext)
+      AppendQueue(in QueueContext)
+      AppendTracksInQueue(in QueueContext)
+      BrowseQueue(in QueueName, out QueueContext)
+
+  The search's OUTPUT is exactly the append's INPUT, and `BrowseQueue` reads
+  back what is in there - so search, append, verify is a complete round trip
+  with no credential anywhere in it, and the verify step is the one whose
+  absence cost the Roon queue four releases. AN EARLIER NOTE HERE RECORDED THAT
+  SIGNATURE WRONG - "out Queue", with `Queuelimit` missing. Small, and exactly
+  the kind of thing this file exists to be right about: a shape a machine
+  actually sent is worth more than a shape somebody wrote down, which is the
+  rule the OBSERVED Lyrion test is named after.
+- **WHAT IS STILL UNVERIFIED IS EVERY VALUE.** What `QueueName` names (a
+  service? a queue already on the box?), what `SearchKey` accepts, what a
+  `QueueContext` actually looks like, and whether any of it reaches a streaming
+  service at all. None of that can be settled from here and none of it should
+  be guessed.
+- **AND FIRING ONE OF THESE IS NOT A READ.** `ReplaceQueue` sits on the same
+  service, `AppendTracksInQueueEx` takes an `in Play` argument, and
+  `GetQueueOnline` takes `in QueueAutoInsert` - so a vendor action sent
+  speculatively at a box somebody is listening to can stop the music. That is
+  the exact failure `RoonBrowse.pickQueueAction` exists to prevent, one
+  protocol over. So the probe for this must be EXPLICITLY INVOKED and gated,
+  never something `/api/debug` fires on its own: the report is read constantly,
+  and by definition at moments when something is already wrong.
 - **NO OPENHOME ON THAT BOX, WHICH IS WORTH KNOWING BEFORE BUILDING
   ANYTHING.** WiiM is widely described as an OpenHome renderer and this one
   advertises no `av-openhome-org` service at all. `tencent/QPlay` is QQ
