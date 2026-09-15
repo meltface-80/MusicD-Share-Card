@@ -159,6 +159,17 @@ class ShareCardApp(
      * session id where the title should be. Both sources can see that zone;
      * only one of them knows what the record is.
      */
+    private val lmsClient = LmsClient(lmsHttp)
+
+    /*
+     * NAMED RATHER THAN INLINE, because two things ask it questions now: the
+     * Source ladder reads what is playing, and LmsQueue asks the same server
+     * to put a record on a playlist. One instance means one discovery and one
+     * remembered base — building a second would re-broadcast for the server
+     * this one already found.
+     */
+    private val lms = LmsSource(lmsClient, hosts = { seedHosts })
+
     val sources = sourcesOverride ?: Sources(
         listOf(
             RoonSource(roon),
@@ -167,7 +178,7 @@ class ShareCardApp(
             // squeezelite endpoint — or a UPnP renderer it is streaming to —
             // sees only a stream. Asked about the same room, the server is the
             // one that knows what the record is.
-            LmsSource(LmsClient(lmsHttp), hosts = { seedHosts }),
+            lms,
             SonosSource(household),
             UpnpSource(soap, metaHttp)
         )
@@ -223,6 +234,9 @@ class ShareCardApp(
      */
     private val roonBrowse = com.musicd.sharecard.roon.RoonBrowse { roon.browseSocket() }
 
+    /** Lyrion's half of the same feature — two calls where Roon's is a walk. */
+    private val lmsQueue = com.musicd.sharecard.lms.LmsQueue(lmsClient) { lms.serverBase() }
+
     /**
      * What is new, and which of it this house has a reason to care about.
      *
@@ -240,7 +254,7 @@ class ShareCardApp(
     private val api = CardApi(
         sources, metadata, pitchfork, art, assets, version, hostNotes,
         webhookStore, DiscordPoster(webhookHttpClient()), updater, qobuz, similar,
-        settingsStore, requirePin, roonBrowse, history, newMusic, editorial
+        settingsStore, requirePin, roonBrowse, lmsQueue, history, newMusic, editorial
     )
 
     private val server = HttpServer(api, port, bindAddress)

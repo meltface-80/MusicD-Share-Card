@@ -1825,16 +1825,78 @@ was simply not there, however carefully the DIDL was parsed.
 
 ## Queueing a suggestion into a zone that is not Roon
 
-- **THE REPORT CAME FIRST, AND NOTHING ELSE WAS BUILT.** Asked to explore adding
-  suggestions to other zones — Lyrion first, then "Spotify, Qobuz and Tidal
-  which are all detected on UPnP zones". The honest answer to the second half is
-  that it depends entirely on the box and CANNOT BE SETTLED FROM THIS MACHINE,
-  so the only thing shipped was a probe: `UpnpSource` now carries every
-  `serviceType` its description lists and `/api/debug` prints them with a
-  one-line reading. Chosen deliberately over writing speculative queue code —
-  three rounds of the Roon queue were spent reasoning about a protocol nobody
-  here could reach, and the round that fixed it printed what the Core actually
-  sent and read the answer off the first two lines.
+- **THE REPORT CAME FIRST, AND NOTHING ELSE WAS BUILT — AND THE REPORT IS WHAT
+  SAID WHICH HALF WAS BUILDABLE.** Asked to explore adding suggestions to other
+  zones — Lyrion first, then "Spotify, Qobuz and Tidal which are all detected on
+  UPnP zones". The honest answer to the second half is that it depends entirely
+  on the box and CANNOT BE SETTLED FROM THIS MACHINE, so the only thing shipped
+  was a probe: `UpnpSource` now carries every `serviceType` its description
+  lists and `/api/debug` prints them with a one-line reading. Chosen
+  deliberately over writing speculative queue code — three rounds of the Roon
+  queue were spent reasoning about a protocol nobody here could reach, and the
+  round that fixed it printed what the Core actually sent and read the answer
+  off the first two lines. THREE PROBES LATER Lyrion was built (below) and UPnP
+  is still a report, which is the split the probes earned rather than one
+  guessed at up front.
+
+### Lyrion, which turned out to be the easy one
+
+- **LYRION HAS A CONTROL API, SO THE FEATURE IS TWO CALLS.** `["albums", 0, N,
+  "search:<terms>", "tags:la"]` then `[<player>, ["playlistcontrol", "cmd:add",
+  "album_id:<id>"]]`. `RoonBrowse` is a seven-step browse walk that took four
+  releases; `LmsQueue` is a search and an append, and THREE things that were
+  hard in Roon are simply free here. **`cmd:add` IS "Queue"** — a named
+  parameter rather than a menu row to identify, so neither `pickQueueAction`'s
+  hazard (Roon's menu OPENS with Play Now) nor its other one (an installation in
+  another language) exists. **THE REPLY SAYS HOW MANY TRACKS WENT IN**, so
+  success is a number that is asserted rather than assumed — the expensive Roon
+  bug was the final invoke never being read, so a refusal reached the page as
+  "Added to the end of the queue". And **A SEARCH RESULT IS THE ALBUM**, not a
+  row that opens onto a screen that holds rows, so the off-by-one that cost Roon
+  four releases has no equivalent. `cmd:load` replaces and plays and must never
+  appear in that file; a test asserts the wire carries neither it nor
+  `cmd:insert`.
+- **WHAT IS NOT FREE IS THE MATCHING, AND IT IS PORTED WHOLESALE RATHER THAN
+  REDECIDED.** `pickAlbum` is `RoonBrowse.pickAlbum`'s shape: both names must
+  overlap where the row NAMES an artist, a row naming NOBODY is matched on its
+  title alone (a library files box sets and soundtracks under no artist, and
+  demanding one turns a library that holds the record into "not in your
+  library"), and TWO anonymous candidates is a coin toss where neither is taken.
+  The search string is folded through `Normalize.stripEdition` and
+  `Normalize.primaryArtist` for the reason the owner diagnosed on Roon: a
+  suggestion is spelled DEEZER's way ("Ignition (2008 Remaster)") and a library
+  is spelled its owner's ("Ignition").
+- **ONE ROUTE, DISPATCHING ON THE ZONE'S SOURCE.** `/api/roon/queue` became
+  `/api/queue`. The alternatives were a second gated write route — a second
+  place to get the gate wrong — or the PAGE choosing a URL per source, which is
+  a rule, and rules live in `:core` where they have tests. Still POST, still
+  behind `Access.mayConfigure`, and a zone whose source cannot queue is REFUSED
+  rather than guessed at. 400 means "that room cannot take a queue" and 200
+  means "the library was asked and said no": the difference between them IS the
+  dispatch, which is what the route test asserts.
+- **`canQueue` IS COMPUTED FROM THE SAME LIST THE ROUTE DISPATCHES ON.** The
+  page tested `uid.indexOf("roon:") === 0` — a second copy of the rule, in the
+  one file with no tests, which would have silently gone on offering the chip to
+  Roon alone. The card says whether the room can take a queue and the page
+  believes it. Same argument as the chooser grid's `choose` flag.
+- **A LYRION PLAYER IS NAMED BY ITS MAC ADDRESS, WHICH IS THE ONE RAW ID IN THIS
+  APP MADE OF COLONS.** `ZoneRef.rawOf` splits at the FIRST colon, so
+  `lyrion:00:04:20:aa:bb:cc` yields the whole MAC; splitting at the last would
+  hand the server `cc` and queue into nothing, silently. Shown failing by
+  changing it to `substringAfterLast`.
+- **TWO SOURCES' ATTEMPTS IN ONE DIAGNOSTICS SECTION MUST EACH SAY WHICH.** "no
+  match in 3 row(s)" is the same sentence from Roon and from Lyrion and the
+  fixes are in different files, so every line is prefixed with its source and
+  the heading names the ACTION rather than one source. Same rule as
+  `Pitchfork.Outcome` naming which failure it was, and the same mistake as the
+  "Pitchfork review" chip drawing an NME review under Pitchfork's byline.
+- **NO LYRION SERVER IS REACHABLE FROM HERE, SO THE SOCKET IS KEPT OUT OF EVERY
+  DECISION THAT CAN BE WRONG ON ITS OWN.** What IS verified: `LmsQueueTest`
+  drives the whole thing through a real `MockWebServer`, so the JSON-RPC
+  envelope this app builds is exercised rather than stubbed, and `/api/queue`
+  was driven with curl against the running `:server` for every source. What is
+  NOT verified is a real Lyrion answering — the documented command set is what
+  the shapes come from. Read `/api/debug` first on the first real run.
 - **BASE UPnP HAS NO QUEUE, AND THAT IS THE WHOLE DIFFICULTY.** `AVTransport`
   holds ONE uri plus one "next" slot, so anything sent to it REPLACES what is
   playing rather than joining a list behind it. "Queue" and "play" are one word

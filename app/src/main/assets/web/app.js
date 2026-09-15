@@ -440,11 +440,18 @@
     /*
      * Remembered from the CARD, not from the picker. "Whatever's playing"
      * sends no zone at all, so the room that answered is the only one a queue
-     * could sensibly go to — and it has to be a Roon room, because "add to the
-     * end of the queue" names no queue anywhere else.
+     * could sensibly go to.
+     *
+     * WHETHER IT CAN TAKE ONE IS THE SERVER'S ANSWER, NOT A TEST HERE. This
+     * read `uid.indexOf("roon:") === 0`, which is a rule — in the one file
+     * where nothing can test it, and where adding Lyrion would have meant a
+     * second copy to keep in step with the route. `canQueue` is computed from
+     * the same list the route dispatches on. Same argument as the chooser's
+     * `choose` flag and Discover's `why`.
      */
-    const uid = (playing.zone && playing.zone.uid) || "";
-    roonZone = uid.indexOf("roon:") === 0 ? uid : "";
+    const zone = playing.zone || {};
+    queueZone = zone.canQueue ? (zone.uid || "") : "";
+    queueWhere = zone.source || "";
     const params = new URLSearchParams({ album: album, artist: artist });
 
     let fast = EMPTY;
@@ -896,22 +903,24 @@
   }
 
   /**
-   * The Roon zone the card on screen is about, or "".
+   * The zone the card on screen is about, if it can take a queue, or "".
    *
    * Set from the card itself rather than from the picker: "Whatever's playing"
    * sends no zone at all, and the room that answered is the one a queue would
-   * go to.
+   * go to. WHETHER it can take one is the server's answer (`canQueue`), never
+   * a prefix tested here — that rule lives in :core where it has tests.
    */
-  let roonZone = "";
+  let queueZone = "";
+  let queueWhere = "";
 
   /**
-   * Queue a suggestion in Roon instead of leaving the page for it.
+   * Queue a suggestion into the room instead of leaving the page for it.
    *
-   * THE LINK STAYS ON THE CHIP AND IS THE FALLBACK. Roon may never have heard
-   * of the record — a suggestion is deliberately something you have not played
-   * — and a tap that does nothing would be worse than the streaming search it
-   * replaced. So: try to queue, and if Roon cannot find it, follow the link
-   * exactly as before. The tap always does something.
+   * THE LINK STAYS ON THE CHIP AND IS THE FALLBACK. The room may never have
+   * heard of the record — a suggestion is deliberately something you have not
+   * played — and a tap that does nothing would be worse than the streaming
+   * search it replaced. So: try to queue, and if the library cannot find it,
+   * follow the link exactly as before. The tap always does something.
    *
    * `preventDefault` only once queueing is known to have worked would be too
    * late (the navigation has already happened), so it is prevented up front
@@ -925,7 +934,7 @@
       const was = chip.textContent;
       chip.textContent = "Queueing\u2026";
       try {
-        const response = await fetch("/api/roon/queue" + pinParam(), {
+        const response = await fetch("/api/queue" + pinParam(), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -935,24 +944,32 @@
             // have posted an empty string and matched the album by title
             // alone, which is how a stranger's record ends up in the queue.
             artist: act.name || "",
-            zone: roonZone
+            zone: queueZone
           })
         });
         const answer = await response.json().catch(() => ({}));
         if (response.ok && answer.queued) {
-          chip.textContent = "Queued in Roon";
+          /*
+           * NAMED BY WHOEVER TOOK IT, NOT HARD-CODED. This said "Queued in
+           * Roon" whatever answered — true while Roon was the only source
+           * with a queue, and a Lyrion player would have reported itself as
+           * Roon the moment one was added. The third time this exact mistake
+           * has been made in this repo: the "Pitchfork review" chip drew an
+           * NME review under Pitchfork's byline, and `bioSource` was added
+           * because a blurb credit was hard-coded before that.
+           */
+          chip.textContent = queueWhere ? "Queued in " + queueWhere : "Queued";
           chip.classList.add("sim-queued");
           return;
         }
-        // Roon could not, so do what the chip says it does — AND SAY SO.
+        // It could not, so do what the chip says it does — AND SAY SO.
         //
-        // The reason was thrown away here: the server works out which of seven
-        // steps it stopped at and puts it in `detail`, and this opened a
-        // streaming search without showing a word of it. So a record sitting
-        // in the library that Roon would not queue looked exactly like a
-        // record Roon had never heard of, which is how this was reported with
-        // nothing to go on. /api/debug keeps the full note; this is the line
-        // somebody actually sees.
+        // The reason was thrown away here: the server works out which step it
+        // stopped at and puts it in `detail`, and this opened a streaming
+        // search without showing a word of it. So a record sitting in the
+        // library that would not queue looked exactly like a record nobody had
+        // heard of, which is how this was reported with nothing to go on.
+        // /api/debug keeps the full note; this is the line somebody sees.
         chip.textContent = was;
         if (answer.detail) errEl.textContent = answer.detail;
         window.open(chip.href, "_blank", "noopener");
@@ -1008,7 +1025,7 @@
        * loses the record. There is nothing to put in a queue then, so the
        * chip stays an ordinary link.
        */
-      if (roonZone && act.album) queueOnTap(chip, act);
+      if (queueZone && act.album) queueOnTap(chip, act);
       row.appendChild(chip);
       if (act.review && act.reviewName) {
         row.appendChild(link(act.review, act.reviewName, "sim-review"));
@@ -1392,7 +1409,9 @@
     // Reported from the field as a record that IS in the library not arriving
     // in the queue, against a chain with seven places to stop — and nothing
     // anywhere saying which. See RoonBrowse.attempts().
-    section("Queue in Roon", d.queue);
+    // Named for the ACTION, not for one source: Roon and Lyrion both land
+    // here and each line says which it came from.
+    section("Queueing a suggestion", d.queue);
     // What the Discover screen was able to find. An empty screen there has
     // three causes that look identical from it — nothing heard yet, neither
     // endpoint answering, and a window with nothing in it — and only the first
