@@ -99,6 +99,45 @@ class SettingsDrawnTest {
         )
     }
 
+    /**
+     * EVERY ASYNC SCREEN, not the one that was broken when this was written.
+     *
+     * The original named `showSettings` alone. That is the mechanism-not-the-
+     * invariant mistake this repo has made before (a scan naming `repeat(4`
+     * broke on a change that kept four across): the RULE is that a screen
+     * claiming the stage after an await can be painted over, and a scan that
+     * names one screen lets the next one through. A new screen slipping past a
+     * scan is exactly how the diagnostics ended up unreachable.
+     *
+     * ASYNC IS WHERE THE HAZARD IS, and narrowing to it is not weakening the
+     * test. A synchronous screen draws in one go with no window for a load()
+     * to overtake it; the failure being pinned is specifically an await that
+     * queues behind a discovery sweep while the stage still belongs to the
+     * card. Scanning every `show*` instead swept in render helpers —
+     * `showNode`, `showChooser`, `showUpdate` — which take a value and paint
+     * it, and have no stage to claim.
+     */
+    @Test
+    fun `every async screen claims the stage before it awaits`() {
+        val lines = code(page)
+        val screens = lines.withIndex()
+            .filter { Regex("""\basync function show[A-Z]\w*\s*\(""").containsMatchIn(it.value) }
+        assertTrue("no async screens found at all — has the scan broken?", screens.size >= 6)
+
+        for ((at, decl) in screens) {
+            val name = Regex("""function (show[A-Z]\w*)""").find(decl)!!.groupValues[1]
+            val body = lines.drop(at).take(14)
+            val claims = body.indexOfFirst { it.contains("claimStage()") }
+            val awaits = body.indexOfFirst { it.contains("await ") }
+            assertTrue("$name never claims the stage", claims >= 0)
+            assertTrue(
+                "$name awaits before claiming the stage, so a load() in flight " +
+                    "can paint over it",
+                awaits < 0 || claims < awaits
+            )
+        }
+    }
+
     @Test
     fun `a settings screen claims the stage before it awaits`() {
         /*

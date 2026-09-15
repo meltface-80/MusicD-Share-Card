@@ -786,6 +786,28 @@ was simply not there, however carefully the DIDL was parsed.
   every touch of it is guarded and the default stands. The page names the
   service on `/api/similar`; the URL is still built by `StreamingLinks` on the
   server, where the storefront and encoding rules already have tests.
+- **AND A REPORT NOBODY CAN OPEN IS THE SAME FAULT ONE STEP OUT.** Reported
+  as "The device section - where what??", which is exactly the right question:
+  there was no way in. `offerDiagnostics()` draws its button only when
+  discovery has FAILED (`noPlayers && !notices.length`) — right for a "why
+  can't it see my speakers" control, and it means an app that is finding every
+  room perfectly offers no route to the report at all. The only way was typing
+  `/api/debug` into a browser, which is the identical complaint the version
+  line at the foot of the settings menu was added to fix. It is a menu row now,
+  beside Services, Reviews, Zones and Webhooks, and it calls the SAME `report()`
+  the failure path always has — a door, not a second renderer.
+  **`DiagnosticsDrawnTest` MADE THIS HARDER TO SEE RATHER THAN EASIER**: proving
+  the page can draw every key reads as "the report is fine", while nobody could
+  reach it. Drawn and reachable are two different claims and it now asserts
+  both.
+- **AND THE `claimStage` SCAN NAMED ONE SCREEN, WHICH IS HOW A NEW ONE SLIPS
+  PAST.** It asserted `showSettings` by name — the mechanism rather than the
+  invariant, the same mistake as the scan that named `repeat(4` and broke on a
+  change that kept four across. Every ASYNC screen is scanned now, which is
+  where the hazard actually is: a synchronous screen draws in one go and has no
+  window for a `load()` to overtake it, and scanning every `show*` swept in
+  render helpers (`showNode`, `showChooser`, `showUpdate`) that take a value
+  and paint it and have no stage to claim.
 - **A DIAGNOSTIC THE PAGE DOES NOT DRAW IS WORSE THAN NONE.** The
   similar-artist lookup gained `attempts()` and a `"similar"` key in the
   report, and the page was never taught to draw it — correct, served, and

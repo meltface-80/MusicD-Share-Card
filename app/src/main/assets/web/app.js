@@ -1756,6 +1756,23 @@
       menuRow("settings-reviews", "Reviews", "Album reviews and scores"),
       menuRow("settings-zones", "Zones", "Which rooms this app may show"),
       menuRow("settings-webhooks", "Webhooks", "Post the card to a Discord channel"),
+      /*
+       * THE REPORT HAD NO WAY IN ON A WORKING APP, AND THAT IS WHAT IT IS FOR.
+       *
+       * `offerDiagnostics()` draws its button only when discovery has failed
+       * outright (`noPlayers && !notices.length`), which was right for a
+       * "why can't it see my speakers" control. But /api/debug answers far
+       * more than that — which build this is, what each room reported, why a
+       * score or a sleeve or a suggestion did not arrive — and every one of
+       * those questions comes up on an app that is working perfectly. So the
+       * only route was typing the path into a browser, which is exactly the
+       * complaint the version line at the foot of this menu was added to fix.
+       *
+       * `DiagnosticsDrawnTest` made this HARDER to see rather than easier: it
+       * proves the page can draw every key the report can carry, which reads
+       * as "the report is fine" while nobody could reach it.
+       */
+      menuRow("settings-diagnostics", "Diagnostics", "What this app found, and what it did not"),
       // NO PIN FIELD ON THE MENU — nothing here writes — but there must be a
       // way out. The first cut had none, and the only route back to the card
       // was reloading the page.
@@ -1779,6 +1796,7 @@
     bind("settings-reviews", showReviews);
     bind("settings-zones", showZones);
     bind("settings-webhooks", showWebhookSettings);
+    bind("settings-diagnostics", showDiagnostics);
     bind("set-back", () => load(false));
   }
 
@@ -1959,6 +1977,32 @@
       settings = await getJson("/api/settings" + (withZones ? "?zones=1" : ""));
     } catch (e) {
       settings = { services: [], zones: [], anyZoneEnabled: false };
+    }
+  }
+
+  /**
+   * The whole report, reached from the menu rather than only from a failure.
+   *
+   * `report()` does the drawing — the same function `offerDiagnostics()` has
+   * always called — so there is ONE renderer and `DiagnosticsDrawnTest` still
+   * covers it. This adds a door, not a second copy.
+   *
+   * It says so while it waits, because this is the one screen that genuinely
+   * takes seconds: the report asks every source and every enabled room, which
+   * is a discovery sweep on a cold cache.
+   */
+  async function showDiagnostics() {
+    // Before the await, so the card's pending request is let go of rather than
+    // holding the connection this screen needs. See claimStage.
+    claimStage();
+    errEl.textContent = "";
+    hintEl.textContent = "Asking every source\u2026";
+    try {
+      report(await getJson("/api/debug"));
+    } catch (e) {
+      errEl.textContent = (e && e.message) ? e.message : String(e);
+    } finally {
+      hintEl.textContent = "";
     }
   }
 
