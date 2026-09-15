@@ -2096,11 +2096,70 @@ was simply not there, however carefully the DIDL was parsed.
   a session. iOS gives a third-party app no equivalent — `MPNowPlayingInfoCenter`
   reports only that app's own playback. A fifth source is buildable on one
   platform and not the other.
-- **IT IS A PROBE, AND NOTHING ELSE WAS BUILT.** No zone, no card, no route —
-  one `/api/debug` section. The same decision as the UPnP queue exploration one
-  section up, for the same reason: three rounds of the Roon queue were spent
-  reasoning about a protocol nobody here could reach, and the round that fixed
-  it printed what the Core actually sent.
+- **IT WAS A PROBE FIRST, AND THE PROBE IS WHY THE SOURCE IS SHORT.** It shipped
+  as one `/api/debug` section with no zone, no card and no route - the same
+  decision as the UPnP queue exploration one section up, for the same reason:
+  three rounds of the Roon queue were spent reasoning about a protocol nobody
+  here could reach, and the round that fixed it printed what the Core actually
+  sent. ONE PHOTOGRAPH OFF A REAL PHONE THEN ANSWERED EVERY QUESTION IT WAS
+  BUILT FOR: two apps holding sessions, each with a title, an artist AND an
+  album, one PLAYING and one PAUSED, and one of them offering a cover the art
+  proxy already allows. `DeviceSource` turns that into a room, and it NEEDED NO
+  NEW ANDROID CODE AT ALL - the reading was already right and only the deciding
+  was missing, which is the argument for the seam stated by the change rather
+  than by a comment.
+- **ONE ZONE, NOT ONE PER APP.** Two apps holding sessions on one phone is not
+  two rooms; it is one room and a question about which to believe, and
+  `quality` already answers exactly that question for the house. Per-app zones
+  would also make every newly installed music app an unasked-for room, each
+  needing switching on by itself.
+- **AND `quality` MOVED OUT OF `Sources` RATHER THAN BEING COPIED.** It was a
+  member while the ladder was its only caller; a source holding several answers
+  of its own needs the identical rule. Same move `Normalize.namesOverlap` and
+  `Normalize.stripEdition` each made on their second caller, for the same
+  reason: two copies is how one caller ranks an album over an artist and the
+  next does not. Proved by a test that ranks two REAL sessions both ways round
+  - a source taking whichever Android listed first passes the playing-beats-
+  paused test by accident, and fails that one.
+- **THE ROOM IS LISTED WHILE THE PERMISSION IS REFUSED, AND THE NOTICE IS NOT.**
+  Those pull opposite ways and both are deliberate. `zones()` offers "This
+  device" on DENIED because otherwise there is nothing in Settings to switch on
+  and no way to reach the explanation - a source that hides until it is
+  permitted is unreachable. `notice()` stays SILENT until the room is switched
+  on, because rooms are opt-in and a permission notice shown before anybody
+  asked would sit on every Android install for ever, about a feature nobody
+  requested. That is precisely the bug the Roon notice was narrowed after
+  ("Looking for your Roon Core..." under a card that worked). Switching the
+  room on IS the request; UNSUPPORTED is silent either way, like Roon's ABSENT.
+- **IT IS LAST IN THE SOURCE LIST, AND THAT IS THE TIE-BREAK SPEAKING.** Source
+  order decides only between answers that are otherwise equally good. Every
+  source above it is a room in the house; this one is the device in somebody's
+  hand, and when both are playing a full record the house is what this app is
+  for. Naming the zone still reaches it directly, because a named zone is a
+  lock rather than a preference.
+- **ONLY AN http(s) ART URL IS CARRIED, AND THE SPOTIFY RECONSTRUCTION WAS
+  CONSIDERED AND REFUSED.** Qobuz's session gave
+  `https://static.qobuz.com/...`, which `ArtProxy` allows unchanged on its
+  public-https rule, so those cards draw a cover today. Spotify's gave a
+  `content://` belonging to Spotify, which this process holds no grant to read
+  and no proxy can fetch. Rebuilding its CDN url out of that uri LOOKED free
+  for one dump - `.../image/<id>?cdn=i.scdn.co` carries both halves, and
+  `/api/debug` had already proved the proxy fetches `i.scdn.co`. THE NEXT DUMP
+  OFF THE SAME PHONE, MINUTES LATER, CARRIED A DIFFERENT SHAPE:
+  `.../spotify%3Aimage%3A<id>` with no cdn parameter at all. A parser written
+  against the first finds nothing in the second, and one written against both
+  has to INVENT the host. A rule falsified within minutes of being proposed is
+  the clearest possible argument for this repository's standing refusal of
+  confident wrong answers. Passing the uri on regardless was refused too: the
+  proxy would note an identical refusal on every card for ever, which is
+  informative once and noise afterwards. Empty means no cover, and the reason
+  is printed in full under "Playing on this device".
+- **WHAT IS STILL OPEN IS THE SPOTIFY SLEEVE, AND THERE ARE EXACTLY TWO HONEST
+  WAYS.** Resolve it from the RECORD, the way `NewMusic.sleeveFor` already
+  resolves one out of Deezer with a loose search and a strict check - that rule
+  is written and tested, and would need extracting from `NewMusic` rather than
+  copied. Or have the SHELL serve the bitmap it already holds, which is a new
+  art path rather than a new url. Neither is built.
 - **THE PERMISSION IS THE TRAP, AND IT IS THE REASON `DeviceAudio` EXISTS AT
   ALL.** `getActiveSessions` needs an enabled notification listener, and an
   empty list is what a silent phone looks like too. So "no app is playing" and

@@ -104,29 +104,6 @@ class Sources(private val sources: List<Source>) {
     /** True when at least one source can see something. */
     fun anyZones(): Boolean = zones().isNotEmpty()
 
-    /**
-     * How much of a record an answer actually describes.
-     *
-     * THIS IS WHAT "ASK WHOEVER KNOWS" ACTUALLY MEANS, and the ordering of
-     * sources alone was not enough to deliver it. When Roon plays to a Sonos
-     * speaker BOTH sources see that room and both say "playing" — so a rule
-     * that returned the first playing answer returned whichever was asked
-     * first, and if the user had picked the Sonos zone that was a card headed
-     * with a session id while Roon sat there knowing the album.
-     *
-     * Ranking on the answer rather than on the source also means this does not
-     * depend on recognising a hash. `Didl.looksLikeStreamId` catches the shapes
-     * it knows; a source that reports some other kind of rubbish still loses to
-     * one that reports an album and an artist.
-     */
-    internal fun quality(playing: Playing): Int = when {
-        playing.album.isNotEmpty() && playing.artist.isNotEmpty() -> 3
-        playing.artist.isNotEmpty() -> 2
-        playing.album.isNotEmpty() -> 1
-        playing.track.isNotEmpty() -> 0
-        else -> -1
-    }
-
     fun nowPlaying(preferId: String? = preferredZoneId): Playing? {
         // Filtered HERE and not only below, because the fast path a few lines
         // down returns `chosen` outright — so a switched-off room asked for by

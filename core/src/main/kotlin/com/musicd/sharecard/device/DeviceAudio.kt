@@ -11,12 +11,19 @@ package com.musicd.sharecard.device
  *
  * Android can answer that question and iOS cannot: `MediaSessionManager` is
  * what drives the lock screen, the Bluetooth buttons and Android Auto, so any
- * app with those controls publishes a session. THIS IS A PROBE, NOT A SOURCE.
- * The question it exists to settle is what those sessions actually contain on
- * one real phone — which apps publish one, what they call the record, and
- * whether there is a picture worth putting on a card. Three rounds of the Roon
- * queue were spent reasoning about a protocol nobody could reach, and the round
- * that fixed it printed what the Core really sent. Print first.
+ * app with those controls publishes a session.
+ *
+ * **THIS WAS A PROBE FIRST, AND THE PROBE IS WHY THE SOURCE IS SHORT.** It was
+ * shipped reporting into `/api/debug` and nothing else, to settle what those
+ * sessions really contain on one phone - three rounds of the Roon queue were
+ * spent reasoning about a protocol nobody here could reach, and the round that
+ * fixed it printed what the Core actually sent. One photograph answered it: two
+ * apps, each with a title, an artist AND an album, one PLAYING and one PAUSED,
+ * one of them offering a cover this app's proxy can already fetch. So
+ * [DeviceSource] turns it into a room, and it needed no new Android code at all
+ * - the reading was already right, and only the deciding was missing.
+ *
+ * This type is still the READING. It judges nothing; it reports.
  *
  * **THE PERMISSION IS THE TRAP, AND IT IS WHY THIS TYPE EXISTS AT ALL.**
  * `getActiveSessions` needs the caller to be an enabled notification listener,
@@ -89,8 +96,22 @@ class DeviceAudio(private val read: () -> Report = { Report.UNSUPPORTED }) {
         }
     }
 
-    fun diagnostics(): List<String> =
-        describe(runCatching { read() }.getOrElse { Report.UNSUPPORTED })
+    /**
+     * What the shell can see, or the honest nothing.
+     *
+     * THROWABLE, NOT EXCEPTION, AND THAT IS NOT DECORATION: this is now on the
+     * request path as well as in the report, because [DeviceSource] answers
+     * cards from it. A class that fails to initialise throws an Error, which
+     * sails straight through a runCatching-for-Exception and takes the thread
+     * with it — the rule this repository learned three releases in a row.
+     *
+     * Reading is one in-process call with no network on it, so there is nothing
+     * to cache. It must not BE cached either: this is "what is playing right
+     * now", and a remembered answer is exactly what Refresh exists to defeat.
+     */
+    fun report(): Report = runCatching { read() }.getOrElse { Report.UNSUPPORTED }
+
+    fun diagnostics(): List<String> = describe(report())
 
     /*
      * THE COMPANION IS PUBLIC AND ITS MEMBERS MOSTLY ARE NOT.
