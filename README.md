@@ -110,7 +110,7 @@ shell around it. Run whichever suits the machine you already leave switched on.
 
 ### Android
 
-[**Download musicd-share-card-1.0.17.apk**](dist/musicd-share-card-1.0.17.apk)
+[**Download musicd-share-card-1.0.19.apk**](dist/musicd-share-card-1.0.19.apk)
 and sideload it on an Android device running 8.0 or newer. Open it and the card
 is there. That's the whole thing — nothing else to run, no server, no account.
 
