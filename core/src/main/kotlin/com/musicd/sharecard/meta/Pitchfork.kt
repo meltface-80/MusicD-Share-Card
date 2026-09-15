@@ -95,9 +95,19 @@ class Pitchfork(
         val stripped = stripEdition(title).ifEmpty { title }
 
         // 1. Pitchfork's own index, which is the ONLY place the score is.
-        fromListing(title, artist)?.let { return it }
-        if (!stripped.equals(title, ignoreCase = true)) {
-            fromListing(stripped, artist)?.let { return it }
+        //
+        // FETCHED ONCE HERE RATHER THAN PER TITLE FORM, so an index that could
+        // not be read is reported once and not twice over — and so the two
+        // facts stay apart: a broken index is said once, and a record simply
+        // not being in it is said per spelling that was looked for.
+        val index = listing()
+        if (index.reviews.isEmpty()) {
+            note(index.why.ifEmpty { "the reviews index held nothing" })
+        } else {
+            fromListing(index, title, artist)?.let { return it }
+            if (!stripped.equals(title, ignoreCase = true)) {
+                fromListing(index, stripped, artist)?.let { return it }
+            }
         }
 
         // 2. The review page, for anything too old to be in the index.
@@ -122,13 +132,19 @@ class Pitchfork(
      * a slug read backwards, so the check against the record we asked about is
      * a better one than the URL could give.
      */
-    private fun fromListing(title: String, artist: String): Review? {
+    private fun fromListing(index: Index, title: String, artist: String): Review? {
         val want = Normalize.text(title)
         if (want.isEmpty()) return null
-        val index = listing()
-        if (index.isEmpty()) return null
 
-        val hit = index.firstOrNull { want in titleForms(it.album) } ?: return null
+        val hit = index.reviews.firstOrNull { want in titleForms(it.album) }
+        if (hit == null) {
+            // THE ORDINARY OUTCOME, AND IT WAS THE SILENT ONE. Said plainly,
+            // with the size, so "your record is not in this week's list" cannot
+            // be mistaken for "the index was never read" — which is the whole
+            // distinction this step was missing.
+            note("the index (${index.reviews.size}) has no \"$title\"")
+            return null
+        }
         val named = hit.artist
         if (named != null && !sameArtist(named, artist)) {
             note("${hit.url} -> the index says that is $named, not this artist")
@@ -244,17 +260,43 @@ class Pitchfork(
      *
      * One fetch, cached for an hour, shared by every album that asks.
      */
-    internal fun listing(): List<Listed> = listingCache.get(LISTING_KEY) {
-        val html = gate.run { text("$host/reviews/albums/") } ?: return@get emptyList()
-        val state = extractPreloadedState(html) ?: run {
-            note("the reviews index has no preloaded state in it")
-            return@get emptyList()
-        }
+    internal fun listing(): Index = listingCache.get(LISTING_KEY) {
+        val html = gate.run { text("$host/reviews/albums/") }
+            ?: return@get Index.unusable("the reviews index could not be fetched at all")
+        val state = extractPreloadedState(html)
+            ?: return@get Index.unusable("the reviews index has no preloaded state in it")
         val json = runCatching { JSONObject(state) }.getOrElse {
-            note("the reviews index would not parse: ${it.message}")
-            return@get emptyList()
+            return@get Index.unusable("the reviews index would not parse: ${it.message}")
         }
-        collectListing(json)
+        val reviews = collectListing(json)
+        if (reviews.isEmpty()) {
+            Index.unusable("the reviews index parsed but held no reviews")
+        } else {
+            Index(reviews)
+        }
+    }
+
+    /**
+     * The index, AND WHY IT IS EMPTY WHEN IT IS.
+     *
+     * A bare `List<Listed>` could not tell "Pitchfork was not reachable" from
+     * "the blob moved again" from "your record is not in this week's thirty" —
+     * and the first two are bugs in this app while the third is an ordinary
+     * fact about an album. Reported from the field as exactly that hole: a
+     * lookup whose constructed URL was RIGHT said "page read, NO SCORE IN IT"
+     * and then "recent reviews (30): no Dreamstate", with the index step that
+     * runs before both of them saying nothing whatsoever.
+     *
+     * THE REASON IS CACHED WITH THE ANSWER, not logged where it was found. The
+     * index is fetched once an hour and shared by every album, so a note
+     * written at fetch time appears for one lookup and is missing from the next
+     * fifty — which is the worst of both, since the reader cannot tell a
+     * silence from a success. Carried here, every lookup explains itself.
+     */
+    internal data class Index(val reviews: List<Listed>, val why: String = "") {
+        companion object {
+            fun unusable(why: String) = Index(emptyList(), why)
+        }
     }
 
     /**
@@ -427,7 +469,7 @@ class Pitchfork(
 
     private val feedCache = TtlCache<String, List<Listed>>(FEED_TTL_MS, 2)
 
-    private val listingCache = TtlCache<String, List<Listed>>(FEED_TTL_MS, 2)
+    private val listingCache = TtlCache<String, Index>(FEED_TTL_MS, 2)
 
     /**
      * The score already in hand, without a request. A cached miss and a name
