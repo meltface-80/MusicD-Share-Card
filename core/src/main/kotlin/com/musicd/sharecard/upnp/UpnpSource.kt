@@ -57,7 +57,31 @@ class UpnpSource(
          * description is the only place it is written down. See the note on
          * [shortService].
          */
-        val services: List<String> = emptyList()
+        val services: List<Service> = emptyList(),
+        /**
+         * The verbs a queue service actually publishes, read off its own SCPD.
+         *
+         * Empty where nothing was asked or nothing answered. Filled only for
+         * the services [queueability] names, because a description lists half
+         * a dozen and the other four hold no queue.
+         */
+        val queueActions: Map<String, List<String>> = emptyMap()
+    )
+
+    /**
+     * One service on a renderer: what it is, where its verbs are written down,
+     * and where to send them.
+     *
+     * `SCPDURL` is the half that makes this worth modelling. Every UPnP
+     * service publishes a document enumerating every action and every
+     * argument, FROM THE DEVICE ITSELF — so "what can this box be asked" has
+     * an authoritative answer that costs one GET, and never needs guessing at
+     * from a vendor's documentation or somebody's reverse engineering.
+     */
+    data class Service(
+        val type: String,
+        val scpdUrl: String? = null,
+        val controlUrl: String? = null
     )
 
     @Volatile
@@ -111,7 +135,9 @@ class UpnpSource(
                 lines += "${description.renderer.host}: Sonos, left to the Sonos source"
                 continue
             }
-            if (found.none { it.udn == description.renderer.udn }) found += description.renderer
+            if (found.none { it.udn == description.renderer.udn }) {
+                found += withQueueActions(description.renderer)
+            }
             lines += "${description.renderer.host}: ${description.renderer.friendlyName}"
         }
 
@@ -120,6 +146,36 @@ class UpnpSource(
     }
 
     internal class Description(val renderer: Renderer, val isSonos: Boolean)
+
+    /**
+     * ASK THE QUEUE SERVICE WHAT IT CAN BE ASKED. ONE GET, AND ONLY WHERE
+     * THERE IS A QUEUE TO ASK ABOUT.
+     *
+     * The first probe answered "this box advertises wiimu/PlayQueue" and no
+     * more, which is one step short of useful: a service NAME does not say
+     * whether it can append, only replace, or anything at all. Every UPnP
+     * service publishes an SCPD enumerating its actions, from the device
+     * itself — so the next question has an authoritative answer rather than a
+     * reverse-engineered one, and this app should never be reasoning from a
+     * vendor's PDF about a box it can talk to directly.
+     *
+     * Bounded on purpose: only services [queueability] recognises are asked,
+     * so a description listing six costs one or two GETs, inside the same
+     * scan the descriptions were already fetched by and behind the same TTL.
+     * A service that will not answer costs its own line and nothing else.
+     */
+    private fun withQueueActions(renderer: Renderer): Renderer {
+        val wanted = renderer.services.filter { isQueueService(it.type) && it.scpdUrl != null }
+        if (wanted.isEmpty()) return renderer
+        val actions = LinkedHashMap<String, List<String>>()
+        for (service in wanted) {
+            val xml = fetch(service.scpdUrl!!)
+            val names = if (xml == null) emptyList() else runCatching { parseActions(xml) }
+                .getOrDefault(emptyList())
+            actions[shortService(service.type)] = names
+        }
+        return renderer.copy(queueActions = actions)
+    }
 
     /**
      * Read a renderer's description and find its AVTransport control URL.
@@ -158,13 +214,22 @@ class UpnpSource(
         // controlURL in the document, which belongs to whichever service the
         // manufacturer happened to list first.
         var control: String? = null
-        val services = ArrayList<String>()
+        val services = ArrayList<Service>()
         for (service in Xml.descendants(root)) {
             if (Xml.localName(service) != "service") continue
-            val type = Xml.children(service)
-                .firstOrNull { Xml.localName(it) == "serviceType" }?.let(Xml::text).orEmpty()
+            fun child(name: String) = Xml.children(service)
+                .firstOrNull { Xml.localName(it) == name }?.let(Xml::text)
+            val type = child("serviceType").orEmpty()
             if (type.isEmpty()) continue
-            if (services.size < MAX_SERVICES) services += type
+            if (services.size < MAX_SERVICES) {
+                services += Service(
+                    type = type,
+                    scpdUrl = child("SCPDURL")?.takeIf { it.isNotEmpty() }
+                        ?.let { resolve(documentUrl, it) },
+                    controlUrl = child("controlURL")?.takeIf { it.isNotEmpty() }
+                        ?.let { resolve(documentUrl, it) }
+                )
+            }
             if (!type.contains("AVTransport", ignoreCase = true)) continue
             // NOT `break` ANY MORE. The loop used to stop at AVTransport, which
             // was right while its control URL was the only thing wanted — and
@@ -172,10 +237,7 @@ class UpnpSource(
             // which is a report that quietly depends on a manufacturer's
             // ordering. The first AVTransport control URL is still the one
             // taken; the walk simply finishes.
-            if (control.isNullOrEmpty()) {
-                control = Xml.children(service)
-                    .firstOrNull { Xml.localName(it) == "controlURL" }?.let(Xml::text)
-            }
+            if (control.isNullOrEmpty()) control = child("controlURL")
         }
         val controlUrl = control?.takeIf { it.isNotEmpty() }?.let { resolve(documentUrl, it) }
             ?: return null
@@ -267,13 +329,17 @@ class UpnpSource(
 
     override fun diagnostics(): List<String> {
         scan()
-        return notes + renderers.flatMap {
+        return notes + renderers.flatMap { renderer ->
             listOf(
-                "  ${it.friendlyName} -> ${it.controlUrl}",
-                "    services: " + it.services.joinToString(", ", transform = ::shortService)
+                "  ${renderer.friendlyName} -> ${renderer.controlUrl}",
+                "    services: " + renderer.services
+                    .joinToString(", ") { shortService(it.type) }
                     .ifEmpty { "none listed" },
-                "    can be asked to queue: " + queueability(it.services)
-            )
+                "    can be asked to queue: " + queueability(renderer.services.map { it.type })
+            ) + renderer.queueActions.map { (name, actions) ->
+                "    $name actions: " +
+                    actions.joinToString(", ").ifEmpty { "none published, or it would not answer" }
+            }
         }
     }
 
@@ -287,6 +353,41 @@ class UpnpSource(
 
         /** A description with more than this is listing more than is readable. */
         const val MAX_SERVICES = 16
+
+        /**
+         * Is this one of the services that holds a real queue?
+         *
+         * Kept beside [queueability] and asked the same question, so the list
+         * that decides what gets REPORTED and the list that decides what gets
+         * ASKED cannot drift apart.
+         */
+        internal fun isQueueService(type: String): Boolean =
+            (type.contains("av-openhome-org", true) && type.contains("Playlist", true)) ||
+                (type.contains("sonos", true) && type.contains("Queue", true)) ||
+                type.contains("wiimu", true) || type.contains("PlayQueue", true)
+
+        /**
+         * Every action name in a service's SCPD.
+         *
+         * The document is the device's own, so this is what it can be asked
+         * and not what anybody wrote down about it. Names only: the argument
+         * lists are longer than a diagnostics page can hold, and the names are
+         * what settle whether a queue can be APPENDED to at all.
+         */
+        internal fun parseActions(xml: String): List<String> {
+            val root = Xml.parse(xml) ?: return emptyList()
+            val out = ArrayList<String>()
+            for (node in Xml.descendants(root)) {
+                if (Xml.localName(node) != "action") continue
+                val name = Xml.children(node)
+                    .firstOrNull { Xml.localName(it) == "name" }?.let(Xml::text)
+                if (!name.isNullOrEmpty() && out.size < MAX_ACTIONS) out += name
+            }
+            return out
+        }
+
+        /** Enough to see the shape of a service without filling the page. */
+        const val MAX_ACTIONS = 40
 
         /**
          * A service URN, short enough to read off a phone in another room.

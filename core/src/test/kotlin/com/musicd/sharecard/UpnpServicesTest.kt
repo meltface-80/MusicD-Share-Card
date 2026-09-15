@@ -2,6 +2,7 @@ package com.musicd.sharecard
 
 import com.musicd.sharecard.upnp.UpnpSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,8 +46,9 @@ class UpnpServicesTest {
             "http://192.168.0.236:49152/description.xml"
         )?.renderer
 
-    private fun service(type: String, control: String = "/ctrl") =
-        "<service><serviceType>$type</serviceType><controlURL>$control</controlURL></service>"
+    private fun service(type: String, control: String = "/ctrl", scpd: String = "/scpd.xml") =
+        "<service><serviceType>$type</serviceType>" +
+            "<SCPDURL>$scpd</SCPDURL><controlURL>$control</controlURL></service>"
 
     private val avTransport = "urn:schemas-upnp-org:service:AVTransport:1"
 
@@ -65,7 +67,7 @@ class UpnpServicesTest {
                 avTransport,
                 "urn:av-openhome-org:service:Playlist:1"
             ),
-            r?.services
+            r?.services?.map { it.type }
         )
     }
 
@@ -78,7 +80,7 @@ class UpnpServicesTest {
         val r = describe(service(avTransport, "/avt") + service("urn:av-openhome-org:service:Playlist:1"))
         assertTrue(
             "a queue service listed after AVTransport was dropped",
-            r!!.services.any { it.contains("Playlist") }
+            r!!.services.any { it.type.contains("Playlist") }
         )
     }
 
@@ -155,5 +157,70 @@ class UpnpServicesTest {
     fun `a box listing nothing at all says so rather than guessing`() {
         val verdict = UpnpSource.queueability(emptyList())
         assertTrue(verdict, verdict.contains("no AVTransport"))
+    }
+
+    // ----------------------------------------------------- where the verbs are
+
+    @Test
+    fun `a service carries where its verbs are written down, resolved like any URL`() {
+        /*
+         * THE FIRST PROBE ANSWERED ONE STEP SHORT OF USEFUL. Off a real
+         * network it said "this box advertises wiimu/PlayQueue" and no more —
+         * and a service NAME does not say whether it can append, only replace,
+         * or anything at all. Every UPnP service publishes an SCPD listing its
+         * actions, FROM THE DEVICE, so the next question has an authoritative
+         * answer rather than a reverse-engineered one.
+         */
+        val r = describe(
+            service(avTransport, "/avt", "/AVTransport/scpd.xml") +
+                service("urn:schemas-wiimu-com:service:PlayQueue:1", "/pq", "PlayQueue1.xml")
+        )
+        val queue = r!!.services.last()
+        assertEquals("http://192.168.0.236:49152/PlayQueue1.xml", queue.scpdUrl)
+        assertEquals("http://192.168.0.236:49152/pq", queue.controlUrl)
+    }
+
+    @Test
+    fun `only a service that holds a queue is asked for its verbs`() {
+        // A description lists half a dozen and the other four hold no queue,
+        // so a report that fetched every SCPD would cost six GETs to answer a
+        // question about one. The list that decides what is REPORTED and the
+        // list that decides what is ASKED are the same list.
+        assertTrue(UpnpSource.isQueueService("urn:schemas-wiimu-com:service:PlayQueue:1"))
+        assertTrue(UpnpSource.isQueueService("urn:av-openhome-org:service:Playlist:1"))
+        assertTrue(UpnpSource.isQueueService("urn:schemas-sonos-com:service:Queue:1"))
+        assertFalse(UpnpSource.isQueueService(avTransport))
+        assertFalse(UpnpSource.isQueueService("urn:schemas-upnp-org:service:RenderingControl:1"))
+        assertFalse(UpnpSource.isQueueService("urn:schemas-tencent-com:service:QPlay:1"))
+    }
+
+    @Test
+    fun `every action in an SCPD is read, and nothing else is`() {
+        val scpd = """
+            <scpd xmlns="urn:schemas-upnp-org:service-1-0">
+              <actionList>
+                <action><name>CreateQueue</name>
+                  <argumentList><argument><name>QueueContext</name></argument></argumentList>
+                </action>
+                <action><name>AppendQueue</name></action>
+                <action><name>PlayQueueWithIndex</name></action>
+              </actionList>
+              <serviceStateTable>
+                <stateVariable><name>NotAnAction</name></stateVariable>
+              </serviceStateTable>
+            </scpd>
+        """.trimIndent()
+        assertEquals(
+            listOf("CreateQueue", "AppendQueue", "PlayQueueWithIndex"),
+            UpnpSource.parseActions(scpd)
+        )
+    }
+
+    @Test
+    fun `an SCPD that is not readable is an empty list, never a throw`() {
+        // A box that will not answer costs its own line and nothing else.
+        assertEquals(emptyList<String>(), UpnpSource.parseActions(""))
+        assertEquals(emptyList<String>(), UpnpSource.parseActions("not xml at all"))
+        assertEquals(emptyList<String>(), UpnpSource.parseActions("<scpd></scpd>"))
     }
 }
