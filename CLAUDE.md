@@ -2140,6 +2140,26 @@ was simply not there, however carefully the DIDL was parsed.
   file adversarially before pushing caught a real compile error — `when (state?
   .state) { null -> … else -> state.state }` does not smart-cast `state`, so the
   else branch would not build. Treat the first real run as the verification.
+- **`internal` IS PER MODULE, AND `:app` IS NOT `:core` — THE CHECK LIST CANNOT
+  SEE THIS.** `listenerNote` shipped `internal`, inside an `internal companion
+  object`, and CI refused it: an internal member is invisible from another
+  module, and an internal COMPANION cannot be resolved from one at all, so
+  making just the function public would have failed a second time. Both halves
+  were there; reading the declaration rather than trusting the one-word fix is
+  what found the second.
+  **THE TESTS WERE EVIDENCE OF THE WRONG THING**, which is this repository's
+  founding rule stood on its head. `./gradlew :core:test` compiles `:core`
+  alone, and `DeviceAudioTest` lives in :core's own test source set where
+  `internal` IS visible — so the test passed while the app would not build.
+  "Compiling is not evidence" has a twin: a green suite is not evidence either,
+  when the thing it cannot compile is the module the suite does not touch.
+  `ModuleSeamTest` scans `app/` for references to anything `:core` hides and
+  names the file and line, because a CI round trip is the slowest loop here and
+  this seam gets crossed every time the shell is given something new to ask.
+  It flags a reference only when the TYPE and the MEMBER both match, and it
+  strips block comments — the first cut fired on `[DeviceAudio.artNote]` inside
+  a KDoc, which is the "a source scan must read code, not prose" rule caught by
+  the person who wrote it down.
 
 ## Scope and process
 

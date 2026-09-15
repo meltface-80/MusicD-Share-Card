@@ -92,7 +92,19 @@ class DeviceAudio(private val read: () -> Report = { Report.UNSUPPORTED }) {
     fun diagnostics(): List<String> =
         describe(runCatching { read() }.getOrElse { Report.UNSUPPORTED })
 
-    internal companion object {
+    /*
+     * THE COMPANION IS PUBLIC AND ITS MEMBERS MOSTLY ARE NOT.
+     *
+     * `internal companion object` was the SECOND half of the same mistake: an
+     * internal companion cannot be resolved from another module at all, so
+     * `DeviceAudio.listenerNote(...)` in `:app` would still not compile even
+     * with the function itself made public. Caught by reading the declaration
+     * rather than assuming the one-word fix was the whole of it.
+     *
+     * Everything in here that `:core` alone uses keeps `internal`; only what
+     * the shell calls is public.
+     */
+    companion object {
 
         /** More than a screenful is not a report anybody reads off a phone. */
         const val MAX_SESSIONS = 8
@@ -158,7 +170,18 @@ class DeviceAudio(private val read: () -> Report = { Report.UNSUPPORTED }) {
          * is pasted into chat windows and bug reports. A count answers the
          * question; the list would be somebody's installed software.
          */
-        internal fun listenerNote(
+        /*
+         * PUBLIC, BECAUSE THE SHELL CALLS IT — AND `internal` IS PER MODULE.
+         *
+         * This shipped as `internal` and CI refused it: ":app" is a different
+         * Gradle module from ":core", so an internal member is invisible there.
+         * The local check list CANNOT catch that — `DeviceAudioTest` is in
+         * :core's own test source set, where internal IS visible, so the test
+         * passed while the app would not build. Every other helper in this
+         * companion is genuinely core-only and stays internal; this one is the
+         * seam, and the seam is public by definition.
+         */
+        fun listenerNote(
             component: String,
             listed: Boolean,
             total: Int,
