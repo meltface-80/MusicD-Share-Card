@@ -1420,7 +1420,11 @@ was simply not there, however carefully the DIDL was parsed.
   back to resolve them. So the row whose whole purpose is to send you somewhere
   new was the one place still landing on a shop's search page. `upgradeSuggestions`
   runs after the row is drawn, never before it, and only for the service the
-  chips actually point at.
+  chips actually point at. CONFIRMED FROM THE FIELD SINCE:
+  "suggestions are reliably opening to the relevant streaming service". Worth
+  recording, because that row landed on a shop's search page for four releases
+  and "reliably" is the word that says the upgrade runs every time rather than
+  when a lookup happens to resolve.
 - **The Qobuz link then goes through `qobuzapp://` first, on Android.** The
   https link works but not from cold — the app opens on Home having dropped the
   album, and only a second tap lands on the record. open.qobuz.com's own page
@@ -2155,6 +2159,29 @@ was simply not there, however carefully the DIDL was parsed.
   SERVICE's own protocol; UPnP is only reporting the metadata, which is how
   `UpnpSource` reads it. So even on a box with a real queue service, sending to
   it does not join a Connect session — it takes the device off one.
+- **AND THE OWNER HAS NOW CLOSED IT: "I don't think adding to the queue will be
+  possible."** Said after the probes had answered everything they could, so
+  this is a decision on evidence rather than a guess, and it is recorded here so
+  nobody re-derives the same three rounds.
+  WHAT THE PROBES DID SETTLE, and it is not nothing: the WiiM advertises
+  `AppendQueue`, `AppendTracksInQueue`, `BrowseQueue` and `SearchQueueOnline`,
+  read off its own SCPD, and the search's output is exactly the append's input.
+  So SENDING a queue command was never the wall. WHAT WAS NEVER SETTLED is what
+  goes IN one - what a `QueueContext` actually contains, what `SearchKey`
+  accepts, and whether any of it reaches a service the box is logged into - and
+  none of that can be answered from here. The remaining step was one explicitly
+  invoked `SearchQueueOnline` against a real box, and it was offered and not
+  taken.
+  **AND THE REASON THAT IS AN EASY DECISION IS THAT THE FALLBACK ALREADY
+  WORKS.** `RoonBrowse`'s rule has always been "the link stays on the chip and
+  is the fallback" - queue if possible, open the record in a streaming service
+  if not - and the field confirms the fallback: "suggestions are reliably
+  opening to the relevant streaming service". So the queue was an upgrade on a
+  path that works every time, never a fix for a broken one. THE PROBE STAYS:
+  `queueability` and the SCPD signatures cost one or two GETs inside a scan that
+  already runs, and they are the evidence any future reopening would otherwise
+  have to gather again. Roon and Lyrion queueing are untouched - they are built,
+  and they are the two protocols where a library answers rather than a service.
 
 ## What is playing on the phone itself
 
@@ -2234,6 +2261,13 @@ was simply not there, however carefully the DIDL was parsed.
   row beside it was the answer. And three observed uris across three dumps all
   carry the same 40-character hex id whatever the path around it, so the ID is
   read and the PATH is ignored rather than parsed.
+  **AND IT IS VERIFIED ON A DEVICE NOW, WHICH CLOSES THE CLAIM IT SHIPPED
+  UNDER.** 1.0.19 handed this over as "NOT tested: a phone" - nothing here
+  renders a card, so the reconstruction was evidenced and unproven at the same
+  time. The next run answered it: "Spotify album art working / Qobuz still
+  working". Both halves, including the one that could have regressed silently -
+  a change that fixed Spotify by breaking the https path Qobuz uses would have
+  looked like a success from one card.
 - **THE ID IS THEIRS; THE HOST IS OURS.** The `cdn` parameter is NOT honoured
   even where it is present. It is a string another app put in its own metadata,
   and composing a url from it would let any app on the phone choose a host this
