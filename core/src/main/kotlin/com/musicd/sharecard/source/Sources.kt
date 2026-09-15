@@ -2,6 +2,9 @@ package com.musicd.sharecard.source
 
 import com.musicd.sharecard.Log
 import com.musicd.sharecard.library.Normalize
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.ExecutorService
 
 /**
  * Every source, and the one answer the card needs from them.
@@ -57,7 +60,62 @@ class Sources(private val sources: List<Source>) {
             .onFailure { Log.w(TAG, "${source.name} would not start: ${it.message}", it) }
     }
 
-    fun stop() = sources.forEach { runCatching { it.stop() } }
+    fun stop() {
+        sources.forEach { runCatching { it.stop() } }
+        runCatching { asking.shutdownNow() }
+    }
+
+    /*
+     * ONE THREAD PER SOURCE, AND NEVER MORE THAN ONE INSIDE A SOURCE.
+     *
+     * Every ask below is a round trip to a device on somebody's wifi, and they
+     * were all made one after another. MEASURED against fakes shaped like a
+     * real household - Roon with one zone at 120ms, Sonos with three at 200ms,
+     * UPnP with two at 250ms - `rooms()` took 1259ms and `nowPlaying(null)`
+     * took 1225ms, almost all of it a thread doing nothing. Asked at once it is
+     * the SLOWEST SOURCE rather than the sum.
+     *
+     * THE GRAIN IS THE SOURCE AND THAT IS THE WHOLE SAFETY ARGUMENT. Going one
+     * finer - a thread per ZONE - would be faster still and is not safe to do
+     * blind: `Household` keeps its topology and its `sweptAt` in plain
+     * `@Volatile` fields with no lock, so two threads asking two rooms of one
+     * household can both read a stale sweep time and both run a discovery
+     * sweep. That is a multicast sweep of somebody's house twice for one
+     * question, which is the exact cost the empty-sweep fix was written to
+     * remove. Per source, each source is touched by one thread at a time -
+     * exactly the invariant it has always had - and the sources are
+     * independent of each other by construction.
+     *
+     * DAEMON THREADS, because this pool must never be the reason a process
+     * stays alive; and bounded by the number of sources, because that is the
+     * most that can ever be useful.
+     */
+    private val asking: ExecutorService =
+        Executors.newFixedThreadPool(sources.size.coerceAtLeast(1)) { runnable ->
+            Thread(runnable, "sharecard-ask").apply { isDaemon = true }
+        }
+
+    /**
+     * Run one job per source and return the answers IN THE ORDER GIVEN.
+     *
+     * The order is the point, not a detail: the ladder's last tie-break is the
+     * position of a source in [sources], and `rooms()` picks a survivor out of
+     * rooms sharing a name. Answers that came back in whatever order the
+     * network happened to allow would make the chosen card depend on wifi
+     * timing. `invokeAll` preserves the argument order, so this is exactly the
+     * sequence the serial loops produced.
+     *
+     * A job that throws is already wrapped by its caller; this catches
+     * Throwable as well, because a class that will not initialise is an Error
+     * and one source must never take the request down.
+     */
+    private fun <T> eachSource(jobs: List<() -> T>): List<T> {
+        if (jobs.size <= 1) return jobs.map { runCatching { it() }.getOrNull() }.filterNotNull()
+        val futures = runCatching {
+            asking.invokeAll(jobs.map { job -> Callable { job() } })
+        }.getOrNull() ?: return jobs.mapNotNull { runCatching { it() }.getOrNull() }
+        return futures.mapNotNull { future -> runCatching { future.get() }.getOrNull() }
+    }
 
     fun refresh() = sources.forEach { source ->
         runCatching { source.refresh() }
@@ -119,10 +177,17 @@ class Sources(private val sources: List<Source>) {
         // than the first one.
         val candidates = ArrayList<Playing>()
         chosen?.let { candidates += it }
-        for (source in sources) {
-            val playing = runCatching { source.nowPlaying(null) }
-                .onFailure { Log.w(TAG, "${source.name} would not answer: ${it.message}") }
-                .getOrNull() ?: continue
+        // Asked at once, collected in `sources` order - see eachSource.
+        val volunteered = eachSource(
+            sources.map { source ->
+                {
+                    runCatching { source.nowPlaying(null) }
+                        .onFailure { Log.w(TAG, "${source.name} would not answer: ${it.message}") }
+                        .getOrNull()
+                }
+            }
+        )
+        for (playing in volunteered.filterNotNull()) {
             if (candidates.none { it.zoneId == playing.zoneId && it.source == playing.source }) {
                 candidates += playing
             }
@@ -141,10 +206,10 @@ class Sources(private val sources: List<Source>) {
          * on, and `rooms()` already pays exactly this for the chooser grid.
          */
         candidates.retainAll { zoneFilter(it.zoneId) }
-        for (zone in zones()) {
-            if (candidates.any { it.zoneId == zone.id }) continue
-            ask(zone.id)?.let { candidates += it }
-        }
+        // Grouped by source so each source is still asked by ONE thread, its
+        // own rooms in order, and the groups run alongside each other.
+        val remaining = zones().filter { zone -> candidates.none { it.zoneId == zone.id } }
+        for (answer in askEachZone(remaining)) candidates += answer
         if (candidates.isEmpty()) return null
 
         // Playing beats paused; a fuller answer beats a thinner one; and on a
@@ -199,7 +264,11 @@ class Sources(private val sources: List<Source>) {
      * two real rooms would hide one of them.
      */
     fun rooms(): List<Room> {
-        val all = zones().map { Room(it, inZone(it.id)) }
+        val zones = zones()
+        // `inZone` here, which is what the chooser has always used: a room
+        // whose answer describes nothing shows as a silent tile.
+        val playing = askEachZoneMap(zones, ::inZone)
+        val all = zones.map { Room(it, playing[it.id]) }
         return all
             .groupBy { Normalize.text(it.zone.name) }
             .map { (_, sharing) -> sharing.minWith(bestFirst) }
@@ -240,6 +309,45 @@ class Sources(private val sources: List<Source>) {
         // filter is keyed on the id precisely so this costs no lookup.
         if (!zoneFilter(zoneId)) return null
         return ask(zoneId)?.takeIf { quality(it) >= 0 }
+    }
+
+    /**
+     * Ask a list of rooms, grouped so one source is never asked twice at once.
+     *
+     * The answers come back in the ORDER THE ZONES WERE GIVEN, not the order
+     * the network produced them, because everything downstream - the ladder's
+     * tie-break, the chooser's survivor - reads that order. A room that answers
+     * nothing is simply absent, exactly as the serial loop left it.
+     */
+    private fun askEachZone(zones: List<ZoneRef>): List<Playing> {
+        // `ask`, NOT `inZone`, and the difference is not cosmetic. `inZone`
+        // drops an answer that describes nothing; the ladder keeps it, so that
+        // `candidates` is non-empty and the "N answer(s), none of them
+        // describing a record" line gets logged. Collapsing the two callers
+        // onto one of them silently deletes that diagnostic - caught by
+        // re-reading this diff, not by a test, because both paths end in the
+        // same null.
+        val answers = askEachZoneMap(zones, ::ask)
+        return zones.mapNotNull { answers[it.id] }
+    }
+
+    /** The same work, keyed by zone id for a caller that needs the gaps too. */
+    private fun askEachZoneMap(
+        zones: List<ZoneRef>,
+        via: (String) -> Playing?
+    ): Map<String, Playing> {
+        if (zones.isEmpty()) return emptyMap()
+        // groupBy preserves both the order the groups first appear in and the
+        // order within each group, so this is the serial sequence, split.
+        val groups = zones.groupBy { ZoneRef.sourceOf(it.id).orEmpty() }.values.toList()
+        val perGroup = eachSource(
+            groups.map { group ->
+                { group.mapNotNull { zone -> via(zone.id)?.let { zone.id to it } } }
+            }
+        )
+        val out = LinkedHashMap<String, Playing>()
+        for (group in perGroup) for ((id, answer) in group) out[id] = answer
+        return out
     }
 
     /** Ask whichever source owns this prefixed id. */

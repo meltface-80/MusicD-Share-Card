@@ -616,6 +616,47 @@ was simply not there, however carefully the DIDL was parsed.
   forces, which is the bargain every source here already makes: a speaker
   switched on a moment ago is one tap away rather than automatic. `EmptySweepTest`
   counts the sweeps.
+- **AND THE ROOMS THAT ARE LEFT ARE ASKED AT ONCE, ONE THREAD PER SOURCE.**
+  The empty-sweep fix removed the repeated DISCOVERY; what was left was the
+  asking, and every one of those is a round trip to a device on somebody's wifi
+  made one after another. MEASURED against fakes shaped like a real household -
+  Roon with one zone at 120ms, Sonos with three at 200ms, UPnP with two at 250ms
+  - `rooms()` took **1259ms** and `nowPlaying(null)` **1225ms**, nearly all of
+  it a thread doing nothing. Asked at once it is the slowest SOURCE rather than
+  the sum.
+- **THE GRAIN IS THE SOURCE, AND THAT IS THE WHOLE SAFETY ARGUMENT.** A thread
+  per ZONE would be faster still and is not safe to do blind: `Household` keeps
+  its topology and its `sweptAt` in plain `@Volatile` fields with no lock, so
+  two threads asking two rooms of one household can both read a stale sweep time
+  and both run a discovery sweep - a multicast sweep of the house twice for one
+  question, which is the exact cost the rule above exists to remove. Per source,
+  each source is touched by one thread at a time, which is precisely the
+  invariant it has always had. `SourcesParallelTest` asserts the ceiling and was
+  shown failing against a thread-per-zone version.
+- **AND THE TWO CALLERS ASK THROUGH DIFFERENT FUNCTIONS, WHICH ALMOST GOT
+  COLLAPSED.** The chooser's rooms go through `inZone`, which drops an answer
+  describing nothing; the ladder's go through `ask`, which keeps it so that
+  `candidates` is non-empty and the "N answer(s), none of them describing a
+  record" line is logged. Both end in the same null, so merging them onto one
+  helper deletes that diagnostic and no test fails. Caught by re-reading the
+  diff, not by the suite.
+- **THE TEST FOR IT IS A LATCH, NOT A STOPWATCH — AND THE FIRST CUT WAS
+  DECORATION.** A wall-clock assertion on a shared runner is a flake, and "it
+  was quick" is not the property that matters: every source must ARRIVE before
+  any may leave, which is impossible serially and immediate in parallel. The
+  first version waited on that latch and then ANSWERED ANYWAY, so a serial
+  implementation merely took ten seconds and passed every assertion. Returning
+  null on the time-out is what made it load-bearing. Found by running it against
+  the serial code rather than by reading it, which is this repository's rule
+  applied to its own new test.
+- **AND TWO ORDERING TESTS ARE GUARDS RATHER THAN PROOFS, SAID PLAINLY.**
+  Reversing the order answers are collected in fails NEITHER of them, because
+  `rooms()` re-indexes by zone id and the ladder's tie-break asks
+  `sources.indexOfFirst` for a POSITION rather than reading the candidate list's
+  order — so arrival order cannot reach the decision by any path that exists
+  today. They are kept for the refactor that makes it reachable, and the comment
+  says which of the two things it is, because a test that cannot fail is
+  normally decoration and this is the exception worth naming.
 - **Never poll.** The app asks a speaker what is playing when somebody opens the
   page or presses Refresh. This runs on a device that is never switched off; a
   timer anywhere means interrogating the household all day to answer a question
