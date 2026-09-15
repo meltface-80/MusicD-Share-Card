@@ -396,7 +396,7 @@ class SettingsApiTest {
         assertTrue(answer.isNull("score"))
     }
 
-    // ------------------------------------------------- queueing into Roon
+    // ------------------------------------------------------- queueing
 
     private fun roonApi(requirePin: Boolean = false): Pair<CardApi, MutableList<String>> {
         val calls = mutableListOf<String>()
@@ -424,34 +424,44 @@ class SettingsApiTest {
         // fire by itself.
         val (api, _) = roonApi()
         val answer = api.handle(
-            Request("GET", "/api/roon/queue", emptyMap(), emptyMap(), ByteArray(0), false, "127.0.0.1")
+            Request("GET", "/api/queue", emptyMap(), emptyMap(), ByteArray(0), false, "127.0.0.1")
         )
         assertEquals(405, answer.status)
     }
 
     @Test
-    fun `queueing refuses a room that is not Roon's`() {
+    fun `queueing refuses a room whose source has no queue`() {
         /*
          * "Add to the end of the queue" names no queue on a Sonos or a UPnP
-         * renderer, and picking a Roon room on somebody's behalf would be
-         * choosing which room to play into. The card has to already be about a
-         * Roon zone.
+         * renderer, and picking a room on somebody's behalf would be choosing
+         * which room to play into. The card has to already be about a room
+         * that can take one.
+         *
+         * ASSERTED AS THE INVARIANT RATHER THAN THE WORDING. This used to
+         * require the refusal to contain the word "Roon", which was true while
+         * Roon was the only source with a queue — and it then failed on the
+         * change that added Lyrion and made the message name neither. Assert
+         * what must be TRUE (a source with no queue is refused, and nothing is
+         * guessed at), not the sentence it is refused in.
          */
         val (api, _) = roonApi()
         val answer = post(
-            api, "/api/roon/queue",
+            api, "/api/queue",
             """{"album":"Spiderland","artist":"Slint","zone":"$kitchenId"}""",
             "127.0.0.1"
         )
         assertEquals(400, answer.status)
-        assertTrue(String(answer.body).contains("Roon"))
+        assertFalse(
+            "a refused room must not be reported as queued",
+            String(answer.body).contains("\"queued\":true")
+        )
     }
 
     @Test
     fun `queueing needs an album`() {
         val (api, _) = roonApi()
         val answer = post(
-            api, "/api/roon/queue",
+            api, "/api/queue",
             """{"album":"","artist":"Slint","zone":"roon:1"}""",
             "127.0.0.1"
         )
@@ -464,18 +474,79 @@ class SettingsApiTest {
         // same gate as adding a webhook.
         val (api, _) = roonApi(requirePin = true)
         val answer = post(
-            api, "/api/roon/queue",
+            api, "/api/queue",
             """{"album":"Spiderland","artist":"Slint","zone":"roon:1"}""",
             "10.0.0.99"
         )
         assertEquals(401, answer.status)
     }
 
+    /**
+     * The same api, with Lyrion's queue wired instead of Roon's.
+     *
+     * Pointed at NO server, because what is under test here is the ROUTE —
+     * that a `lyrion:` zone is dispatched to Lyrion rather than refused, and
+     * that a player id made of colons survives the prefix coming off. The
+     * wire itself is [LmsQueueTest]'s job, against a real HTTP server.
+     */
+    private fun lyrionApi(): CardApi {
+        source = FakeSource("Sonos", mapOf("Kitchen" to playing("Kitchen", "Spiderland")))
+        store = SettingsStore.inMemory()
+        val http = metadataHttpClient()
+        val queue = com.musicd.sharecard.lms.LmsQueue(
+            com.musicd.sharecard.lms.LmsClient(http)
+        ) { null }
+        return CardApi(
+            Sources(listOf(source)),
+            Metadata(http, "test"),
+            Pitchfork(http, "test"),
+            ArtProxy(http),
+            Assets { null },
+            "1.0.0",
+            settingsStore = store,
+            lmsQueue = queue
+        )
+    }
+
+    @Test
+    fun `a Lyrion room is dispatched to Lyrion, not refused`() {
+        /*
+         * 400 is "that room cannot take a queue" and 200 is "Lyrion was asked
+         * and said no". The difference between them IS the dispatch, and it is
+         * the whole of what this route added — a `lyrion:` zone that fell into
+         * the else branch would look identical to a Sonos one from the page.
+         */
+        val answer = post(
+            lyrionApi(), "/api/queue",
+            """{"album":"Spiderland","artist":"Slint","zone":"lyrion:00:04:20:aa:bb:cc"}""",
+            "127.0.0.1"
+        )
+        assertEquals(200, answer.status)
+        val body = JSONObject(String(answer.body))
+        assertFalse(body.getBoolean("queued"))
+        assertTrue(body.getString("detail"), body.getString("detail").isNotEmpty())
+    }
+
+    @Test
+    fun `a player id made of colons survives the prefix coming off`() {
+        /*
+         * A LYRION PLAYER IS NAMED BY ITS MAC ADDRESS, which is the one raw id
+         * in this app made of colons — so splitting at the LAST colon rather
+         * than the first would hand the server "cc" and queue into nothing,
+         * silently. `ZoneRef.rawOf` is what the route passes through.
+         */
+        assertEquals(
+            "00:04:20:aa:bb:cc",
+            ZoneRef.rawOf("lyrion:00:04:20:aa:bb:cc")
+        )
+        assertEquals("lyrion", ZoneRef.sourceOf("lyrion:00:04:20:aa:bb:cc"))
+    }
+
     @Test
     fun `a Roon zone with no connection answers rather than throwing`() {
         val (api, _) = roonApi()
         val answer = post(
-            api, "/api/roon/queue",
+            api, "/api/queue",
             """{"album":"Spiderland","artist":"Slint","zone":"roon:1"}""",
             "127.0.0.1"
         )

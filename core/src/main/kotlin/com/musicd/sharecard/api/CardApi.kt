@@ -8,6 +8,7 @@ import com.musicd.sharecard.api.Json.putOrNull
 import com.musicd.sharecard.http.HttpServer
 import com.musicd.sharecard.discover.Editorial
 import com.musicd.sharecard.discover.NewMusic
+import com.musicd.sharecard.lms.LmsQueue
 import com.musicd.sharecard.discover.PlayHistory
 import com.musicd.sharecard.http.Request
 import com.musicd.sharecard.http.Response
@@ -69,6 +70,8 @@ class CardApi(
     private val requirePin: Boolean = true,
     /** Null where Roon is not in play, which is every test but one. */
     private val roonBrowse: RoonBrowse? = null,
+    /** Lyrion's half of the same feature. Null where no server is configured. */
+    private val lmsQueue: LmsQueue? = null,
     /**
      * What this app has drawn a card for, which is what "based on your
      * listening" is based on. Remembers nothing by default, so a test and a
@@ -166,7 +169,7 @@ class CardApi(
             else -> Json.error(405, "That method is not used here.")
         }
         "/api/setup" -> setup(request)
-        "/api/roon/queue" -> roonQueue(request)
+        "/api/queue" -> queueRoute(request)
         "/api/settings" -> when (request.method) {
             "POST" -> settingsWrite(request)
             in READ_METHODS -> settingsRead(request.param("zones") == "1")
@@ -205,7 +208,17 @@ class CardApi(
                 sources, hostNotes, pitchfork::attempts,
                 { similar?.attempts().orEmpty() },
                 art::attempts,
-                { roonBrowse?.attempts().orEmpty() },
+                /*
+                 * TWO SOURCES, ONE SECTION, AND EACH LINE SAYS WHICH.
+                 * The attempts merged into one list read identically —
+                 * "no match in 3 row(s)" is the same sentence from Roon and
+                 * from Lyrion, and the fixes are in different files. Same
+                 * rule as `Pitchfork.Outcome` naming which failure it was.
+                 */
+                {
+                    roonBrowse?.attempts().orEmpty().map { "Roon: $it" } +
+                        lmsQueue?.attempts().orEmpty().map { "Lyrion: $it" }
+                },
                 { newMusic?.attempts().orEmpty() + editorial?.attempts().orEmpty() }
             ).run()
         )
@@ -254,35 +267,59 @@ class CardApi(
     private val enabledServices: Settings get() = settingsStore.read()
 
     /**
-     * Put a record at the end of a Roon zone's queue.
+     * Can this room be asked to put a record on the end of its queue?
      *
-     * THE ONLY ROUTE IN THIS APP THAT CHANGES ANYTHING OUTSIDE IT, and it is
-     * shaped to stay that way. POST only, because a GET that starts music is
-     * one a link prefetch can fire by itself. Gated like a webhook, because it
-     * reaches into somebody's listening room. And it names a ROON zone or does
-     * nothing: the card has to already be about a Roon zone for this to be the
-     * thing a tap means.
+     * ONE LIST, read by the route that does it and by the card that offers
+     * it. A source appearing in one and not the other is a chip that queues
+     * nothing, or a room that could and is never asked.
      */
-    private fun roonQueue(request: Request): Response {
+    internal fun canQueue(zoneId: String): Boolean = when (ZoneRef.sourceOf(zoneId)) {
+        ROON_SOURCE -> roonBrowse != null
+        LYRION_SOURCE -> lmsQueue != null
+        else -> false
+    }
+
+    /**
+     * PUT A SUGGESTED RECORD ON THE END OF A ROOM'S QUEUE.
+     *
+     * ONE ROUTE, DISPATCHING ON THE ZONE'S SOURCE, AND THAT IS DELIBERATE.
+     * It was `/api/roon/queue`, and adding Lyrion beside it would have meant
+     * either a second gated write route — a second place to get the gate
+     * wrong — or the PAGE choosing a URL per source, which is a rule, and
+     * rules live in :core where they have tests. The page posts a zone; this
+     * decides what that zone can be asked.
+     *
+     * Still POST, because a GET that touches playback is one a link prefetch
+     * can fire by itself. Still behind [Access.mayConfigure], because choosing
+     * a room on somebody's behalf is choosing which room to play into. And a
+     * zone whose source cannot queue is REFUSED rather than guessed at.
+     */
+    private fun queueRoute(request: Request): Response {
         if (request.method != "POST") return Json.error(405, "That method is not used here.")
         if (!access.mayConfigure(request)) return needsPin()
 
-        val browse = roonBrowse ?: return Json.error(503, "Roon is not available here.")
         val body = Json.body(request)
         val album = body.str("album").trim()
         val artist = body.str("artist").trim()
         val zone = body.str("zone").trim()
         if (album.isEmpty()) return Json.error(400, "No album named.")
 
-        // A zone from another source cannot take a Roon queue, and guessing one
-        // would be choosing a room on somebody's behalf.
-        if (!zone.startsWith(ROON_PREFIX)) {
-            return Json.error(400, "That room is not a Roon zone.")
+        val raw = ZoneRef.rawOf(zone)
+        val outcome = when (ZoneRef.sourceOf(zone)) {
+            ROON_SOURCE -> {
+                val browse = roonBrowse ?: return Json.error(503, "Roon is not available here.")
+                val result = browse.queueAlbum(album, artist, zone)
+                result.queued to result.detail
+            }
+            LYRION_SOURCE -> {
+                val queue = lmsQueue ?: return Json.error(503, "Lyrion is not available here.")
+                val result = queue.queueAlbum(album, artist, raw)
+                result.queued to result.detail
+            }
+            else -> return Json.error(400, "That room cannot take a queue.")
         }
-
-        val outcome = browse.queueAlbum(album, artist, zone)
         return Json.obj(
-            JSONObject().put("queued", outcome.queued).put("detail", outcome.detail)
+            JSONObject().put("queued", outcome.first).put("detail", outcome.second)
         )
     }
 
@@ -568,6 +605,18 @@ class CardApi(
                 .put("name", playing.zoneName)
                 .put("room", playing.zoneName)
                 .put("source", playing.source)
+                /*
+                 * WHETHER THIS ROOM CAN BE ASKED TO QUEUE, DECIDED HERE.
+                 *
+                 * The page used to test `uid.indexOf("roon:") === 0` — a rule,
+                 * in app.js, where nothing can test it and where adding Lyrion
+                 * would have meant editing a second copy. Which sources have a
+                 * queue is a fact about the sources, so `canQueue` is computed
+                 * from the SAME list `/api/queue` dispatches on and the page
+                 * simply reads it. Same argument as the chooser's `choose`
+                 * flag and Discover's `why`.
+                 */
+                .put("canQueue", canQueue(playing.zoneId))
         )
         .putOrNull("album", playing.album)
         .putOrNull("artist", playing.artist)
@@ -1143,7 +1192,6 @@ class CardApi(
         const val TAG = "CardApi"
 
         /** Zone ids are prefixed with their source; Roon's is this one. */
-        const val ROON_PREFIX = "roon:"
 
         /**
          * The page is versioned by the APK, not by a URL, so a browser holding
@@ -1164,9 +1212,13 @@ class CardApi(
          */
         val WRITE_ROUTES =
             setOf(
-                "/api/webhooks", "/api/settings", "/api/roon/queue",
+                "/api/webhooks", "/api/settings", "/api/queue",
                 "/api/update/check", "/api/update/apply"
             )
+
+        /** The two sources that can be asked to queue, by their zone prefix. */
+        const val ROON_SOURCE = "roon"
+        const val LYRION_SOURCE = "lyrion"
 
         /** The methods a route that changes nothing may be asked with. */
         val READ_METHODS = setOf("GET", "HEAD")

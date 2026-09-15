@@ -155,6 +155,18 @@ class LmsSource(
     }
 
     /**
+     * The server that answered, for anything that must ASK it something.
+     *
+     * A scan first, because this is reached from a route rather than from the
+     * read path and the base may not have been found yet. Null is the ordinary
+     * answer in a house with no Lyrion in it.
+     */
+    fun serverBase(): String? {
+        scan()
+        return base
+    }
+
+    /**
      * The server's own host, so the art proxy will fetch a cover from it.
      *
      * Only the server: the players serve no artwork, and naming them would open
