@@ -65,7 +65,15 @@ class UpnpSource(
          * the services [queueability] names, because a description lists half
          * a dozen and the other four hold no queue.
          */
-        val queueActions: Map<String, List<String>> = emptyMap()
+        val queueActions: Map<String, List<String>> = emptyMap(),
+        /**
+         * And the ARGUMENTS of the few verbs that would actually add a record.
+         *
+         * A name says a queue can be appended to; it does not say what to put
+         * in one. That is the whole remaining question for UPnP, and the same
+         * document already fetched for the names answers it.
+         */
+        val queueSignatures: Map<String, List<String>> = emptyMap()
     )
 
     /**
@@ -168,13 +176,18 @@ class UpnpSource(
         val wanted = renderer.services.filter { isQueueService(it.type) && it.scpdUrl != null }
         if (wanted.isEmpty()) return renderer
         val actions = LinkedHashMap<String, List<String>>()
+        val signatures = LinkedHashMap<String, List<String>>()
         for (service in wanted) {
             val xml = fetch(service.scpdUrl!!)
             val names = if (xml == null) emptyList() else runCatching { parseActions(xml) }
                 .getOrDefault(emptyList())
             actions[shortService(service.type)] = names
+            if (xml != null) {
+                signatures[shortService(service.type)] =
+                    runCatching { parseSignatures(xml) }.getOrDefault(emptyList())
+            }
         }
-        return renderer.copy(queueActions = actions)
+        return renderer.copy(queueActions = actions, queueSignatures = signatures)
     }
 
     /**
@@ -339,6 +352,8 @@ class UpnpSource(
             ) + renderer.queueActions.map { (name, actions) ->
                 "    $name actions: " +
                     actions.joinToString(", ").ifEmpty { "none published, or it would not answer" }
+            } + renderer.queueSignatures.flatMap { (name, signatures) ->
+                signatures.map { "    $name $it" }
             }
         }
     }
@@ -388,6 +403,60 @@ class UpnpSource(
 
         /** Enough to see the shape of a service without filling the page. */
         const val MAX_ACTIONS = 40
+
+        /**
+         * THE VERBS WORTH KNOWING THE ARGUMENTS OF.
+         *
+         * A service can publish thirty-four actions — this one does — and
+         * printing every argument of every one would bury the answer rather
+         * than give it. These are the ones that ADD a record or FIND one to
+         * add: everything else on that list logs a user in, sets a loop mode
+         * or rates a track.
+         *
+         * A RULE RATHER THAN A LIST, because the next box will name them
+         * differently and a list would silently answer "nothing" for it.
+         */
+        internal fun worthSigning(action: String): Boolean =
+            listOf("append", "insert", "add", "search", "browse", "online")
+                .any { action.contains(it, ignoreCase = true) }
+
+        /**
+         * `AppendQueue(in QueueContext)` — one line per verb that adds.
+         *
+         * THE NAME SAID A QUEUE CAN BE APPENDED TO; THIS SAYS WHAT TO PUT IN
+         * ONE, which is the whole remaining question. It comes out of the SCPD
+         * already fetched for the names, so it costs no extra request — and it
+         * is the DEVICE's own answer rather than a vendor's PDF or somebody's
+         * reverse engineering, which for a box on the same network is the only
+         * kind worth having.
+         */
+        internal fun parseSignatures(xml: String): List<String> {
+            val root = Xml.parse(xml) ?: return emptyList()
+            val out = ArrayList<String>()
+            for (node in Xml.descendants(root)) {
+                if (Xml.localName(node) != "action") continue
+                val name = Xml.children(node)
+                    .firstOrNull { Xml.localName(it) == "name" }?.let(Xml::text)
+                if (name.isNullOrEmpty() || !worthSigning(name)) continue
+                if (out.size >= MAX_SIGNATURES) break
+                val args = Xml.descendants(node)
+                    .filter { Xml.localName(it) == "argument" }
+                    .mapNotNull { argument ->
+                        val argName = Xml.children(argument)
+                            .firstOrNull { Xml.localName(it) == "name" }?.let(Xml::text)
+                        val direction = Xml.children(argument)
+                            .firstOrNull { Xml.localName(it) == "direction" }?.let(Xml::text)
+                        if (argName.isNullOrEmpty()) null
+                        else (direction?.takeIf { it.isNotEmpty() }?.plus(" ") ?: "") + argName
+                    }
+                    .toList()
+                out += "$name(" + args.joinToString(", ") + ")"
+            }
+            return out
+        }
+
+        /** Six verbs is a readable answer; thirty-four is a wall. */
+        const val MAX_SIGNATURES = 8
 
         /**
          * A service URN, short enough to read off a phone in another room.
