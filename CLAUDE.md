@@ -1097,10 +1097,38 @@ was simply not there, however carefully the DIDL was parsed.
   body, `text()` — which is what MusicBrainz and Deezer read through — would
   have handed a 404 page to a JSON parser as though it were a release list. A
   test drives exactly that.
-- **THE ALGORITHM STRING IS STILL NOT SETTLED, AND IT CANNOT BE SETTLED HERE.**
-  Both hosts were re-checked rather than assumed and the proxy still refuses
-  them outright. The next `/api/debug` off a real network carries ListenBrainz's
-  own words for why, which is a fix rather than another guess.
+- **THE ALGORITHM STRING IS STILL NOT SETTLED, AND THE APP THREW AWAY THE
+  ANSWER TWICE.** Both hosts were re-checked rather than assumed and the proxy
+  still refuses them outright, so this cannot be settled from here. What CAN be
+  done from here is carrying ListenBrainz's own words back, and that took two
+  goes: the first release did not read a refusal's body at all, and the second
+  read it and then CUT IT OFF ONE WORD SHORT. Off a real network the note read,
+  in full:
+
+      listenbrainz(88679ca2-...) -> HTTP 400 (<!doctype html> <html lang=en>
+      <title>400 Bad Request</title> <h1>Bad Request</h1> <p>1 validation error
+      for SimilarArtistsViewerInput<br>algorithm<br> value is not a valid
+      enumeration member; permitt...), falling through to Deezer
+
+  `permitt` is where `MAX_REASON` fell, which is the exact word that introduces
+  the list of values the request needs. TWO CAUSES AND ONLY ONE OF THEM WAS THE
+  NUMBER: **88 of those 200 characters were markup** - doctype, html, title, h1
+  and p - so nearly half a budget meant for a sentence was spent on tags.
+  `Similar.unmarkup` strips them, and the cap is then large enough for a LIST
+  rather than for its heading.
+  **AND THE TEST FOR IT MUST NOT OVERCLAIM.** The observed body ends at
+  `permitt`; what a pydantic enumeration error lists after that has not been
+  seen, so the fixture says which half is real and asserts only the two things
+  that are certain - the markup does not eat the budget, and a list survives the
+  cap. Raising the cap alone proved nothing until the fixture carried two values
+  rather than one: with the markup gone, 200 was enough for the fixture and the
+  new number was decoration, by this repository's own rule. Both halves are now
+  shown failing separately.
+  **THE STRIP ONLY RUNS ON SOMETHING THAT ANNOUNCES ITSELF AS MARKUP**, because
+  an error message may legitimately contain an angle bracket ("expected
+  <artist>"), and deleting the words this exists to carry is the expensive way
+  to be wrong. An unclosed `<` is kept literally rather than swallowing the rest
+  - a scan with no bottom is how a body silently becomes empty.
 - **A FILTER THE SERVER APPLIES IS NOT EVIDENCE THE SERVER APPLIED IT.** The
   MusicBrainz browse asks for `type=album` and now also checks `primary-type`
   on every group that comes back. It was only asking, which is the same trust

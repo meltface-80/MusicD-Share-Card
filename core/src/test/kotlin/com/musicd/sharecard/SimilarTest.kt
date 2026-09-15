@@ -8,6 +8,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -281,6 +282,64 @@ class SimilarTest {
         val long = Similar.reason("x".repeat(5000))
         assertTrue(long, long.length <= Similar.MAX_REASON + 4)
         assertTrue(long, long.endsWith("\u2026)"))
+    }
+
+    /**
+     * THE 400 FROM A REAL NETWORK, AND THE CAP THAT CUT OFF ITS ANSWER.
+     *
+     * BE PRECISE ABOUT WHAT IS OBSERVED HERE, because this repository's own
+     * rule is that a shape a machine sent is worth more than one somebody wrote
+     * down. What a real ListenBrainz really sent, photographed off `/api/debug`,
+     * is everything up to and including the word `permitt` - the note ended
+     * there, cut at the exact word that introduces the list of values this app
+     * needs in order to fix the request. WHAT COMES AFTER IT IN THIS FIXTURE IS
+     * RECONSTRUCTED: a pydantic enumeration error lists its permitted values,
+     * and nobody here has yet seen which ones. So this test pins the two things
+     * that are certain - the markup must not eat the budget, and the cap must
+     * leave room for a LIST rather than for its heading - and does not pretend
+     * to know the answer itself.
+     */
+    @Test
+    fun `the listenbrainz 400 keeps the words that say why`() {
+        // Observed, verbatim, as far as "permitted values:".
+        val observed = "<!doctype html>\n<html lang=en>\n<title>400 Bad Request</title>\n" +
+            "<h1>Bad Request</h1>\n<p>1 validation error for SimilarArtistsViewerInput" +
+            "<br>algorithm<br>  value is not a valid enumeration member; permitted values: "
+        // Reconstructed: a list, because that is what the observed word promises.
+        val body = observed +
+            "'session_based_days_7_session_300_contribution_5_threshold_10_limit_100', " +
+            "'session_based_days_30_session_300_contribution_5_threshold_15_limit_100'\n</p>\n"
+
+        val note = Similar.reason(body)
+
+        // The heading, and then the part that actually names a fix.
+        assertTrue(note, note.contains("permitted values"))
+        assertTrue(note, note.contains("algorithm"))
+        assertTrue(
+            "the cap must leave room for the LIST, not just the word introducing it: $note",
+            note.contains("session_based_days_30")
+        )
+
+        // And the markup is gone rather than eating the budget. 88 of the old
+        // 200 characters were doctype, html, title, h1 and p.
+        assertFalse(note, note.contains("<"))
+        assertFalse(note, note.contains("doctype"))
+    }
+
+    @Test
+    fun `a body that is not a document keeps its angle brackets`() {
+        // An error message may legitimately contain one, and deleting the words
+        // this exists to carry is the expensive way to be wrong.
+        val note = Similar.reason("""{"error":"expected <artist>, got nothing"}""")
+        assertTrue(note, note.contains("<artist>"))
+    }
+
+    @Test
+    fun `an unclosed angle bracket does not swallow the rest`() {
+        // A scan with no bottom is how a body silently becomes empty.
+        val note = Similar.reason("<html>the reason is 3 < 4 and nothing closed it")
+        assertTrue(note, note.contains("the reason is"))
+        assertTrue(note, note.contains("nothing closed it"))
     }
 
     /**
