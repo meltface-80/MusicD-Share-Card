@@ -1286,6 +1286,31 @@ was simply not there, however carefully the DIDL was parsed.
   has no decomposition, so `Normalize` expands æ, œ, ø, ß, þ and friends before
   folding, or "Ænima" becomes "nima". There must never be a second copy of this
   rule — one was briefly added in `meta/` and deleted in the same round.
+- **THE INDEX STEP WAS THE SILENT ONE, AND IT IS THE STEP THAT MATTERS
+  MOST.** Reported from the field as a report that read, in full:
+  `…/kelly-lee-owens-dreamstate/ -> page read, NO SCORE IN IT` and
+  `recent reviews (30): no "Dreamstate"`. The constructed URL was RIGHT — that
+  is the real review page — and the step that runs BEFORE both of those, the
+  index, which is the ONLY place the score lives, said nothing whatsoever.
+  `fromListing` had two bare `return null`s: the index being unusable, and the
+  record not being in it. Those are one silence and two completely different
+  fixes, which is the `Pitchfork.Outcome` rule being broken one function away
+  from where it was written.
+- **THE REASON IS CACHED WITH THE ANSWER, NOT LOGGED WHERE IT WAS FOUND.** A
+  bare `List<Listed>` cannot carry why it is empty, and noting at fetch time is
+  worse than useless here: the index is fetched once an hour and shared by every
+  album, so the note appears for one lookup and is missing from the next fifty
+  — a reader cannot tell that silence from a success. `Index` carries the
+  reviews AND the reason, so every lookup explains itself, cached or not. The
+  four states are distinct on purpose: not fetched at all, no preloaded state
+  (Pitchfork moved its blob — a fix in THIS app), would not parse, and parsed
+  but held nothing.
+- **AND THE INDEX IS FETCHED ONCE PER LOOKUP, NOT PER SPELLING.** The ladder
+  asks it for the full title and again with the edition stripped, so noting
+  inside that step printed an unreachable index twice for every deluxe edition.
+  A report that repeats itself is one people stop reading. The failure is said
+  once; a record not being there is said per spelling, because those are
+  genuinely different searches.
 - **A missing score is silent, so `/api/debug` now lists what was asked.**
   "Pitchfork never reviewed it" and "the URL this app built was not the one
   Pitchfork used" look identical from the card. `Pitchfork.attempts()` keeps the

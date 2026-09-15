@@ -2,6 +2,7 @@ package com.musicd.sharecard
 
 import com.musicd.sharecard.meta.Pitchfork
 import com.musicd.sharecard.meta.metadataHttpClient
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -556,6 +557,140 @@ class PitchforkTest {
         try {
             val pf = Pitchfork(metadataHttpClient(), "test", s.url("/").toString().trimEnd('/'))
             assertNull(pf.reviewFor("Mezzanine", "Massive Attack"))
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    // ------------------------------- why the index did not answer
+
+    /**
+     * THE HOLE REPORTED FROM THE FIELD, AND IT IS THE WHOLE POINT OF THIS SET.
+     *
+     * A dump came back reading, in full:
+     *
+     *     https://pitchfork.com/reviews/albums/kelly-lee-owens-dreamstate/
+     *       -> page read, NO SCORE IN IT
+     *     recent reviews (30): no "Dreamstate"
+     *
+     * The constructed URL was RIGHT — that is the real review page — and the
+     * step that runs BEFORE both of those, the index, which is the only place
+     * the score actually lives, said nothing whatsoever. Its two ways of
+     * failing were both bare `return null`. "Pitchfork was not reachable" and
+     * "your record is not in this week's thirty" are one silence and two
+     * completely different fixes.
+     */
+    @Test
+    fun `an unreadable index and a record not in it never read the same`() {
+        val indexPath = "/reviews/albums/"
+
+        // Nothing serves the index at all.
+        val (down, _) = server(emptyMap())
+        val unreachable = try {
+            val pf = Pitchfork(metadataHttpClient(), "test", down.url("/").toString().trimEnd('/'))
+            pf.reviewFor("Dreamstate", "Kelly Lee Owens")
+            pf.attempts().joinToString("\n")
+        } finally {
+            down.shutdown()
+        }
+
+        // The index is perfectly healthy and simply holds other records.
+        val (up, _) = server(
+            mapOf(indexPath to indexPage(indexed("Something Else", "Another Act", "another-act-something-else", "7.1")))
+        )
+        val missing = try {
+            val pf = Pitchfork(metadataHttpClient(), "test", up.url("/").toString().trimEnd('/'))
+            pf.reviewFor("Dreamstate", "Kelly Lee Owens")
+            pf.attempts().joinToString("\n")
+        } finally {
+            up.shutdown()
+        }
+
+        assertTrue("a broken index must say so", unreachable.contains("could not be fetched"))
+        assertFalse(
+            "a broken index must not claim the record is simply absent",
+            unreachable.contains("has no \"Dreamstate\"")
+        )
+        assertTrue("a healthy index that lacks it must say that instead", missing.contains("has no \"Dreamstate\""))
+        assertFalse(
+            "a healthy index must not read as unreachable",
+            missing.contains("could not be fetched")
+        )
+    }
+
+    @Test
+    fun `a record missing from the index is reported with how many were looked at`() {
+        val (s, _) = server(
+            mapOf(
+                "/reviews/albums/" to indexPage(
+                    indexed("One", "A", "a-one", "7.0"),
+                    indexed("Two", "B", "b-two", "8.0")
+                )
+            )
+        )
+        try {
+            val pf = Pitchfork(metadataHttpClient(), "test", s.url("/").toString().trimEnd('/'))
+            pf.reviewFor("Dreamstate", "Kelly Lee Owens")
+            val note = pf.attempts().first { it.contains("the index") }
+            // The SIZE is what separates "an index with two in it" from one
+            // that parsed to nothing, without another round of diagnosis.
+            assertTrue(note, note.contains("(2)"))
+            assertTrue(note, note.contains("Dreamstate"))
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    @Test
+    fun `an index whose blob moved says that, not that it was empty`() {
+        val (s, _) = server(mapOf("/reviews/albums/" to "<html><body>no blob here</body></html>"))
+        try {
+            val pf = Pitchfork(metadataHttpClient(), "test", s.url("/").toString().trimEnd('/'))
+            pf.reviewFor("Dreamstate", "Kelly Lee Owens")
+            val notes = pf.attempts().joinToString("\n")
+            // Pitchfork reshuffling its page is a fix in THIS app, and it must
+            // not look like a quiet week for album reviews.
+            assertTrue(notes, notes.contains("no preloaded state"))
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    @Test
+    fun `an index that parses to nothing is distinguished from one that would not parse`() {
+        val (s, _) = server(
+            mapOf("/reviews/albums/" to "<html><script>window.__PRELOADED_STATE__ = {\"nothing\":true};</script></html>")
+        )
+        try {
+            val pf = Pitchfork(metadataHttpClient(), "test", s.url("/").toString().trimEnd('/'))
+            pf.reviewFor("Dreamstate", "Kelly Lee Owens")
+            val notes = pf.attempts().joinToString("\n")
+            assertTrue(notes, notes.contains("held no reviews"))
+            assertFalse(notes, notes.contains("would not parse"))
+        } finally {
+            s.shutdown()
+        }
+    }
+
+    /**
+     * A BROKEN INDEX IS ONE FACT, HOWEVER MANY SPELLINGS ARE TRIED.
+     *
+     * The ladder asks the index for the full title and again for the title with
+     * its edition stripped. Noting inside that step would have printed an
+     * unreachable index twice for every deluxe edition — a report that repeats
+     * itself is one people stop reading.
+     */
+    @Test
+    fun `an unreachable index is reported once, not once per spelling`() {
+        val (s, _) = server(emptyMap())
+        try {
+            val pf = Pitchfork(metadataHttpClient(), "test", s.url("/").toString().trimEnd('/'))
+            pf.reviewFor("Dreamstate (Deluxe Edition)", "Kelly Lee Owens")
+            assertEquals(
+                "the index failed once; it must be said once",
+                1,
+                pf.attempts().count { it.contains("could not be fetched") }
+            )
         } finally {
             s.shutdown()
         }
