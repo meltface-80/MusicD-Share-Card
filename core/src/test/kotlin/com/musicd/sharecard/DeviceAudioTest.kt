@@ -121,6 +121,85 @@ class DeviceAudioTest {
         assertTrue(text, text.contains("4 more not listed"))
     }
 
+    // --------------------------- why "not granted" was not the whole answer
+
+    /**
+     * THE ONE FROM THE FIELD, AND IT IS THE THIRD TIME THIS SESSION.
+     *
+     * Reported as: notification access granted, and the report still said NOT
+     * GRANTED. Three causes wear that one sentence — the grant did not take, it
+     * went to a different app, or this app's own reading of the setting is
+     * wrong — and the report stopped exactly one step short of saying which.
+     * Same shape as the ListenBrainz 400 with its reason discarded and the
+     * Pitchfork index failing in silence.
+     */
+    @Test
+    fun `a refusal carries what was actually looked for`() {
+        val detail = DeviceAudio.listenerNote(
+            component = "com.musicd.sharecard/com.musicd.sharecard.android.MediaAccess",
+            listed = false,
+            total = 4,
+            refused = true
+        )
+        val text = lines(Report(Access.DENIED, emptyList(), detail))
+        assertTrue(text, text.contains("MediaAccess"))
+        assertTrue(text, text.contains("4"))
+        assertTrue(text, text.contains("NOT GRANTED"))
+    }
+
+    @Test
+    fun `a grant that IS there and still refused reads differently from one that is not`() {
+        val missing = DeviceAudio.listenerNote("c", listed = false, total = 3, refused = true)
+        val present = DeviceAudio.listenerNote("c", listed = true, total = 3, refused = true)
+        assertFalse("these are different bugs", missing == present)
+        // The one that matters: the grant is there and the call was still
+        // turned down, which means this app's reading of it was never the
+        // problem and the next fix is somewhere else entirely.
+        assertTrue(present, present.contains("IS one of"))
+        assertTrue(present, present.contains("something else is wrong"))
+        assertTrue(missing, missing.contains("NOT among"))
+    }
+
+    @Test
+    fun `a refusal reads differently from an empty answer`() {
+        val refused = DeviceAudio.listenerNote("c", listed = false, total = 2, refused = true)
+        val quiet = DeviceAudio.listenerNote("c", listed = false, total = 2, refused = false)
+        assertFalse("a system refusal is not a silent phone", refused == quiet)
+        assertTrue(refused, refused.contains("refused"))
+        assertFalse(quiet, quiet.contains("refused"))
+    }
+
+    /**
+     * NO OTHER APP IS NAMED, AND THAT IS A PRIVACY DECISION RATHER THAN BREVITY.
+     *
+     * `enabled_notification_listeners` is every app somebody has given
+     * notification access to, and this report gets pasted into chat windows. A
+     * COUNT answers the question; the list would be their installed software.
+     * Enforced by the signature — the note is given a number, so it has no
+     * names to leak even if somebody later decides to print more.
+     */
+    @Test
+    fun `the note is given counts, never the other listeners`() {
+        val note = DeviceAudio.listenerNote("ours", listed = false, total = 7, refused = false)
+        assertTrue(note, note.contains("7"))
+        assertTrue("only our own component is named", note.contains("ours"))
+    }
+
+    /**
+     * AND "the permission is fine" IS A CLAIM, SO ITS EVIDENCE GOES BESIDE IT.
+     *
+     * A granted probe with no sessions says nothing is playing. That is the
+     * happy answer and it is also what a subtly broken grant would look like,
+     * so the same note is carried on it.
+     */
+    @Test
+    fun `a granted but silent phone still shows what was checked`() {
+        val detail = DeviceAudio.listenerNote("ours", listed = true, total = 2, refused = false)
+        val text = lines(Report(Access.GRANTED, emptyList(), detail))
+        assertTrue(text, text.contains("granted"))
+        assertTrue(text, text.contains("IS one of"))
+    }
+
     // ------------------------------------------ the question about a cover
 
     /**

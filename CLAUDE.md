@@ -2076,13 +2076,36 @@ was simply not there, however carefully the DIDL was parsed.
   reasoning about a protocol nobody here could reach, and the round that fixed
   it printed what the Core actually sent.
 - **THE PERMISSION IS THE TRAP, AND IT IS THE REASON `DeviceAudio` EXISTS AT
-  ALL.** `getActiveSessions` needs an enabled notification listener, and without
-  it Android DOES NOT THROW — it returns an empty list. So "no app is playing"
-  and "you never granted access" arrive as the same value, which is the
+  ALL.** `getActiveSessions` needs an enabled notification listener, and an
+  empty list is what a silent phone looks like too. So "no app is playing" and
+  "you never granted access" can arrive as the same value, which is the
   `Pitchfork.Outcome` lesson waiting to be repeated. [Access] is carried
   separately from the sessions, the three states are printed in different words,
   and the refused one names the Settings screen. `DeviceAudioTest` asserts the
   two can never read the same.
+- **AND AN EARLIER NOTE HERE ASSERTED SOMETHING NOBODY HAD CHECKED.** It said
+  flatly that an unpermitted caller gets an empty list RATHER THAN an exception.
+  That was written from memory, not from a device, and it shaped the design. A
+  `SecurityException` is caught AND an empty list is disambiguated now, so the
+  report is right under either — but the lesson is the claim, not the code: this
+  repository refuses confident wrong answers everywhere else and one got written
+  into its own notes.
+- **THE CALL DECIDES; THE SETTING ONLY EXPLAINS.** The first cut read
+  `enabled_notification_listeners`, decided the permission from its own parse of
+  it, and only then called. Reported from the field as NOT GRANTED on a phone
+  whose owner had just granted it — and at that point three causes wore one
+  sentence: the grant did not take, it went to a different app, or this app's
+  reading was wrong. Nothing could separate them. `getActiveSessions` itself is
+  the authority (a refusal is the system's, not an inference), and the setting
+  is read only to say what was looked for and how many listeners the system
+  holds. ONE PARSE, TWO CALLERS: deciding with one reading and explaining with
+  another is how a report contradicts the thing it reports on.
+- **THE NOTE COUNTS THE OTHER LISTENERS AND NEVER NAMES THEM.** That setting is
+  every app somebody has given notification access to, and this report gets
+  pasted into chat windows and bug reports. A count answers the question; the
+  list would be their installed software. Enforced by the signature —
+  `listenerNote` is handed a NUMBER, so there are no names available to leak
+  later.
 - **THE SHELL READS, `:core` DECIDES.** `DeviceSessions` copies Android's
   objects into plain data classes and judges nothing; every line of the report —
   what a cover situation means, what to tell somebody to do — is in `:core`
@@ -2117,6 +2140,26 @@ was simply not there, however carefully the DIDL was parsed.
   file adversarially before pushing caught a real compile error — `when (state?
   .state) { null -> … else -> state.state }` does not smart-cast `state`, so the
   else branch would not build. Treat the first real run as the verification.
+- **`internal` IS PER MODULE, AND `:app` IS NOT `:core` — THE CHECK LIST CANNOT
+  SEE THIS.** `listenerNote` shipped `internal`, inside an `internal companion
+  object`, and CI refused it: an internal member is invisible from another
+  module, and an internal COMPANION cannot be resolved from one at all, so
+  making just the function public would have failed a second time. Both halves
+  were there; reading the declaration rather than trusting the one-word fix is
+  what found the second.
+  **THE TESTS WERE EVIDENCE OF THE WRONG THING**, which is this repository's
+  founding rule stood on its head. `./gradlew :core:test` compiles `:core`
+  alone, and `DeviceAudioTest` lives in :core's own test source set where
+  `internal` IS visible — so the test passed while the app would not build.
+  "Compiling is not evidence" has a twin: a green suite is not evidence either,
+  when the thing it cannot compile is the module the suite does not touch.
+  `ModuleSeamTest` scans `app/` for references to anything `:core` hides and
+  names the file and line, because a CI round trip is the slowest loop here and
+  this seam gets crossed every time the shell is given something new to ask.
+  It flags a reference only when the TYPE and the MEMBER both match, and it
+  strips block comments — the first cut fired on `[DeviceAudio.artNote]` inside
+  a KDoc, which is the "a source scan must read code, not prose" rule caught by
+  the person who wrote it down.
 
 ## Scope and process
 
