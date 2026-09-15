@@ -157,11 +157,99 @@ class DeviceSourceTest {
 
     @Test
     fun `a content uri is never handed to the art proxy`() {
-        // The proxy cannot fetch another app's private storage, so passing it
-        // on would put an identical refusal in the notes on every single card.
+        // THE INVARIANT SURVIVED A CHANGE OF BEHAVIOUR, which is why this test
+        // was rewritten rather than deleted. It used to assert that a Spotify
+        // session yields NO art, because a content:// belongs to another app
+        // and no proxy can fetch it. The record's cover is reconstructed now -
+        // but the thing this was actually guarding is unchanged: the
+        // content:// string itself must never reach ArtProxy, where it would
+        // be refused on every card for ever.
         val playing = source(granted(spotify)).nowPlaying(null)
-        assertEquals("", playing?.artUrl)
-        assertFalse(playing?.artUrl.orEmpty().contains("content://"))
+        assertFalse(playing?.artUrl.orEmpty(), playing?.artUrl.orEmpty().contains("content://"))
+        assertTrue(playing?.artUrl.orEmpty(), playing?.artUrl.orEmpty().startsWith("https://"))
+    }
+
+    @Test
+    fun `OBSERVED every spotify art uri resolves to the same cdn`() {
+        val uris = listOf(
+            "content://com.spotify.mobile.android.mediaapi/image/" +
+                "ab67616d0000b273c00d72d7d364109a77666c8c?cdn=i.scdn.co&transformation=NONE"
+                to "ab67616d0000b273c00d72d7d364109a77666c8c",
+            "content://com.spotify.mobile.android.mediaapi/" +
+                "spotify%3Aimage%3Aab67616d0000b2736900383e72eb02bf27bbd482?transformation=NONE"
+                to "ab67616d0000b2736900383e72eb02bf27bbd482",
+            "content://com.spotify.mobile.android.mediaapi/" +
+                "spotify%3Aimage%3Aab67616d0000b27391365dd68cca9986eea8587f?transformation=NONE"
+                to "ab67616d0000b27391365dd68cca9986eea8587f"
+        )
+        for ((uri, id) in uris) {
+            assertEquals(
+                "the path around the id differs between dumps and must not be parsed",
+                "https://i.scdn.co/image/$id",
+                DeviceSource.artUrl(uri)
+            )
+        }
+    }
+
+    @Test
+    fun `the card carries the reconstructed cover`() {
+        // The end of it: a real session, through the source, onto a Playing.
+        val playing = source(granted(spotify)).nowPlaying(null)
+        assertEquals(
+            "https://i.scdn.co/image/ab67616d0000b2736900383e72eb02bf27bbd482",
+            playing?.artUrl
+        )
+    }
+
+    @Test
+    fun `a cdn named by another app is never used`() {
+        // That parameter is a string some other process put in its metadata.
+        // Composing a url from it would let any app on the phone choose a host
+        // this one fetches. The host is ours; only the id is theirs.
+        val hostile = "content://com.spotify.mobile.android.mediaapi/image/" +
+            "ab67616d0000b273c00d72d7d364109a77666c8c?cdn=evil.example.com"
+        assertEquals(
+            "https://i.scdn.co/image/ab67616d0000b273c00d72d7d364109a77666c8c",
+            DeviceSource.artUrl(hostile)
+        )
+    }
+
+    @Test
+    fun `another app's content uri yields nothing rather than a guess`() {
+        // A wrong sleeve under a right record is the failure this app refuses
+        // everywhere else. Only Spotify's authority is reconstructed.
+        val other = "content://com.example.player/image/" +
+            "ab67616d0000b273c00d72d7d364109a77666c8c"
+        assertEquals("", DeviceSource.artUrl(other))
+    }
+
+    @Test
+    fun `a spotify uri with no id in it yields nothing`() {
+        assertEquals("", DeviceSource.artUrl("content://com.spotify.mobile.android.mediaapi/image/"))
+        // Not 40 characters: 39 and 41 are both something else, and taking 40
+        // out of the middle of a longer run would invent an id.
+        //
+        // THE TRAILING "?x=1" IS THE POINT, not decoration. Without it the run
+        // ends with the string, which is a different branch from the one every
+        // real uri takes - all three observed ones carry "?transformation=NONE"
+        // after the id. The first cut of this test had no tail, so it exercised
+        // the end-of-string case only and a relaxed "at least 40" slipped
+        // straight past it.
+        val short = "content://com.spotify.x/" + "a".repeat(39) + "?x=1"
+        val long = "content://com.spotify.x/" + "a".repeat(41) + "?x=1"
+        assertEquals("", DeviceSource.artUrl(short))
+        assertEquals("", DeviceSource.artUrl(long))
+        // And with no tail either, which is the branch that was being tested.
+        assertEquals("", DeviceSource.artUrl("content://com.spotify.x/" + "a".repeat(41)))
+    }
+
+    @Test
+    fun `an https cover is still carried through untouched`() {
+        // Qobuz. Unchanged by any of the above.
+        assertEquals(
+            "https://static.qobuz.com/images/covers/32/60/0002521866032_600.jpg",
+            DeviceSource.artUrl("https://static.qobuz.com/images/covers/32/60/0002521866032_600.jpg")
+        )
     }
 
     @Test
