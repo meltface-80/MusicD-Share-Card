@@ -435,25 +435,46 @@ was simply not there, however carefully the DIDL was parsed.
   about a millisecond, Zones pays the nine seconds and says "Looking for
   rooms…" while it does, because a list of discovered devices cannot be
   produced without discovering them.
-- **THE WEBFONT IS A RENDER-BLOCKING REMOTE STYLESHEET, AND A PENDING
-  STYLESHEET BLOCKS EVERY SCRIPT AFTER IT.** `index.html` pulls Manrope from
-  fonts.googleapis.com. With no route to the internet the whole page is inert
-  until that request gives up — twelve seconds, measured, during which no
-  button on the page does anything. This is a LAN app that otherwise needs no
-  internet at all. NOT FIXED, and deliberately left rather than changed
-  quietly: making it non-blocking changes what the page looks like while it
-  loads, which is the owner's call. Reopen it as a product question.
+- **THE WEBFONT WAS A RENDER-BLOCKING REMOTE STYLESHEET, AND IT IS SERVED FROM
+  THIS APP NOW.** `index.html` pulled Manrope from fonts.googleapis.com, and a
+  pending stylesheet blocks every script after it - so this LAN app, which needs
+  no internet for anything else, was INERT without one. It stood unfixed for a
+  long time and deliberately, as a product question: making the link async is
+  the smaller diff and changes what the page looks like while it loads.
+  **MEASURED IN A REAL BROWSER, BEFORE AND AFTER, ON THE SAME MACHINE** - which
+  became possible only when a browser turned up in the working environment, and
+  is the reason this finally moved:
 
-  RE-MEASURED WHILE FIXING THE DISCOVERY SWEEPS, AND IT IS WORSE THAN "SLOW".
-  Driven in a real browser against a route that accepts the connection and
-  never answers: after six seconds `document.readyState` was still `loading`,
-  `app.js` had NOT EXECUTED, not one request had been made, and the page sat on
-  "Looking for what's playing…". So this is not the page being sluggish — it is
-  the page not being running. It still needs the owner's answer because the
-  cost is real on the other side: `ensureFont()` waits for Manrope before
-  DRAWING, and a stylesheet that no longer blocks can lose that race and draw
-  the card in the system sans. The card is the product, so the fix is a bounded
-  wait on the link's own load event, not simply making it async.
+      before, font reachable    first api request  265ms   interactive  284ms
+      before, font stalled                      30063ms    interactive  NEVER
+      after  (self-hosted)                        126ms    interactive  140ms
+      after, google blocked                       120ms    interactive  150ms
+
+  Not "the page is sluggish" - the page is NOT RUNNING. Twice as fast on a good
+  network, and no longer dependent on one at all.
+- **SELF-HOSTED RATHER THAN MADE ASYNC, WHICH IS WHY THE PRODUCT QUESTION WENT
+  AWAY INSTEAD OF BEING ANSWERED.** Async keeps the third-party request and
+  swaps the type mid-load; serving the font from the same origin the page came
+  from is identical type, no third party, and works offline. THE PROOF IT IS
+  IDENTICAL is a render comparison against Google's own copy in the same
+  browser - the same sample in Latin, accented Latin, Cyrillic, Greek and
+  Vietnamese, screenshotted per weight and hashed: **twelve comparisons, twelve
+  identical**. What that harness does NOT show is six visually distinct weights
+  (headless grouped them into two), so it proves EQUALITY rather than coverage
+  of every weight; said here rather than left to be assumed.
+- **ALL SIX SUBSETS AND ALL FIVE WEIGHTS ARE COMMITTED, AND `unicode-range` IS
+  WHY THAT IS NOT EXPENSIVE.** Google served every subset, so shipping only
+  latin would draw a Russian or Greek artist name in the system sans on the
+  card - a regression for somebody, invisible from here. Thirty files is 366 KB
+  in the repository; a browser fetched TEN of them for a Latin-and-Cyrillic
+  sample, measured, because a subset is requested only when a character in its
+  range is rendered.
+- **THE LICENCE TRAVELS WITH THE FONT: `web/fonts/OFL.txt`.** Manrope is under
+  the SIL Open Font License 1.1, which permits bundling and asks that the
+  licence go with it. That file is the Manrope project authors' own, not
+  anything this project had to write - which is worth stating, because the
+  owner's first reaction was "I don't have an OFL licence file", and nobody
+  needs to: it ships with the font.
 - **A source can report an opaque id where a title should be.** Roon streaming
   to Sonos sends "Roon" + 32 hex characters as `dc:title`. A card headed with a
   hash looks like the app working, which is worse than one that admits it knows
