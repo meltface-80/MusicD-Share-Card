@@ -1710,6 +1710,32 @@ was simply not there, however carefully the DIDL was parsed.
   docs-only push, and a real bump. That harness is what caught the `notes`
   churn, which reading the diff had not. Any change here should be exercised
   the same way; CI is not the place to discover it.
+- **A CACHE MAY NEVER BREAK THE THING IT CACHES, AND CI IS WHERE THAT RULE HAD
+  NOT REACHED.** The image job went red on `ERROR: failed to solve: failed to
+  reserve cache` — the buildx layer cache, exported to the GitHub Actions cache
+  service, refused. Everything the job exists to do had ALREADY SUCCEEDED by
+  then: both architectures built, `:latest` and `:1.0.15` pushed to ghcr.io,
+  `#43 DONE 4.4s`. The red check was a cache.
+  **WHAT MADE IT LOOK LIKE A CODE FAULT IS THAT ONE COMMIT WAS BOTH GREEN AND
+  RED.** The same SHA passed on its push build and failed on its pull-request
+  build, which reads as a difference between the two events and is not one. The
+  runner says what it actually was, at the top of its own log, in three lines
+  nobody reads: `Cache mode: read`, and `refs/heads/main: read` under "GitHub
+  Actions runtime token ACs". The failing run was a RE-RUN of a pull request's
+  build requested after that pull request had merged — so it checked out main,
+  took the publishing path correctly (the gate was right; `github.ref` really
+  was `refs/heads/main`), pushed the image a second time, and was then handed a
+  read-scoped token for the cache. Nothing here decides that, so the only thing
+  to do with it is survive it: `ignore-error=true` on the export.
+  This is the `TtlCache` rule one layer out, and it is worth saying in the same
+  words — a permission that changed underneath has to end as "we did not
+  remember that one", never as a failure of the work.
+  `tools/check-ci-cache.sh` asserts the INVARIANT, that every cache export in
+  the workflow is non-fatal, rather than naming the one line: an exporter added
+  later for some other job is covered without the check being edited. It strips
+  comments first, because the script quotes the broken form on purpose — the
+  same rule as the `data.selected` scan that matched the comment explaining its
+  own fix.
 - **THE CONTAINER UPDATES ITS OWN CODE, AND IT IS NOT GIVEN THE DOCKER
   SOCKET.** Pulling a real image needs `/var/run/docker.sock`, which is root on
   the host — handed to a process that answers the whole LAN and whose every
