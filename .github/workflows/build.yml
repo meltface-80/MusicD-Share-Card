@@ -94,6 +94,12 @@ jobs:
       - name: Check only the default branch publishes
         run: sh tools/check-publish.sh
 
+      # A cache may never break the thing it caches. The image job went red on
+      # a layer cache it was not allowed to write, having already built and
+      # pushed the image it would have sped up.
+      - name: Check a refused cache cannot fail a build
+        run: sh tools/check-ci-cache.sh
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
@@ -539,7 +545,15 @@ jobs:
             ${{ steps.image.outputs.name }}:latest
             ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # A CACHE MAY NEVER BREAK THE THING IT CACHES — the TtlCache rule,
+          # one layer out. A run whose token is read-scoped (a re-run of a pull
+          # request's run after the pull request has merged is one, and the
+          # runner says so in its own log: "Cache mode: read") cannot reserve a
+          # cache entry, and without this the export's refusal FAILS THE BUILD:
+          # "ERROR: failed to solve: failed to reserve cache", after the image
+          # had already been built and pushed. Red for a layer cache, on a build
+          # whose every real output succeeded.
+          cache-to: type=gha,mode=max,ignore-error=true
 
       # A PUSHED PACKAGE IS NOT A PULLABLE ONE, and nothing in this run says so.
       # GitHub makes a container package PRIVATE on its first publish, and an
