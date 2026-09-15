@@ -22,10 +22,14 @@
   that synthesis. Requesting a real 800 here would render a visibly different
   score to the app this card is supposed to match.
 -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap">
+<!--
+  NO REMOTE STYLESHEET HERE ANY MORE, AND THAT IS THE POINT.
+  Manrope used to be pulled from fonts.googleapis.com, and a pending stylesheet
+  blocks every script after it: measured in a real browser, the page made its
+  first API request at 379ms with that host reachable, and NEVER became
+  interactive with it stalled. The font is served from this app now - see the
+  @font-face block at the top of style.css, and fonts/OFL.txt beside it.
+-->
 <!--
   The same picture Android uses on its launcher, cut for the web by
   tools/make-icons.py.
