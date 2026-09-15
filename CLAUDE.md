@@ -1850,6 +1850,33 @@ was simply not there, however carefully the DIDL was parsed.
   AFTER `AVTransport`, so the one service this probe exists to find is exactly
   the one the old loop would have hidden. Shown by putting the `break` back and
   watching both tests fail.
+- **THE FIRST PROBE ANSWERED ONE STEP SHORT OF USEFUL, AND THE SECOND ASKS THE
+  DEVICE.** Off a real network it said `services: upnp/AVTransport,
+  upnp/ConnectionManager, upnp/RenderingControl, wiimu/PlayQueue,
+  tencent/QPlay` for a WiiM Pro Plus — so there IS a queue service, and a
+  service NAME does not say whether it can append, only replace, or anything
+  at all. Every UPnP service publishes an **SCPD** enumerating its actions and
+  arguments, FROM THE DEVICE ITSELF, so that question has an authoritative
+  answer for one GET. This app should never reason from a vendor's PDF or
+  somebody's reverse engineering about a box it can talk to directly.
+  `SCPDURL` is captured per service and read for the ones [queueability]
+  recognises — one or two GETs out of six, inside the scan that already
+  fetched the descriptions and behind the same TTL. `isQueueService` is the
+  same list [queueability] reads, so what gets REPORTED and what gets ASKED
+  cannot drift apart.
+- **AND THE `break` FIX PAID FOR ITSELF ON THE FIRST REAL RUN.** `wiimu/
+  PlayQueue` was listed FOURTH on that WiiM, after `AVTransport` — so the old
+  loop, which stopped the moment it had the control URL, would have reported
+  the first three services and answered "nothing. AVTransport alone holds ONE
+  uri". A confident wrong answer that would have closed the question. The
+  hazard was reasoned about before the device was seen; the device then
+  demonstrated it.
+- **NO OPENHOME ON THAT BOX, WHICH IS WORTH KNOWING BEFORE BUILDING
+  ANYTHING.** WiiM is widely described as an OpenHome renderer and this one
+  advertises no `av-openhome-org` service at all. `tencent/QPlay` is QQ
+  Music's casting protocol and nothing to do with this. Whatever gets built
+  for UPnP has to be built against what a description actually says, per box,
+  which is the whole reason this is a report rather than a guess.
 - **A REPORT THAT REWRITES WHAT IT WAS GIVEN IS WORSE THAN NONE.** `shortService`
   tidies a URN for reading off a phone in another room, and anything that is not
   a service URN is printed exactly as it arrived. `queueability` names what the
