@@ -60,6 +60,23 @@ It works out what's playing by asking whoever actually knows:
 - **Sonos** — for anything the speakers stream themselves (Spotify Connect,
   Apple Music via the Sonos app, radio)
 - **UPnP / DLNA** — any other renderer on the network
+- **This device** — on Android only, what the phone or tablet itself is playing
+
+The first four are network sources: they ask something else on your network what
+it is playing. **This device** is the exception and it closes the one gap they
+all shared. Casting has always worked — Spotify Connect or Qobuz Connect to a
+Sonos is the speaker playing it, and the speaker knows — but the same app
+playing to the phone's own headphones was invisible to every one of them.
+Android can report it, and this reads it: **Spotify and Qobuz are confirmed
+working on a real device**, each giving the track, the artist, the album and a
+cover, so the card is the same card. Any app that publishes a media session —
+the thing that drives your lock screen and Bluetooth buttons — can appear here.
+
+It is a room like any other, so it is **switched off until you ask for it**:
+open **Settings → Zones** and turn on *This device*. Android also has to grant
+notification access before the app can see any of it, and the app says so, on
+that screen, once you have switched the room on. iOS gives a third-party app no
+equivalent, so this is Android-only and the container has no such thing at all.
 
 Every room it can see is in one list, whichever source found it. Leave it on
 **Whatever's playing** and one room playing goes straight to its card. More than
