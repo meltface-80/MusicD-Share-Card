@@ -71,6 +71,39 @@ interface Source {
     fun refresh() {}
 }
 
+/*
+ * THE RANK LIVES HERE, BESIDE THE ANSWER IT RANKS, AND NOT INSIDE ONE CALLER.
+ *
+ * It was a member of [Sources] while the ladder was its only user. A source
+ * that holds SEVERAL answers of its own needs exactly the same rule to pick
+ * between them — DeviceSource sees every app on the phone at once — and two
+ * copies of a folding rule is how one caller ranks an album over an artist and
+ * the next does not. The same move `Normalize.namesOverlap` and
+ * `Normalize.stripEdition` both made when they got a second caller.
+ */
+/**
+ * How much of a record an answer actually describes.
+ *
+ * THIS IS WHAT "ASK WHOEVER KNOWS" ACTUALLY MEANS, and the ordering of
+ * sources alone was not enough to deliver it. When Roon plays to a Sonos
+ * speaker BOTH sources see that room and both say "playing" — so a rule
+ * that returned the first playing answer returned whichever was asked
+ * first, and if the user had picked the Sonos zone that was a card headed
+ * with a session id while Roon sat there knowing the album.
+ *
+ * Ranking on the answer rather than on the source also means this does not
+ * depend on recognising a hash. `Didl.looksLikeStreamId` catches the shapes
+ * it knows; a source that reports some other kind of rubbish still loses to
+ * one that reports an album and an artist.
+ */
+internal fun quality(playing: Playing): Int = when {
+    playing.album.isNotEmpty() && playing.artist.isNotEmpty() -> 3
+    playing.artist.isNotEmpty() -> 2
+    playing.album.isNotEmpty() -> 1
+    playing.track.isNotEmpty() -> 0
+    else -> -1
+}
+
 /** One thing a card can be made about, named uniquely across sources. */
 data class ZoneRef(
     val source: String,

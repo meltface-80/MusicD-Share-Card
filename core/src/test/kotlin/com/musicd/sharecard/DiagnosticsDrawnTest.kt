@@ -94,4 +94,71 @@ class DiagnosticsDrawnTest {
             )
         }
     }
+
+    /**
+     * AND THE OTHER DIRECTION, ONE LEVEL DOWN, WHICH IS WHERE TWO DEAD READS
+     * HAD BEEN SITTING SINCE THE SECTION WAS WRITTEN.
+     *
+     * The test above asks "is everything served also drawn". It is a scan of
+     * TOP-LEVEL keys, so it had nothing to say about the fields inside a row —
+     * and the Rooms section read `z.ip`, which no version of `Diagnostics` has
+     * ever put. Every row of every report anybody has ever read said
+     * "Stereo Fives (undefined)". `z.raw` was the same fault with a worse
+     * consequence: the whole "Raw reply" section was gated on a key that is
+     * never served, so a section whose own comment called it "the section to
+     * send on when a card comes out wrong for one source and right for
+     * another" had never once been drawn.
+     *
+     * So this is the CONVERSE invariant: a field the page reads off a zone row
+     * must be one the server actually puts there. Both faults are invisible in
+     * a running app — `undefined` looks like a missing value and a section that
+     * never renders looks like a section with nothing to say.
+     *
+     * The keys are collected from anywhere in `Diagnostics` rather than from
+     * the zones block alone, which is deliberately loose: this is here to catch
+     * a name that exists NOWHERE, and a scan that tried to prove which `put`
+     * belonged to which object would break on the next refactor of a file it
+     * only reads.
+     */
+    @Test
+    fun `the rooms rows read only fields the report carries`() {
+        val server = read("core/src/main/kotlin/com/musicd/sharecard/api/Diagnostics.kt")
+        val page = read("app/src/main/assets/web/app.js")
+
+        val served = Regex("""\.\s*put\s*\(\s*"([a-zA-Z]+)"""")
+            .findAll(server).map { it.groupValues[1] }.toSet()
+        assertTrue("no keys found — has Diagnostics been restructured?", served.size >= 5)
+
+        // Comments first: this file quotes `z.ip` above on purpose, and a scan
+        // that reads prose is a scan that lies. Same rule as the data.selected
+        // scan that matched the comment explaining its own fix.
+        val code = page.lines()
+            .filterNot { it.trimStart().startsWith("//") || it.trimStart().startsWith("*") }
+            .joinToString("\n")
+
+        /*
+         * `debugZone`, NOT `z`. THE FIRST CUT OF THIS SCAN SCANNED FOR `z.` AND
+         * IMMEDIATELY LIED IN THE OTHER DIRECTION: three other places in the
+         * page map a zone from /api/zones and also call it `z`, and those rows
+         * genuinely carry `uid` and `enabled`. So it failed on a correct read
+         * of a different object. The page names this one for what it is, and
+         * the emptiness check below is what stops a rename quietly switching
+         * the scan off — which is how a scan becomes decoration.
+         */
+        val read = Regex("""\bdebugZone\.([a-zA-Z]+)\b""").findAll(code)
+            .map { it.groupValues[1] }.toSet()
+        assertTrue(
+            "no debugZone.<field> reads found — if the Rooms section renamed its " +
+                "row, rename it here too rather than leaving this scanning nothing",
+            read.isNotEmpty()
+        )
+
+        for (field in read) {
+            assertTrue(
+                "the debug page reads debugZone.$field off a room and /api/debug never puts " +
+                    "\"$field\" — it draws as undefined, or hides a whole section",
+                field in served
+            )
+        }
+    }
 }

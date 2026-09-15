@@ -1430,15 +1430,22 @@
     section("Addresses being tried", d.hosts);
     section("What the players said", d.errors);
     if (d.zones && d.zones.length) {
-      section("Rooms", d.zones.map((z) =>
-        z.name + " (" + z.ip + ") — " + z.state +
-        (z.album ? ": " + z.album + (z.artist ? " by " + z.artist : "") : "")));
-      // What each player actually reported, verbatim. This is the section to
-      // send on when a card comes out wrong for one source and right for
-      // another.
-      for (const z of d.zones) {
-        if (z.raw && z.raw.length) section("Raw reply — " + z.name, z.raw);
-      }
+      // z.source, NOT z.ip. The page read `ip` from the day this section was
+      // written and nothing has ever served it, so every row of every report
+      // anybody has read said "Stereo Fives (undefined)". The source is also
+      // the more useful half: when one room is seen by two sources it is the
+      // ONLY thing on the row that tells the two apart, which is exactly the
+      // dump that found this - "Stereo Fives" twice, once saying the record
+      // and once saying a Roon session filename.
+      // NAMED `debugZone` AND NOT `z`, BECAUSE A TEST KEYS ON IT. Three other
+      // places in this file map a zone from /api/zones and call it `z`, and
+      // those rows carry `uid` and `enabled`, which /api/debug does not. A scan
+      // that could not tell the two apart is how `z.ip` survived here.
+      section("Rooms", d.zones.map((debugZone) =>
+        debugZone.name + " (" + debugZone.source + ") \u2014 " + debugZone.state +
+        (debugZone.album
+          ? ": " + debugZone.album + (debugZone.artist ? " by " + debugZone.artist : "")
+          : "")));
     }
     hintEl.innerHTML = "";
     nowEl.innerHTML = "";

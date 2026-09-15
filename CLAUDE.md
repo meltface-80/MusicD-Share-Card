@@ -808,6 +808,25 @@ was simply not there, however carefully the DIDL was parsed.
   window for a `load()` to overtake it, and scanning every `show*` swept in
   render helpers (`showNode`, `showChooser`, `showUpdate`) that take a value
   and paint it and have no stage to claim.
+- **AND THE SCAN LOOKED ONE WAY ONLY, WHICH LEFT TWO DEAD READS IN THE ROOMS
+  SECTION SINCE THE DAY IT WAS WRITTEN.** `DiagnosticsDrawnTest` asked "is
+  everything SERVED also DRAWN", which is the fault it was written for. The
+  converse was never asked, so the page read `z.ip` off every zone row and
+  nothing in any version of `Diagnostics` has ever put an `ip` - every row of
+  every report anybody has ever read said **"Stereo Fives (undefined)"**.
+  `z.raw` was the same fault with a worse consequence: the whole "Raw reply"
+  section was gated on it, so a section whose own comment calls it "the section
+  to send on when a card comes out wrong for one source and right for another"
+  had NEVER ONCE BEEN DRAWN. Both are invisible in a running app - `undefined`
+  reads as a missing value, and a section that never renders reads as a section
+  with nothing to say. Found in a field dump where one room appeared twice
+  under two sources, which is precisely the case the missing field distinguishes.
+  **AND THE FIRST CUT OF THE NEW SCAN LIED IN THE OTHER DIRECTION**: it matched
+  `z.` anywhere in the page, and three other places map a zone from
+  `/api/zones` and also call it `z` - rows that genuinely carry `uid` and
+  `enabled`. So the debug row is named `debugZone`, the scan keys on that, and
+  it refuses to find NOTHING, because a scan quietly matching nothing is how
+  one becomes decoration.
 - **A DIAGNOSTIC THE PAGE DOES NOT DRAW IS WORSE THAN NONE.** The
   similar-artist lookup gained `attempts()` and a `"similar"` key in the
   report, and the page was never taught to draw it — correct, served, and
@@ -2047,13 +2066,42 @@ was simply not there, however carefully the DIDL was parsed.
   or rate a track are left out.
 - **THE REMAINING WALL IS WHAT GOES IN IT, NOT WHETHER IT CAN BE SENT.** A
   suggestion comes from Deezer, and Deezer gives a thirty-second preview, not a
-  track a renderer can play. `SearchQueueOnline(in QueueName, in SearchKey, out
-  Queue)` is the interesting shape, because it would have the DEVICE resolve a
-  record from a service it is already logged into — `UserLogin`, `GetUserInfo`
-  and `SetSpotifyPreset` on that same list say the credentials live on the box.
-  That would be keyless from this app's side, which is the only shape the
-  owner's decision leaves open. UNVERIFIED: what it accepts, what it returns,
-  and whether it reaches a service at all.
+  track a renderer can play. `SearchQueueOnline` is the interesting shape,
+  because it would have the DEVICE resolve a record from a service it is
+  already logged into - `UserLogin`, `GetUserInfo` and `SetSpotifyPreset` on
+  that same list say the credentials live on the box. That would be keyless
+  from this app's side, which is the only shape the owner's decision leaves
+  open.
+- **AND THE TWO SIGNATURES FIT EACH OTHER, WHICH IS THE WHOLE FINDING.** Read
+  off the device rather than guessed:
+
+      SearchQueueOnline(in QueueName, in SearchKey, in Queuelimit,
+                        out QueueContext)
+      AppendQueue(in QueueContext)
+      AppendTracksInQueue(in QueueContext)
+      BrowseQueue(in QueueName, out QueueContext)
+
+  The search's OUTPUT is exactly the append's INPUT, and `BrowseQueue` reads
+  back what is in there - so search, append, verify is a complete round trip
+  with no credential anywhere in it, and the verify step is the one whose
+  absence cost the Roon queue four releases. AN EARLIER NOTE HERE RECORDED THAT
+  SIGNATURE WRONG - "out Queue", with `Queuelimit` missing. Small, and exactly
+  the kind of thing this file exists to be right about: a shape a machine
+  actually sent is worth more than a shape somebody wrote down, which is the
+  rule the OBSERVED Lyrion test is named after.
+- **WHAT IS STILL UNVERIFIED IS EVERY VALUE.** What `QueueName` names (a
+  service? a queue already on the box?), what `SearchKey` accepts, what a
+  `QueueContext` actually looks like, and whether any of it reaches a streaming
+  service at all. None of that can be settled from here and none of it should
+  be guessed.
+- **AND FIRING ONE OF THESE IS NOT A READ.** `ReplaceQueue` sits on the same
+  service, `AppendTracksInQueueEx` takes an `in Play` argument, and
+  `GetQueueOnline` takes `in QueueAutoInsert` - so a vendor action sent
+  speculatively at a box somebody is listening to can stop the music. That is
+  the exact failure `RoonBrowse.pickQueueAction` exists to prevent, one
+  protocol over. So the probe for this must be EXPLICITLY INVOKED and gated,
+  never something `/api/debug` fires on its own: the report is read constantly,
+  and by definition at moments when something is already wrong.
 - **NO OPENHOME ON THAT BOX, WHICH IS WORTH KNOWING BEFORE BUILDING
   ANYTHING.** WiiM is widely described as an OpenHome renderer and this one
   advertises no `av-openhome-org` service at all. `tencent/QPlay` is QQ
@@ -2096,11 +2144,70 @@ was simply not there, however carefully the DIDL was parsed.
   a session. iOS gives a third-party app no equivalent — `MPNowPlayingInfoCenter`
   reports only that app's own playback. A fifth source is buildable on one
   platform and not the other.
-- **IT IS A PROBE, AND NOTHING ELSE WAS BUILT.** No zone, no card, no route —
-  one `/api/debug` section. The same decision as the UPnP queue exploration one
-  section up, for the same reason: three rounds of the Roon queue were spent
-  reasoning about a protocol nobody here could reach, and the round that fixed
-  it printed what the Core actually sent.
+- **IT WAS A PROBE FIRST, AND THE PROBE IS WHY THE SOURCE IS SHORT.** It shipped
+  as one `/api/debug` section with no zone, no card and no route - the same
+  decision as the UPnP queue exploration one section up, for the same reason:
+  three rounds of the Roon queue were spent reasoning about a protocol nobody
+  here could reach, and the round that fixed it printed what the Core actually
+  sent. ONE PHOTOGRAPH OFF A REAL PHONE THEN ANSWERED EVERY QUESTION IT WAS
+  BUILT FOR: two apps holding sessions, each with a title, an artist AND an
+  album, one PLAYING and one PAUSED, and one of them offering a cover the art
+  proxy already allows. `DeviceSource` turns that into a room, and it NEEDED NO
+  NEW ANDROID CODE AT ALL - the reading was already right and only the deciding
+  was missing, which is the argument for the seam stated by the change rather
+  than by a comment.
+- **ONE ZONE, NOT ONE PER APP.** Two apps holding sessions on one phone is not
+  two rooms; it is one room and a question about which to believe, and
+  `quality` already answers exactly that question for the house. Per-app zones
+  would also make every newly installed music app an unasked-for room, each
+  needing switching on by itself.
+- **AND `quality` MOVED OUT OF `Sources` RATHER THAN BEING COPIED.** It was a
+  member while the ladder was its only caller; a source holding several answers
+  of its own needs the identical rule. Same move `Normalize.namesOverlap` and
+  `Normalize.stripEdition` each made on their second caller, for the same
+  reason: two copies is how one caller ranks an album over an artist and the
+  next does not. Proved by a test that ranks two REAL sessions both ways round
+  - a source taking whichever Android listed first passes the playing-beats-
+  paused test by accident, and fails that one.
+- **THE ROOM IS LISTED WHILE THE PERMISSION IS REFUSED, AND THE NOTICE IS NOT.**
+  Those pull opposite ways and both are deliberate. `zones()` offers "This
+  device" on DENIED because otherwise there is nothing in Settings to switch on
+  and no way to reach the explanation - a source that hides until it is
+  permitted is unreachable. `notice()` stays SILENT until the room is switched
+  on, because rooms are opt-in and a permission notice shown before anybody
+  asked would sit on every Android install for ever, about a feature nobody
+  requested. That is precisely the bug the Roon notice was narrowed after
+  ("Looking for your Roon Core..." under a card that worked). Switching the
+  room on IS the request; UNSUPPORTED is silent either way, like Roon's ABSENT.
+- **IT IS LAST IN THE SOURCE LIST, AND THAT IS THE TIE-BREAK SPEAKING.** Source
+  order decides only between answers that are otherwise equally good. Every
+  source above it is a room in the house; this one is the device in somebody's
+  hand, and when both are playing a full record the house is what this app is
+  for. Naming the zone still reaches it directly, because a named zone is a
+  lock rather than a preference.
+- **ONLY AN http(s) ART URL IS CARRIED, AND THE SPOTIFY RECONSTRUCTION WAS
+  CONSIDERED AND REFUSED.** Qobuz's session gave
+  `https://static.qobuz.com/...`, which `ArtProxy` allows unchanged on its
+  public-https rule, so those cards draw a cover today. Spotify's gave a
+  `content://` belonging to Spotify, which this process holds no grant to read
+  and no proxy can fetch. Rebuilding its CDN url out of that uri LOOKED free
+  for one dump - `.../image/<id>?cdn=i.scdn.co` carries both halves, and
+  `/api/debug` had already proved the proxy fetches `i.scdn.co`. THE NEXT DUMP
+  OFF THE SAME PHONE, MINUTES LATER, CARRIED A DIFFERENT SHAPE:
+  `.../spotify%3Aimage%3A<id>` with no cdn parameter at all. A parser written
+  against the first finds nothing in the second, and one written against both
+  has to INVENT the host. A rule falsified within minutes of being proposed is
+  the clearest possible argument for this repository's standing refusal of
+  confident wrong answers. Passing the uri on regardless was refused too: the
+  proxy would note an identical refusal on every card for ever, which is
+  informative once and noise afterwards. Empty means no cover, and the reason
+  is printed in full under "Playing on this device".
+- **WHAT IS STILL OPEN IS THE SPOTIFY SLEEVE, AND THERE ARE EXACTLY TWO HONEST
+  WAYS.** Resolve it from the RECORD, the way `NewMusic.sleeveFor` already
+  resolves one out of Deezer with a loose search and a strict check - that rule
+  is written and tested, and would need extracting from `NewMusic` rather than
+  copied. Or have the SHELL serve the bitmap it already holds, which is a new
+  art path rather than a new url. Neither is built.
 - **THE PERMISSION IS THE TRAP, AND IT IS THE REASON `DeviceAudio` EXISTS AT
   ALL.** `getActiveSessions` needs an enabled notification listener, and an
   empty list is what a silent phone looks like too. So "no app is playing" and

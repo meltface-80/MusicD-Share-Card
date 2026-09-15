@@ -17,6 +17,7 @@ import com.musicd.sharecard.roon.RoonClient
 import com.musicd.sharecard.roon.RoonSource
 import com.musicd.sharecard.roon.TokenStore
 import com.musicd.sharecard.device.DeviceAudio
+import com.musicd.sharecard.device.DeviceSource
 import com.musicd.sharecard.discover.PlayHistory
 import com.musicd.sharecard.settings.SettingsStore
 import com.musicd.sharecard.sonos.Household
@@ -198,7 +199,27 @@ class ShareCardApp(
             // one that knows what the record is.
             lms,
             SonosSource(household),
-            UpnpSource(soap, metaHttp)
+            UpnpSource(soap, metaHttp),
+            /*
+             * THE PHONE ITSELF, AND IT IS LAST BECAUSE THE ORDER IS A
+             * TIE-BREAK.
+             *
+             * Every source above is a room in the house; this one is the
+             * device in somebody's hand, and source order decides only when
+             * two answers are equally good. When the house and the phone are
+             * both playing a full record, the house is what this app is for.
+             * Naming the zone in the picker still reaches it directly, because
+             * a named zone is a lock rather than a preference.
+             *
+             * ON THE CONTAINER IT LISTS NO ZONES AND COSTS NOTHING. The
+             * default `deviceAudio` reports UNSUPPORTED, so this is one source
+             * in the list rather than a branch on which shell is running -
+             * which is also what stops the honest "not an Android build" line
+             * going missing the way it did when a null stood in for a probe.
+             */
+            DeviceSource(deviceAudio) {
+                settingsStore.read().zoneEnabled(DeviceSource.ZONE_ID)
+            }
         )
     )
 
