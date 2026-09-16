@@ -1,11 +1,11 @@
 {
-  "version": "1.0.21",
-  "url": "https://raw.githubusercontent.com/meltface-80/MusicD-Share-Card/main/dist/musicd-share-card-1.0.21.apk",
-  "sha256": "bf451296632c20a752fb0787cfde59a3342d8582efc501568cc4508c761079a8",
+  "version": "1.0.22",
+  "url": "https://raw.githubusercontent.com/meltface-80/MusicD-Share-Card/main/dist/musicd-share-card-1.0.22.apk",
+  "sha256": "139624d886bcfb8f4873d8ebe4048e432a9edb2214d735e1cebf4edad27a4896",
   "signed": true,
-  "notes": "Built from bd357f2d90b184ce40d947be42b2bbac5cade2fb.",
+  "notes": "Built from f08dba37223af559376215f7a0042f8576f07bff.",
     "server": {
-      "url": "https://raw.githubusercontent.com/meltface-80/MusicD-Share-Card/main/dist/musicd-share-card-server-1.0.21.zip",
-      "sha256": "065c883a820181e13eab20cf366fe6b67d1288954bea494a55e611cca6e689c1"
+      "url": "https://raw.githubusercontent.com/meltface-80/MusicD-Share-Card/main/dist/musicd-share-card-server-1.0.22.zip",
+      "sha256": "5e05321d1352e9ae74873d4ed3ab0f374057604c87079e81f574a32e824491e1"
     }
 }
