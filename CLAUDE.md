@@ -298,6 +298,47 @@ was simply not there, however carefully the DIDL was parsed.
 - **`now_playing.three_line` is line1=track, line2=artist, line3=ALBUM.** Read in
   the wrong order it makes a card headed with a track name, which looks almost
   right.
+- **ONE RENDERER, TWO SERVICES, ONE OF THEM DRAWING NOTHING — AND `UpnpSource`
+  HAD ONLY EVER ASKED HALF THE QUESTION.** Reported from the field: Spotify
+  Connect to a WiiM Pro Plus makes a card and Qobuz Connect to the SAME BOX
+  makes none. One code path and one device, so the difference could never have
+  been the source; it had to be the reply. `GetPositionInfo` describes the
+  TRACK on the transport and `GetMediaInfo` describes what the transport as a
+  whole is playing, and [SonosSource] has asked the second whenever the first
+  came back short since the first release — radio and line-in put the station's
+  name there and nowhere else. `UpnpSource` never asked it at all, so a
+  renderer answering "PLAYING" with an empty `TrackMetaData` was read as
+  describing nothing and dropped, with the record sitting in the reply this app
+  declined to fetch. THE SAME OMISSION APPEARS ONE FIELD OVER: `r:streamContent`
+  is parsed by `Didl` and was read by Sonos and thrown away here. Both are
+  fixed, both shown failing first. **THE SECOND ROUND TRIP IS GATED EXACTLY AS
+  SONOS GATES IT** — only when the first reply would not draw a card — because
+  a renderer that fully described its record must not pay for one, and a test
+  asserts the second call is not made in that case (shown failing against an
+  unconditional version).
+- **AND `merge` MOVED INTO `Didl` RATHER THAN BEING COPIED.** Same move
+  `Normalize.namesOverlap`, `Normalize.stripEdition` and `quality` each made on
+  their second caller: two copies of a gap-filling rule is how one source
+  learns a station's name and the next does not.
+- **WHAT ACTUALLY SETTLES IT IS THE RAW REPLY, AND UNTIL NOW THERE WAS NONE.**
+  Every line the UPnP diagnostics printed was this app's READING of a reply
+  rather than the device's words, which is the fault that cost the Roon queue
+  four releases. `/api/debug` now carries `GetTransportInfo`, `GetPositionInfo`
+  and `GetMediaInfo` verbatim per renderer — BOTH metadata replies always,
+  whatever the parse made of them, because the whole question is which of the
+  two a Connect session fills in and printing only the short one would hide the
+  half that answered. `GetTransportInfo` is there because "the box says
+  STOPPED" and "the box says PLAYING with nothing in it" are two different
+  bugs. THE FIX ABOVE IS UNVERIFIED AGAINST THE BOX THAT REPORTED IT — no WiiM
+  is reachable from here, the tests drive a real `MockWebServer` and not a
+  WiiM. Read `/api/debug` first on the next run.
+- **CHROMECAST IS NOT A UPnP SESSION AND NO SOURCE HERE SPEAKS IT.** Cast is
+  mDNS discovery and a TLS protobuf channel on port 8009; every source in this
+  app is SSDP/SOAP, JSON-RPC, MOO or Android's own media sessions. Whether a
+  LinkPlay box mirrors a Cast stream into its `AVTransport` is the box's
+  choice and is not knowable from here — which is exactly what the raw reply
+  above answers, in one line, on the first run. Nothing was built for it, and
+  that is a report rather than a fix on purpose.
 - **A UPnP renderer's control URL is not at a fixed path.** Sonos publishes its
   at constants; everyone else names theirs in a device description whose own
   address comes from the SSDP `LOCATION` header. Guessing ports instead of
@@ -1081,6 +1122,28 @@ was simply not there, however carefully the DIDL was parsed.
   for an hour, while a record's cover does not change and is written to disk
   for a week, which is what stops the same twelve lookups being paid again
   tomorrow. `forget()` throws away the screen and NOT the sleeves.
+- **AND A BARE FUNCTION HANDED TO AN EVENT IS CALLED WITH THE EVENT, WHICH
+  UNDID ALL OF THAT REMEMBERING.** `tabNew.addEventListener("click",
+  showNewMusic)` and `back.onclick = showNewMusic` both read as "call this when
+  tapped" and are not: the browser passes a MouseEvent as the first argument.
+  `showNewMusic(force)` takes `force`, and an event object is TRUTHY — so
+  merely OPENING the Discover tab, and coming back to it from a record, each
+  asked for `?refresh=1`, which makes the server `forget()` the screen and go
+  out to ListenBrainz, two RSS feeds, Deezer and a sleeve lookup per record.
+  Reported as Discover being slow to populate and appearing to fully reload on
+  the way back. **The cache was working perfectly the entire time and being
+  thrown away on every tap** — an hour of remembering undone by two missing
+  brackets, and invisible because the screen still drew.
+  `HandlerArityTest` asserts the INVARIANT rather than those two lines: a
+  parameterless function is safe to hand over bare and one with a parameter is
+  not. `showSettings`, `addWebhook` and `startUpdate` are all passed bare and
+  all take nothing, which is why the scan passes rather than being written to
+  exclude them.
+- **AND REFRESH ON DISCOVER WAS ALREADY RIGHT — CHECKED RATHER THAN ASSUMED.**
+  Asked whether it also refreshes zones: it does not. The button branches on
+  the lit tab, `/api/new` touches no source and runs no sweep, and driving it
+  in a real browser showed the tab clicks sending `/api/new` and Refresh
+  sending `/api/new?refresh=1` and nothing else at all.
 - **REFRESH REFRESHES THE SCREEN YOU ARE LOOKING AT.** It called `load(true)`
   unconditionally, so pressing it on Discover threw away the sleeves and drew
   the card — which reads as the button navigating rather than refreshing, and
@@ -2024,6 +2087,31 @@ was simply not there, however carefully the DIDL was parsed.
   feeds are published for syndication and a digest of headlines would be
   defensible too — that is the next increment — but reproducing the prose never
   is, whatever it is wrapped in.
+- **DISCOVER WAS SEEDED BY THE HISTORY ALONE, SO IT COULD ONLY EVER SUGGEST
+  SOMEBODY YOU ALREADY PLAY.** Reported: "I recently listened to Ty Segall - it
+  shouldn't always return another Ty Segall album. It appears to do this with
+  all artists listened to recently. Needs to be broader - same style/genre."
+  That was the design rather than a bug: the fresh-releases window was matched
+  against the HISTORY, so the only act that could appear was one already in it.
+  A new record by somebody you love is the most relevant thing this screen can
+  hold; it just cannot be the whole of a screen called Discover.
+  `seedsFrom` widens the filter with `Similar` - the SAME instance the card's
+  suggestion row uses, so one shelf answers both - and a widened pick says
+  "Similar to Ty Segall" rather than claiming you played it.
+- **THE COST IS PER ACT, NOT PER RECORD, WHICH IS THE ONLY REASON THIS IS
+  AFFORDABLE.** The window is still ONE request however many seeds there are:
+  widening the filter does not widen the fetch. Each lookup is rate-gated and
+  written to disk for a week, and only the most recent `SEED_ACTS` are
+  expanded - expanding all sixty would be the exact mistake this file avoids
+  elsewhere, sixty rate-limited lookups being a minute of waiting for a screen.
+  A host that passes no `Similar` gets the old screen unchanged, which is what
+  keeps every existing test honest.
+- **TWO RULES CARRY THE COMPLAINT, AND BOTH ARE TESTED BY BREAKING THEM.** ONE
+  RECORD PER ACT, because two Ty Segall releases in one window is two tiles
+  saying the same thing; and `MAX_SAME_ACT` of `WANTED`, so acts you already
+  play LEAD but cannot fill the screen, with the rest going behind everything
+  similar. Not zero and not unlimited - zero would throw away the best signal
+  here, unlimited is what was reported.
 - **TWO SOURCES, ANSWERING DIFFERENT QUESTIONS.** ListenBrainz's fresh-releases
   window is ONE request for every release in a date range, so the filtering
   against the history happens in `NewMusic` — sixty acts would otherwise be

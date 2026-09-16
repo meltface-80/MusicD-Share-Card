@@ -287,7 +287,12 @@ class ShareCardApp(
         com.musicd.sharecard.discover.Editorial(metaHttp, userAgent(version))
 
     private val newMusic = com.musicd.sharecard.discover.NewMusic(
-        metaHttp, userAgent(version), history, editorial, store = cacheStore
+        metaHttp, userAgent(version), history, editorial,
+        // THE SAME INSTANCE THE CARD'S SUGGESTION ROW USES, deliberately: one
+        // shelf, so an act looked up for "If you like this" is already answered
+        // when Discover asks, and neither pays for the other's misses.
+        similar = similar,
+        store = cacheStore
     )
 
     /*

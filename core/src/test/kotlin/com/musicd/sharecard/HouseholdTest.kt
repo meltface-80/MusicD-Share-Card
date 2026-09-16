@@ -1,5 +1,6 @@
 package com.musicd.sharecard
 
+import com.musicd.sharecard.sonos.Didl
 import com.musicd.sharecard.sonos.Household
 import com.musicd.sharecard.sonos.NowPlaying
 import com.musicd.sharecard.sonos.TransportState
@@ -209,10 +210,9 @@ class HouseholdTest {
 
     @Test
     fun `transport metadata fills the gaps a track leaves, field by field`() {
-        val h = household()
         val track = NowPlaying(track = "Drover", streamContent = "Bill Callahan - Drover")
         val media = NowPlaying(track = "BBC 6 Music", album = "", artUri = "/getaa?x=1")
-        val merged = h.merge(track, media)
+        val merged = Didl.merge(track, media)
         // The song's own title survives; the station supplies only what was
         // missing. Taking one whole record or the other loses one of them.
         assertEquals("Drover", merged.track)
@@ -222,8 +222,7 @@ class HouseholdTest {
 
     @Test
     fun `an empty transport reply leaves the track untouched`() {
-        val h = household()
         val track = NowPlaying(track = "Teardrop", album = "Mezzanine")
-        assertEquals(track, h.merge(track, NowPlaying()))
+        assertEquals(track, Didl.merge(track, NowPlaying()))
     }
 }

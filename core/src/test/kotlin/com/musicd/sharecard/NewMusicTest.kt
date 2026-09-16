@@ -5,6 +5,7 @@ import com.musicd.sharecard.discover.NewMusic
 import com.musicd.sharecard.discover.PlayHistory
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,8 +22,105 @@ import org.junit.Test
  */
 class NewMusicTest {
 
+    /** Acts actually played — the seeds that carry "Because you played X". */
     private fun heard(vararg acts: String) =
-        acts.map { PlayHistory.Heard(it, "Some Record", 0L) }
+        acts.map { NewMusic.Seed(it, it, played = true) }
+
+    /** An act reached by similarity, credited to the act that led to it. */
+    private fun like(act: String, because: String) =
+        NewMusic.Seed(act, because, played = false)
+
+    // ------------------------------------------- acts LIKE the ones played
+
+    /**
+     * REPORTED: "I recently listened to Ty Segall — it shouldn't always return
+     * another Ty Segall album. It appears to do this with all artists listened
+     * to recently. Needs to be broader — same style/genre."
+     *
+     * That was exactly the design: the release window was matched against the
+     * HISTORY, so the only act that could ever appear was one already in it.
+     */
+    private val window = """
+        {"payload":{"releases":[
+          {"artist_credit_name":"Ty Segall","release_name":"Another One",
+           "release_date":"2026-09-11"},
+          {"artist_credit_name":"Ty Segall","release_name":"And Another",
+           "release_date":"2026-09-12"},
+          {"artist_credit_name":"Oh Sees","release_name":"Something Else",
+           "release_date":"2026-09-13"},
+          {"artist_credit_name":"Mikal Cronin","release_name":"A Third Thing",
+           "release_date":"2026-09-14"},
+          {"artist_credit_name":"Nobody Relevant","release_name":"Unrelated",
+           "release_date":"2026-09-15"}
+        ]}}
+    """.trimIndent()
+
+    @Test
+    fun `a record by an act LIKE the one played is kept, and says so`() {
+        val picks = NewMusic.parseFreshReleases(
+            window, heard("Ty Segall") + like("Oh Sees", "Ty Segall")
+        )
+        assertTrue("the similar act's record is on the screen", picks.any { it.artist == "Oh Sees" })
+        val widened = picks.first { it.artist == "Oh Sees" }
+        assertEquals("Similar to Ty Segall", widened.why)
+        assertFalse(
+            "a similar act is not something you played, and the tile must not claim it",
+            widened.heard
+        )
+    }
+
+    @Test
+    fun `the act you played still leads, and still says you played it`() {
+        // The widening must not cost the strongest signal this screen has.
+        val picks = NewMusic.parseFreshReleases(
+            window, heard("Ty Segall") + like("Oh Sees", "Ty Segall")
+        )
+        assertEquals("Ty Segall", picks.first().artist)
+        assertEquals("Because you played Ty Segall", picks.first().why)
+        assertTrue(picks.first().heard)
+    }
+
+    @Test
+    fun `one record per act, however many it released`() {
+        // Two Ty Segall releases sit in that window. Three tiles saying the
+        // same thing is half of what was reported.
+        val picks = NewMusic.parseFreshReleases(window, heard("Ty Segall"))
+        assertEquals(listOf("Another One"), picks.map { it.album })
+    }
+
+    @Test
+    fun `acts you already play cannot fill the screen`() {
+        // THE COMPLAINT AS A RULE. With more played acts releasing than the cap
+        // allows, the ones over it go behind everything similar rather than
+        // taking the whole screen.
+        val many = (1..8).joinToString(",") {
+            """{"artist_credit_name":"Act $it","release_name":"Record $it"}"""
+        }
+        val body = """{"payload":{"releases":[$many,
+            {"artist_credit_name":"Neighbour","release_name":"Widened"}]}}"""
+        val seeds = heard(*(1..8).map { "Act $it" }.toTypedArray()) + like("Neighbour", "Act 1")
+        val picks = NewMusic.parseFreshReleases(body, seeds)
+
+        val firstTwelve = picks.take(NewMusic.WANTED)
+        assertTrue(
+            "a widened pick must reach the screen ahead of the 5th act you play",
+            firstTwelve.indexOfFirst { it.artist == "Neighbour" } <= NewMusic.MAX_SAME_ACT
+        )
+        assertEquals(
+            "exactly the cap leads, and the rest of the played acts go behind",
+            NewMusic.MAX_SAME_ACT,
+            picks.takeWhile { it.heard }.size
+        )
+    }
+
+    @Test
+    fun `nothing is lost when no similar acts are known`() {
+        // The engine is optional, and with none wired in this screen must
+        // behave exactly as it did before any of this.
+        val picks = NewMusic.parseFreshReleases(window, heard("Ty Segall"))
+        assertTrue(picks.isNotEmpty())
+        assertTrue("every pick is one you played", picks.all { it.heard })
+    }
 
     // ------------------------------------------------- ListenBrainz's window
 
