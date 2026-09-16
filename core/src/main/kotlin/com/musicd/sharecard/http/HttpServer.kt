@@ -228,6 +228,7 @@ class HttpServer(
             .append(statusText(response.status)).append("\r\n")
         sb.append("Content-Type: ").append(response.contentType).append("\r\n")
         sb.append("Content-Length: ").append(response.body.size).append("\r\n")
+        sb.append("Date: ").append(httpDate()).append("\r\n")
         for ((k, v) in response.headers) sb.append(k).append(": ").append(v).append("\r\n")
         sb.append("\r\n")
         out.write(sb.toString().toByteArray(Charsets.ISO_8859_1))
@@ -236,6 +237,20 @@ class HttpServer(
 
     companion object Codec {
         private const val TAG = "Http"
+
+        /**
+         * RFC 1123, in GMT, which is the only format HTTP allows here.
+         *
+         * A ThreadLocal because SimpleDateFormat is not thread safe and this
+         * server answers on a pool - sharing one instance is a classic way to
+         * emit a corrupted date under load.
+         */
+        private val HTTP_DATE = ThreadLocal.withInitial {
+            java.text.SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", java.util.Locale.US)
+                .apply { timeZone = java.util.TimeZone.getTimeZone("GMT") }
+        }
+
+        private fun httpDate(): String = HTTP_DATE.get().format(java.util.Date())
 
         /** The only address this is guaranteed to be reachable on. */
         const val LOOPBACK = "127.0.0.1"

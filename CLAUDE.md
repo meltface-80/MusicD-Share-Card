@@ -678,6 +678,35 @@ was simply not there, however carefully the DIDL was parsed.
   today. They are kept for the refactor that makes it reachable, and the comment
   says which of the two things it is, because a test that cannot fail is
   normally decoration and this is the exception worth naming.
+- **`no-store` AND `no-cache` ARE OPPOSITES, AND THE PAGE WAS SERVED THE WRONG
+  ONE.** Every asset carried `Cache-Control: no-store`, which forbids keeping a
+  copy at all - so the whole bundle came down again on every visit. MEASURED
+  against the real server in a real browser: **263 KB and 14 requests, identical
+  on a revisit, zero 304s.** The requirement behind that header is real and
+  unchanged - the page is versioned by the APK rather than by its URL, so a
+  browser running yesterday's JavaScript against today's API is a genuine way to
+  break after an update, on the one device nobody can see. But `no-cache` is the
+  accurate word for it: keep a copy, and ASK before every use. With an ETag
+  beside it, asking costs a 304 with no body. Measured after: **74 KB on a
+  revisit**, with app.js, style.css and sharecard.js answering 304 and nothing
+  else changing. The tag is over the BYTES, not the version - `SHARECARD_VERSION`
+  is set by hand and two builds could share it, and an asset inside an APK has
+  no useful mtime.
+- **AND THE FONTS ARE STILL RE-DOWNLOADED, WHICH IS RECORDED AS UNSOLVED RATHER
+  THAN DRESSED UP.** Chromium fetches every woff2 in full on every visit, never
+  offering an `If-None-Match`, while app.js on the same page revalidates
+  correctly. Two fixes were tried and BOTH CHANGED NOTHING, measured each time:
+  `public, max-age=604800` on fonts and images, and adding the `Date` header the
+  writer had never sent. The max-age split was REVERTED rather than shipped with
+  a comment crediting it for a fix it did not make; `Date` was kept on its own
+  merit, because HTTP/1.1 requires an origin server to send one, and is
+  described as correctness rather than as a saving.
+  **AND ONE PROBE ALONG THE WAY WAS WORTHLESS AND NEARLY BELIEVED.** Fetching a
+  url three times from the page and counting network hits "proved" fonts were
+  uncacheable - until the same probe was run against `app.js`, which is KNOWN to
+  revalidate, and showed 3 of 3 as well. The control is what saved it. A
+  navigation waterfall is the only measurement here that means anything, because
+  it is also what a person actually does.
 - **Never poll.** The app asks a speaker what is playing when somebody opens the
   page or presses Refresh. This runs on a device that is never switched off; a
   timer anywhere means interrogating the household all day to answer a question

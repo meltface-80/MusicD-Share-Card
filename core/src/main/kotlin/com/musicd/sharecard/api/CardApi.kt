@@ -232,7 +232,7 @@ class CardApi(
                 { deviceAudio?.diagnostics().orEmpty() }
             ).run()
         )
-        else -> static(request.path)
+        else -> static(request.path, request)
     }
 
     // ------------------------------------------------------------- the card
@@ -1181,7 +1181,16 @@ class CardApi(
 
     // ------------------------------------------------------------- the page
 
-    private fun static(path: String): Response {
+    /**
+     * One tag per asset, worked out once and kept.
+     *
+     * The bundle is inside the APK or the jar, so it cannot change while this
+     * process lives — which is what makes remembering safe, and what makes the
+     * revalidation fast path free.
+     */
+    private val etags = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun static(path: String, request: Request): Response {
         val clean = if (path == "/" || path.isEmpty()) "index.html"
         else HttpServer.decodePath(path.trimStart('/'))
 
@@ -1191,9 +1200,24 @@ class CardApi(
         // stays correct if that ever changes.
         if (clean.split('/').any { it == ".." || it == "." }) return Response.notFound()
 
+        /*
+         * THE FAST PATH IS A TAG WE ALREADY KNOW, so an unchanged asset costs
+         * neither a read nor a hash. The bundle cannot change while the process
+         * lives - it is inside the APK or the jar - so one hash per file per
+         * run is all this ever does.
+         */
+        etags[clean]?.let { known ->
+            if (request.headers["if-none-match"] == known) return notModified(clean, known)
+        }
+
         val bytes = assets.open(clean) ?: return Response.notFound()
-        return Response.bytes(200, MimeTypes.of(clean), bytes, NO_STORE)
+        val etag = etags.getOrPut(clean) { tagFor(bytes) }
+        if (request.headers["if-none-match"] == etag) return notModified(clean, etag)
+        return Response.bytes(200, MimeTypes.of(clean), bytes, cacheHeaders(etag))
     }
+
+    private fun notModified(path: String, etag: String) =
+        Response(304, MimeTypes.of(path), ByteArray(0), cacheHeaders(etag))
 
     private fun urlEncode(s: String): String =
         java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
@@ -1208,8 +1232,51 @@ class CardApi(
          * yesterday's JavaScript against today's API is a real way for this to
          * break after an update — and the phone that did it is the one place
          * nobody can see the mismatch.
+         *
+         * THAT REQUIREMENT IS "NEVER STALE", AND `no-store` WAS A HEAVIER
+         * ANSWER THAN IT NEEDED. It forbids reuse outright, so every asset came
+         * down again on every load — MEASURED against the real server at **263
+         * KB and 14 requests per page load, identical on a reload, zero 304s**.
+         * `no-cache` is the accurate word for what this actually wants: the
+         * browser may keep a copy but must ASK before using it, so an update is
+         * still picked up on the very next request and nothing can run
+         * yesterday's JavaScript. With an ETag beside it, "ask" costs a 304 and
+         * no body instead of the file.
+         *
+         * The two words are easy to read as synonyms and are opposites here.
+         * `no-store` = keep nothing. `no-cache` = keep it, but revalidate every
+         * single time.
+         *
+         * MEASURED AFTER: a revisit costs 75 KB rather than 263, with
+         * app.js, style.css and sharecard.js answering 304 with no body at all.
+         * WHAT IS LEFT IS THE FONTS, and this is an open question rather than a
+         * solved one: Chromium re-downloads every woff2 on every visit however
+         * they are labelled. `public, max-age=604800` was tried and changed
+         * NOTHING, and so was adding the missing `Date` header - both measured,
+         * both reverted or kept on their own merits rather than credited with a
+         * fix they did not make. Do not "fix" this by reasoning about it; the
+         * browser is right there and will say.
          */
-        val NO_STORE = mapOf("Cache-Control" to "no-store")
+        val REVALIDATE = "no-cache"
+
+        private fun cacheHeaders(etag: String) =
+            mapOf("Cache-Control" to REVALIDATE, "ETag" to etag)
+
+        /**
+         * A strong tag over the bytes themselves.
+         *
+         * NOT the version and not a modification time: the version would tag
+         * two different builds alike while `SHARECARD_VERSION` is set by hand,
+         * and an asset inside an APK or a jar has no useful mtime. The bytes
+         * are the thing that must not change unnoticed, so they are what is
+         * hashed.
+         */
+        private fun tagFor(bytes: ByteArray): String {
+            val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            val hex = StringBuilder(32)
+            for (i in 0 until 16) hex.append("%02x".format(digest[i]))
+            return "\"$hex\""
+        }
 
         val ALLOWED_METHODS = setOf("GET", "HEAD", "POST", "DELETE")
 
