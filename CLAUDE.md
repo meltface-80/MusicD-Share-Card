@@ -298,6 +298,47 @@ was simply not there, however carefully the DIDL was parsed.
 - **`now_playing.three_line` is line1=track, line2=artist, line3=ALBUM.** Read in
   the wrong order it makes a card headed with a track name, which looks almost
   right.
+- **ONE RENDERER, TWO SERVICES, ONE OF THEM DRAWING NOTHING — AND `UpnpSource`
+  HAD ONLY EVER ASKED HALF THE QUESTION.** Reported from the field: Spotify
+  Connect to a WiiM Pro Plus makes a card and Qobuz Connect to the SAME BOX
+  makes none. One code path and one device, so the difference could never have
+  been the source; it had to be the reply. `GetPositionInfo` describes the
+  TRACK on the transport and `GetMediaInfo` describes what the transport as a
+  whole is playing, and [SonosSource] has asked the second whenever the first
+  came back short since the first release — radio and line-in put the station's
+  name there and nowhere else. `UpnpSource` never asked it at all, so a
+  renderer answering "PLAYING" with an empty `TrackMetaData` was read as
+  describing nothing and dropped, with the record sitting in the reply this app
+  declined to fetch. THE SAME OMISSION APPEARS ONE FIELD OVER: `r:streamContent`
+  is parsed by `Didl` and was read by Sonos and thrown away here. Both are
+  fixed, both shown failing first. **THE SECOND ROUND TRIP IS GATED EXACTLY AS
+  SONOS GATES IT** — only when the first reply would not draw a card — because
+  a renderer that fully described its record must not pay for one, and a test
+  asserts the second call is not made in that case (shown failing against an
+  unconditional version).
+- **AND `merge` MOVED INTO `Didl` RATHER THAN BEING COPIED.** Same move
+  `Normalize.namesOverlap`, `Normalize.stripEdition` and `quality` each made on
+  their second caller: two copies of a gap-filling rule is how one source
+  learns a station's name and the next does not.
+- **WHAT ACTUALLY SETTLES IT IS THE RAW REPLY, AND UNTIL NOW THERE WAS NONE.**
+  Every line the UPnP diagnostics printed was this app's READING of a reply
+  rather than the device's words, which is the fault that cost the Roon queue
+  four releases. `/api/debug` now carries `GetTransportInfo`, `GetPositionInfo`
+  and `GetMediaInfo` verbatim per renderer — BOTH metadata replies always,
+  whatever the parse made of them, because the whole question is which of the
+  two a Connect session fills in and printing only the short one would hide the
+  half that answered. `GetTransportInfo` is there because "the box says
+  STOPPED" and "the box says PLAYING with nothing in it" are two different
+  bugs. THE FIX ABOVE IS UNVERIFIED AGAINST THE BOX THAT REPORTED IT — no WiiM
+  is reachable from here, the tests drive a real `MockWebServer` and not a
+  WiiM. Read `/api/debug` first on the next run.
+- **CHROMECAST IS NOT A UPnP SESSION AND NO SOURCE HERE SPEAKS IT.** Cast is
+  mDNS discovery and a TLS protobuf channel on port 8009; every source in this
+  app is SSDP/SOAP, JSON-RPC, MOO or Android's own media sessions. Whether a
+  LinkPlay box mirrors a Cast stream into its `AVTransport` is the box's
+  choice and is not knowable from here — which is exactly what the raw reply
+  above answers, in one line, on the first run. Nothing was built for it, and
+  that is a report rather than a fix on purpose.
 - **A UPnP renderer's control URL is not at a fixed path.** Sonos publishes its
   at constants; everyone else names theirs in a device description whose own
   address comes from the SSDP `LOCATION` header. Guessing ports instead of

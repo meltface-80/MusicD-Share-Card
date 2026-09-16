@@ -142,6 +142,33 @@ object Didl {
     }
 
     /**
+     * Fill the gaps in a track's metadata from the transport's.
+     *
+     * Field by field rather than "use one or the other": a radio stream sends
+     * a title per song and a station name on the transport, and the card wants
+     * the song with the station as its context — not one of the two.
+     *
+     * IT LIVES HERE, BESIDE THE PARSER, BECAUSE IT HAS A SECOND CALLER. It was
+     * private to `Household` while Sonos was the only source making the second
+     * call; [com.musicd.sharecard.upnp.UpnpSource] makes it too now. Same move
+     * `Normalize.namesOverlap`, `Normalize.stripEdition` and `quality` each
+     * made on their second caller, and for the same reason: two copies is how
+     * one source learns a station's name and the next does not.
+     */
+    fun merge(track: NowPlaying, media: NowPlaying): NowPlaying {
+        if (media.isEmpty && media.artUri.isEmpty()) return track
+        return NowPlaying(
+            track = track.track.ifEmpty { media.track },
+            album = track.album.ifEmpty { media.album },
+            artist = track.artist.ifEmpty { media.artist },
+            albumArtist = track.albumArtist.ifEmpty { media.albumArtist },
+            artUri = track.artUri.ifEmpty { media.artUri },
+            uri = track.uri.ifEmpty { media.uri },
+            streamContent = track.streamContent.ifEmpty { media.streamContent }
+        )
+    }
+
+    /**
      * Resolve an album-art URI against the player that reported it.
      *
      * Sonos answers with a player-relative path — `/getaa?s=1&u=...` — for

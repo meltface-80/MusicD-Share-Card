@@ -2,6 +2,7 @@ package com.musicd.sharecard.upnp
 
 import com.musicd.sharecard.Log
 import com.musicd.sharecard.sonos.Didl
+import com.musicd.sharecard.sonos.NowPlaying
 import com.musicd.sharecard.sonos.SoapClient
 import com.musicd.sharecard.sonos.Ssdp
 import com.musicd.sharecard.sonos.TransportState
@@ -302,18 +303,59 @@ class UpnpSource(
         return fallback
     }
 
-    private fun read(renderer: Renderer): Playing? = try {
-        val transport = TransportState.of(
-            soap.call(
-                renderer.controlUrl, AV_TRANSPORT, "GetTransportInfo",
-                listOf<Pair<String, Any>>("InstanceID" to 0)
-            )["CurrentTransportState"].orEmpty()
-        )
-        val position = soap.call(
-            renderer.controlUrl, AV_TRANSPORT, "GetPositionInfo",
+    private fun avt(renderer: Renderer, action: String): Map<String, String> =
+        soap.call(
+            renderer.controlUrl, AV_TRANSPORT, action,
             listOf<Pair<String, Any>>("InstanceID" to 0)
         )
-        val np = Didl.parse(position["TrackMetaData"].orEmpty())
+
+    private fun read(renderer: Renderer): Playing? = try {
+        val transport = TransportState.of(
+            avt(renderer, "GetTransportInfo")["CurrentTransportState"].orEmpty()
+        )
+        val position = avt(renderer, "GetPositionInfo")
+        val track = Didl.parse(position["TrackMetaData"].orEmpty())
+
+        /*
+         * AND THEN THE TRANSPORT, WHEN THE TRACK CAME BACK SHORT — WHICH
+         * [SonosSource] HAS DONE SINCE THE FIRST RELEASE AND THIS HAD NEVER
+         * DONE AT ALL.
+         *
+         * `GetPositionInfo` describes the TRACK on the transport;
+         * `GetMediaInfo` describes what the transport as a whole is playing.
+         * For a radio station that is where the station's name lives, and for
+         * a service driving the box over its own protocol — Qobuz Connect,
+         * TIDAL Connect, anything casting — it is commonly the only one of the
+         * two that is filled in at all. So a renderer answering "PLAYING" with
+         * an empty TrackMetaData was read as describing nothing and dropped,
+         * while the record it was playing sat in the reply this app never
+         * asked for.
+         *
+         * A SECOND ROUND TRIP, AND IT IS GATED EXACTLY AS SONOS GATES IT: only
+         * when the first reply would not draw a card. A renderer playing a
+         * record it has fully described costs nothing extra, which is most of
+         * them most of the time.
+         *
+         * UNVERIFIED AGAINST THE BOX THAT REPORTED THE BUG — no WiiM is
+         * reachable from here. [diagnostics] prints both replies now, so the
+         * first real run says which of the two the renderer filled in.
+         */
+        val media = if (track.album.isEmpty() || track.isEmpty) {
+            Didl.parse(avt(renderer, "GetMediaInfo")["CurrentURIMetaData"].orEmpty())
+        } else {
+            NowPlaying()
+        }
+        val np = Didl.merge(track, media)
+
+        // A station announcing "Artist - Title" is the only metadata some
+        // streams ever send — read by Sonos since the beginning and thrown
+        // away here, which is the same omission one field over.
+        val announced = if (np.artist.isEmpty() && np.streamContent.isNotEmpty()) {
+            Didl.splitStreamContent(np.streamContent)
+        } else {
+            null
+        }
+
         // A DLNA renderer is fed by a server on the network exactly as a Sonos
         // is, and that server's art URL is refused for the same reason.
         streamHosts.remember(np.uri)
@@ -321,9 +363,10 @@ class UpnpSource(
             source = name,
             zoneId = ZoneRef.idFor(name, renderer.udn),
             zoneName = renderer.friendlyName,
-            album = np.displayAlbum,
-            artist = np.displayArtist,
-            track = if (Didl.looksLikeStreamId(np.track)) "" else np.track,
+            album = np.displayAlbum.ifEmpty { announced?.second.orEmpty() },
+            artist = np.displayArtist.ifEmpty { announced?.first.orEmpty() },
+            track = np.track.ifEmpty { announced?.second.orEmpty() }
+                .let { if (Didl.looksLikeStreamId(it)) "" else it },
             state = when (transport) {
                 TransportState.PLAYING -> PlayState.PLAYING
                 TransportState.PAUSED -> PlayState.PAUSED
@@ -349,7 +392,7 @@ class UpnpSource(
                     .joinToString(", ") { shortService(it.type) }
                     .ifEmpty { "none listed" },
                 "    can be asked to queue: " + queueability(renderer.services.map { it.type })
-            ) + renderer.queueActions.map { (name, actions) ->
+            ) + rawReply(renderer) + renderer.queueActions.map { (name, actions) ->
                 "    $name actions: " +
                     actions.joinToString(", ").ifEmpty { "none published, or it would not answer" }
             } + renderer.queueSignatures.flatMap { (name, signatures) ->
@@ -357,6 +400,43 @@ class UpnpSource(
             }
         }
     }
+
+    /**
+     * EXACTLY WHAT THE RENDERER SAID, UNPARSED — the section this app has
+     * needed for a year and did not have.
+     *
+     * Reported from the field: Spotify Connect to a WiiM Pro Plus draws a
+     * card and Qobuz Connect to the SAME BOX draws nothing. One renderer, one
+     * code path, two services — so the difference is in the reply, and every
+     * line above this one reports what this app MADE of a reply rather than
+     * what arrived. The Roon queue cost four releases to exactly that: the
+     * round that fixed it printed what the Core actually sent and the answer
+     * was in the first two lines.
+     *
+     * Both replies, always, whatever the parse made of them: the whole
+     * question is which of the two a Connect session fills in, and printing
+     * only the one that came back short would hide the half that answered.
+     * `GetTransportInfo` is here too because "the box says STOPPED" and "the
+     * box says PLAYING with nothing in it" are two different bugs.
+     *
+     * The cost is three SOAP calls per renderer on the one page that exists
+     * to be slow — Sonos's own diagnostics line already asks its coordinator
+     * twice, for the same reason.
+     */
+    private fun rawReply(renderer: Renderer): List<String> =
+        listOf("GetTransportInfo", "GetPositionInfo", "GetMediaInfo").flatMap { action ->
+            try {
+                val reply = avt(renderer, action)
+                val fields = reply.entries
+                    .filter { it.value.isNotBlank() }
+                    .map { "      ${it.key}: ${snippet(it.value)}" }
+                listOf("    $action:") + fields.ifEmpty {
+                    listOf("      answered, every field empty")
+                }
+            } catch (e: Throwable) {
+                listOf("    $action: ${e.javaClass.simpleName}: ${e.message ?: "no message"}")
+            }
+        }
 
     internal companion object {
         const val TAG = "Upnp"
@@ -368,6 +448,33 @@ class UpnpSource(
 
         /** A description with more than this is listing more than is readable. */
         const val MAX_SERVICES = 16
+
+        /**
+         * One DIDL document, on one line, short enough to photograph.
+         *
+         * A cap that falls one word short of the answer is the expensive way
+         * to be wrong — see `Similar.MAX_REASON`, which cut off at exactly the
+         * word introducing the list it existed to carry. So the length is
+         * stated when it cuts, and it cuts well past where a title, an artist
+         * and an album have all appeared.
+         */
+        internal fun snippet(value: String): String {
+            // Folded by hand rather than with a Regex: this is a companion
+            // object, and a Regex property in one is a static initialiser
+            // Android's stricter engine gets to refuse — see
+            // RegexPortabilityTest and the release that would not open.
+            val flat = buildString {
+                for (c in value) {
+                    val ch = if (c.isWhitespace()) ' ' else c
+                    if (ch == ' ' && (isEmpty() || last() == ' ')) continue
+                    append(ch)
+                }
+            }.trim()
+            if (flat.length <= MAX_RAW) return flat
+            return flat.take(MAX_RAW) + "… (" + flat.length + " chars)"
+        }
+
+        const val MAX_RAW = 600
 
         /**
          * Is this one of the services that holds a real queue?

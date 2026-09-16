@@ -305,31 +305,11 @@ class Household(
             } else {
                 NowPlaying() to ""
             }
-            ZoneState(group, transport, merge(track, media), uri)
+            ZoneState(group, transport, Didl.merge(track, media), uri)
         } catch (e: Throwable) {
             Log.w(TAG, "${group.coordinator.name} would not answer: ${e.message}")
             null
         }
-    }
-
-    /**
-     * Fill the gaps in a track's metadata from the transport's.
-     *
-     * Field by field rather than "use one or the other": a radio stream sends
-     * a title per song and a station name on the transport, and the card wants
-     * the song with the station as its context — not one of the two.
-     */
-    internal fun merge(track: NowPlaying, media: NowPlaying): NowPlaying {
-        if (media.isEmpty && media.artUri.isEmpty()) return track
-        return NowPlaying(
-            track = track.track.ifEmpty { media.track },
-            album = track.album.ifEmpty { media.album },
-            artist = track.artist.ifEmpty { media.artist },
-            albumArtist = track.albumArtist.ifEmpty { media.albumArtist },
-            artUri = track.artUri.ifEmpty { media.artUri },
-            uri = track.uri.ifEmpty { media.uri },
-            streamContent = track.streamContent.ifEmpty { media.streamContent }
-        )
     }
 
     /**
