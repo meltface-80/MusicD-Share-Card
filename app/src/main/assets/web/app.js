@@ -1732,7 +1732,18 @@
     hintEl.textContent = pick.why || "";
     actions.innerHTML = "";
     const back = button("", "Back to Discover", "");
-    back.onclick = showNewMusic;
+    /*
+     * WRAPPED, BECAUSE A HANDLER IS CALLED WITH THE EVENT.
+     *
+     * `back.onclick = showNewMusic` passes the MouseEvent as `force`, and an
+     * event object is truthy — so going Back from a record asked for
+     * `?refresh=1`, which makes the server THROW AWAY the screen it is holding
+     * and go out to ListenBrainz, two feeds, Deezer and a sleeve lookup per
+     * record. Reported as Discover appearing to fully reload on the way back,
+     * and it did: the cache was working perfectly and being discarded on every
+     * tap.
+     */
+    back.onclick = () => showNewMusic(false);
     actions.appendChild(back);
   }
 
@@ -2450,7 +2461,10 @@
   });
   settingsBtn.addEventListener("click", showSettings);
   tabCard.addEventListener("click", () => load(false));
-  tabNew.addEventListener("click", showNewMusic);
+  // Wrapped for the reason `back` is — the Event would arrive as `force` and
+  // force a full refetch every time somebody merely opened the tab, which is
+  // most of why Discover felt slow to populate even when it was cached.
+  tabNew.addEventListener("click", () => showNewMusic(false));
   zoneSel.addEventListener("change", () => {
     // From here on the picker outranks whatever the server remembers, which
     // is what lets "Whatever's playing" mean it.

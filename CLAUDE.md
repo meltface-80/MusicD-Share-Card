@@ -1081,6 +1081,28 @@ was simply not there, however carefully the DIDL was parsed.
   for an hour, while a record's cover does not change and is written to disk
   for a week, which is what stops the same twelve lookups being paid again
   tomorrow. `forget()` throws away the screen and NOT the sleeves.
+- **AND A BARE FUNCTION HANDED TO AN EVENT IS CALLED WITH THE EVENT, WHICH
+  UNDID ALL OF THAT REMEMBERING.** `tabNew.addEventListener("click",
+  showNewMusic)` and `back.onclick = showNewMusic` both read as "call this when
+  tapped" and are not: the browser passes a MouseEvent as the first argument.
+  `showNewMusic(force)` takes `force`, and an event object is TRUTHY — so
+  merely OPENING the Discover tab, and coming back to it from a record, each
+  asked for `?refresh=1`, which makes the server `forget()` the screen and go
+  out to ListenBrainz, two RSS feeds, Deezer and a sleeve lookup per record.
+  Reported as Discover being slow to populate and appearing to fully reload on
+  the way back. **The cache was working perfectly the entire time and being
+  thrown away on every tap** — an hour of remembering undone by two missing
+  brackets, and invisible because the screen still drew.
+  `HandlerArityTest` asserts the INVARIANT rather than those two lines: a
+  parameterless function is safe to hand over bare and one with a parameter is
+  not. `showSettings`, `addWebhook` and `startUpdate` are all passed bare and
+  all take nothing, which is why the scan passes rather than being written to
+  exclude them.
+- **AND REFRESH ON DISCOVER WAS ALREADY RIGHT — CHECKED RATHER THAN ASSUMED.**
+  Asked whether it also refreshes zones: it does not. The button branches on
+  the lit tab, `/api/new` touches no source and runs no sweep, and driving it
+  in a real browser showed the tab clicks sending `/api/new` and Refresh
+  sending `/api/new?refresh=1` and nothing else at all.
 - **REFRESH REFRESHES THE SCREEN YOU ARE LOOKING AT.** It called `load(true)`
   unconditionally, so pressing it on Discover threw away the sleeves and drew
   the card — which reads as the button navigating rather than refreshing, and
