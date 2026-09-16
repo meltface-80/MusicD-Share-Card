@@ -2046,6 +2046,31 @@ was simply not there, however carefully the DIDL was parsed.
   feeds are published for syndication and a digest of headlines would be
   defensible too — that is the next increment — but reproducing the prose never
   is, whatever it is wrapped in.
+- **DISCOVER WAS SEEDED BY THE HISTORY ALONE, SO IT COULD ONLY EVER SUGGEST
+  SOMEBODY YOU ALREADY PLAY.** Reported: "I recently listened to Ty Segall - it
+  shouldn't always return another Ty Segall album. It appears to do this with
+  all artists listened to recently. Needs to be broader - same style/genre."
+  That was the design rather than a bug: the fresh-releases window was matched
+  against the HISTORY, so the only act that could appear was one already in it.
+  A new record by somebody you love is the most relevant thing this screen can
+  hold; it just cannot be the whole of a screen called Discover.
+  `seedsFrom` widens the filter with `Similar` - the SAME instance the card's
+  suggestion row uses, so one shelf answers both - and a widened pick says
+  "Similar to Ty Segall" rather than claiming you played it.
+- **THE COST IS PER ACT, NOT PER RECORD, WHICH IS THE ONLY REASON THIS IS
+  AFFORDABLE.** The window is still ONE request however many seeds there are:
+  widening the filter does not widen the fetch. Each lookup is rate-gated and
+  written to disk for a week, and only the most recent `SEED_ACTS` are
+  expanded - expanding all sixty would be the exact mistake this file avoids
+  elsewhere, sixty rate-limited lookups being a minute of waiting for a screen.
+  A host that passes no `Similar` gets the old screen unchanged, which is what
+  keeps every existing test honest.
+- **TWO RULES CARRY THE COMPLAINT, AND BOTH ARE TESTED BY BREAKING THEM.** ONE
+  RECORD PER ACT, because two Ty Segall releases in one window is two tiles
+  saying the same thing; and `MAX_SAME_ACT` of `WANTED`, so acts you already
+  play LEAD but cannot fill the screen, with the rest going behind everything
+  similar. Not zero and not unlimited - zero would throw away the best signal
+  here, unlimited is what was reported.
 - **TWO SOURCES, ANSWERING DIFFERENT QUESTIONS.** ListenBrainz's fresh-releases
   window is ONE request for every release in a date range, so the filtering
   against the history happens in `NewMusic` — sixty acts would otherwise be

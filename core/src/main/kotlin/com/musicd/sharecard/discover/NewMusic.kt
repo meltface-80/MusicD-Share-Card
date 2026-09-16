@@ -3,6 +3,7 @@ package com.musicd.sharecard.discover
 import com.musicd.sharecard.Log
 import com.musicd.sharecard.library.Normalize
 import com.musicd.sharecard.meta.CacheStore
+import com.musicd.sharecard.meta.Similar
 import com.musicd.sharecard.meta.RateGate
 import com.musicd.sharecard.meta.TtlCache
 import com.musicd.sharecard.strOrNull
@@ -49,6 +50,15 @@ class NewMusic(
     private val history: PlayHistory,
     /** What the press has been reviewing. Null where the feeds are not wanted. */
     private val editorial: Editorial? = null,
+    /**
+     * ACTS LIKE THE ONES THIS HOUSE PLAYS, which is what makes this screen
+     * broader than a list of your own artists releasing again.
+     *
+     * Null leaves the screen exactly as it was - seeded by the history alone -
+     * so a host that does not pass one, and every test that does not need one,
+     * behaves as before.
+     */
+    private val similar: Similar? = null,
     /** So a screenful of sleeves survives a restart as well as a tab switch. */
     private val store: CacheStore = CacheStore.NONE,
     /** Seams for the tests: neither wants a socket or a real calendar. */
@@ -64,6 +74,17 @@ class NewMusic(
      * different promise from "out this week", and a screen that cannot tell
      * you which it is has not earned the word "listening".
      */
+    /**
+     * An act whose new record may appear, and who to credit it to.
+     *
+     * [because] is the act the USER actually played — for a widened seed that
+     * is somebody else, and it is what the tile says. Keeping it on the seed
+     * rather than working it out later is what lets the screen say "Similar to
+     * Ty Segall" instead of a bare "out this week", which is the difference
+     * between this screen meaning its name and being a release calendar.
+     */
+    data class Seed(val artist: String, val because: String, val played: Boolean)
+
     data class Pick(
         val artist: String,
         val album: String,
@@ -183,9 +204,59 @@ class NewMusic(
         val url = "$LB/1/explore/fresh-releases/?release_date=${today()}" +
             "&days=$WINDOW_DAYS&past=true&future=false"
         val body = get(url) ?: run { note("listenbrainz: no answer"); return emptyList() }
-        return runCatching { parseFreshReleases(body, heard) }
+        val seeds = seedsFrom(heard)
+        return runCatching { parseFreshReleases(body, seeds) }
             .onFailure { note("listenbrainz: unreadable answer (${it.javaClass.simpleName})") }
             .getOrDefault(emptyList())
+    }
+
+    /**
+     * WHOSE NEW RECORDS MAY APPEAR: the acts this house plays, AND acts like
+     * them.
+     *
+     * Reported from the field, and it is the fair reading of what this screen
+     * was: "I recently listened to Ty Segall — it shouldn't always return
+     * another Ty Segall album. It appears to do this with all artists listened
+     * to recently. Needs to be broader — same style/genre." That was exactly
+     * the design: the fresh-releases window was matched against the HISTORY, so
+     * the only thing that could ever appear was an act already in it. A new
+     * record by somebody you play is worth knowing about, but it cannot be the
+     * whole of "discover".
+     *
+     * **THE COST IS PER ACT, NOT PER RECORD, AND THAT IS THE WHOLE REASON THIS
+     * IS AFFORDABLE.** The window itself is still ONE request however many
+     * seeds there are — widening the filter does not widen the fetch. Each
+     * lookup is [Similar]'s, which is rate-gated and written to disk for a
+     * week, and only the most recent [SEED_ACTS] acts are expanded, so a cold
+     * screen pays a bounded handful and a warm one pays nothing. Expanding all
+     * sixty would be the mistake this file already avoids elsewhere: sixty
+     * rate-limited lookups is a minute of waiting for a screen.
+     */
+    internal fun seedsFrom(heard: List<PlayHistory.Heard>): List<Seed> {
+        val played = heard.filter { it.artist.isNotBlank() }
+        val seeds = LinkedHashMap<String, Seed>()
+        for (act in played) seeds.putIfAbsent(Normalize.text(act.artist), Seed(act.artist, act.artist, true))
+
+        val engine = similar ?: return seeds.values.toList().also {
+            note("seeds -> ${it.size} act(s) played; no similar-artist lookup wired in")
+        }
+        var widened = 0
+        for (act in played.take(SEED_ACTS)) {
+            // No MusicBrainz id is held for a played record, so this is
+            // Deezer's related-artists list in practice — which is the half
+            // that answers in the field anyway.
+            val like = runCatching { engine.forArtist(act.artist, null) }
+                .onFailure { note("similar(${act.artist}): ${it.javaClass.simpleName}") }
+                .getOrDefault(emptyList())
+            for (other in like) {
+                if (other.name.isBlank()) continue
+                if (seeds.putIfAbsent(Normalize.text(other.name), Seed(other.name, act.artist, false)) == null) {
+                    widened++
+                }
+            }
+        }
+        note("seeds -> ${played.size} act(s) played, widened by $widened like them")
+        return seeds.values.toList()
     }
 
     private fun fromEditorial(): List<Pick> {
@@ -335,6 +406,24 @@ class NewMusic(
          */
         const val WINDOW_DAYS = 21
 
+        /**
+         * How many recently played acts get widened into acts like them.
+         *
+         * Bounded because each one is a rate-gated lookup on a cold cache, and
+         * the history holds sixty. The most recent handful is what "recently
+         * listened to" means anyway.
+         */
+        const val SEED_ACTS = 8
+
+        /**
+         * At most this many picks by acts already played, out of [WANTED].
+         *
+         * Not zero: a new record by somebody this house plays is the most
+         * relevant thing the screen can hold. Not unlimited: that is what made
+         * every tile another album by the act just played.
+         */
+        const val MAX_SAME_ACT = 4
+
         /** How long a screenful of "what is new" stays true. The feeds are hourly. */
         const val SCREEN_TTL_MS = 60L * 60_000L
 
@@ -417,13 +506,18 @@ class NewMusic(
          * the root, and each name is looked for under more than one key. A row
          * missing what it needs is dropped; it never takes the screen with it.
          */
-        internal fun parseFreshReleases(body: String, heard: List<PlayHistory.Heard>): List<Pick> {
+        internal fun parseFreshReleases(body: String, seeds: List<Seed>): List<Pick> {
             val root = JSONObject(body)
             val rows = root.optJSONObject("payload")?.optJSONArray("releases")
                 ?: root.optJSONArray("releases")
                 ?: JSONArray()
-            val wanted = heard.filter { it.artist.isNotBlank() }
-            val out = ArrayList<Pick>()
+            val wanted = seeds.filter { it.artist.isNotBlank() }
+            val played = ArrayList<Pick>()
+            val like = ArrayList<Pick>()
+            // ONE RECORD PER ACT. Three new Ty Segall releases in one window is
+            // three tiles saying the same thing, which is half the complaint
+            // this widening answers.
+            val seen = HashSet<String>()
             for (i in 0 until rows.length()) {
                 val row = rows.optJSONObject(i) ?: continue
                 val artist = row.strOrNull("artist_credit_name")
@@ -433,16 +527,35 @@ class NewMusic(
                 if (artist.isBlank() || album.isBlank()) continue
                 val match = wanted.firstOrNull { Normalize.namesOverlap(it.artist, artist) }
                     ?: continue
-                out += Pick(
+                if (!seen.add(Normalize.text(artist))) continue
+                val pick = Pick(
                     artist = artist,
                     album = album,
                     released = row.strOrNull("release_date").orEmpty(),
                     art = coverArtUrl(row),
-                    why = "Because you played ${match.artist}",
-                    heard = true
+                    why = if (match.played) "Because you played ${match.because}"
+                    else "Similar to ${match.because}",
+                    /*
+                     * `heard` MARKS THE STRONGEST CLAIM, and only a record by
+                     * an act actually played earns it - the page styles that
+                     * differently. A widened seed is an honest "similar to",
+                     * not "you played this".
+                     */
+                    heard = match.played
                 )
+                if (match.played) played += pick else like += pick
             }
-            return out
+            /*
+             * AN ACT YOU ALREADY PLAY MAY NOT FILL THE SCREEN.
+             *
+             * This is the reported complaint stated as a rule. A new record by
+             * somebody you love is the single most relevant thing here, so it
+             * leads — but capped, because a screen of nothing else is a release
+             * calendar for a library you already have. What is left goes to
+             * acts like them, and anything still unfilled falls through to the
+             * press and then to Deezer exactly as before.
+             */
+            return played.take(MAX_SAME_ACT) + like + played.drop(MAX_SAME_ACT)
         }
 
         /**
