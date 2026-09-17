@@ -13,12 +13,19 @@ import org.junit.Test
 /**
  * New records, and which of them this house has any reason to care about.
  *
- * NOT ONE BYTE OF EITHER ENDPOINT HAS BEEN SEEN FROM HERE — the proxy on this
- * machine answers 403 to the CONNECT for both hosts, checked rather than
- * assumed — so these are the documented shapes, pinned as fixtures. The socket
- * is kept out of the parsing precisely so that a wire which differs is one
- * function to correct; treat the first real run as the verification, and read
- * /api/debug first.
+ * THE FIXTURES CARRY OBSERVED FIELDS NOW, WHICH THEY DID NOT BEFORE. The proxy
+ * on this machine used to answer 403 to the CONNECT for api.listenbrainz.org
+ * and api.deezer.com; it does not any more, so both were driven directly and
+ * the shapes below were corrected against the real answers. That matters for
+ * one field in particular: every fresh-release fixture here was written
+ * WITHOUT `release_group_primary_type`, so nothing in this file could ever
+ * have noticed that 701 of 1445 releases in a real window are singles and 220
+ * are EPs — which is exactly what was reported. A fixture missing the field
+ * the feature turns on cannot fail.
+ *
+ * Still NOT seen from here: the two review feeds, which the proxy does still
+ * refuse. The socket is kept out of the parsing precisely so that a wire which
+ * differs is one function to correct; read /api/debug first.
  */
 class NewMusicTest {
 
@@ -43,15 +50,15 @@ class NewMusicTest {
     private val window = """
         {"payload":{"releases":[
           {"artist_credit_name":"Ty Segall","release_name":"Another One",
-           "release_date":"2026-09-11"},
+           "release_date":"2026-09-11","release_group_primary_type":"Album"},
           {"artist_credit_name":"Ty Segall","release_name":"And Another",
-           "release_date":"2026-09-12"},
+           "release_date":"2026-09-12","release_group_primary_type":"Album"},
           {"artist_credit_name":"Oh Sees","release_name":"Something Else",
-           "release_date":"2026-09-13"},
+           "release_date":"2026-09-13","release_group_primary_type":"Album"},
           {"artist_credit_name":"Mikal Cronin","release_name":"A Third Thing",
-           "release_date":"2026-09-14"},
+           "release_date":"2026-09-14","release_group_primary_type":"Album"},
           {"artist_credit_name":"Nobody Relevant","release_name":"Unrelated",
-           "release_date":"2026-09-15"}
+           "release_date":"2026-09-15","release_group_primary_type":"Album"}
         ]}}
     """.trimIndent()
 
@@ -94,10 +101,12 @@ class NewMusicTest {
         // allows, the ones over it go behind everything similar rather than
         // taking the whole screen.
         val many = (1..8).joinToString(",") {
-            """{"artist_credit_name":"Act $it","release_name":"Record $it"}"""
+            """{"artist_credit_name":"Act $it","release_name":"Record $it",
+                "release_group_primary_type":"Album"}"""
         }
         val body = """{"payload":{"releases":[$many,
-            {"artist_credit_name":"Neighbour","release_name":"Widened"}]}}"""
+            {"artist_credit_name":"Neighbour","release_name":"Widened",
+             "release_group_primary_type":"Album"}]}}"""
         val seeds = heard(*(1..8).map { "Act $it" }.toTypedArray()) + like("Neighbour", "Act 1")
         val picks = NewMusic.parseFreshReleases(body, seeds)
 
@@ -127,12 +136,13 @@ class NewMusicTest {
     private val fresh = """
         {"payload":{"releases":[
           {"artist_credit_name":"Slint","release_name":"Spiderland II",
-           "release_date":"2026-09-11",
+           "release_date":"2026-09-11","release_group_primary_type":"Album",
            "caa_id":12345,"caa_release_mbid":"aaaa-bbbb-cccc-dddd"},
           {"artist_credit_name":"Some Stranger","release_name":"Their Record",
-           "release_date":"2026-09-12","caa_id":999,"caa_release_mbid":"eeee-ffff"},
+           "release_date":"2026-09-12","release_group_primary_type":"Album",
+           "caa_id":999,"caa_release_mbid":"eeee-ffff"},
           {"artist_credit_name":"Björk","release_name":"New One",
-           "release_date":"2026-09-13"}
+           "release_date":"2026-09-13","release_group_primary_type":"Album"}
         ]}}
     """.trimIndent()
 
@@ -169,9 +179,10 @@ class NewMusicTest {
     fun `a row missing what it needs costs that row and not the screen`() {
         val ragged = """
             {"payload":{"releases":[
-              {"release_name":"No Artist Named"},
-              {"artist_credit_name":"Slint"},
-              {"artist_credit_name":"Slint","release_name":"Kept","release_date":""},
+              {"release_name":"No Artist Named","release_group_primary_type":"Album"},
+              {"artist_credit_name":"Slint","release_group_primary_type":"Album"},
+              {"artist_credit_name":"Slint","release_name":"Kept","release_date":"",
+               "release_group_primary_type":"Album"},
               "not even an object"
             ]}}
         """.trimIndent()
@@ -182,7 +193,8 @@ class NewMusicTest {
     fun `the rows are found at the root too`() {
         // Lenient on purpose: nobody here has seen this payload, so it is
         // looked for in both places rather than one.
-        val flat = """{"releases":[{"artist_credit_name":"Slint","release_name":"Flat"}]}"""
+        val flat = """{"releases":[{"artist_credit_name":"Slint","release_name":"Flat",
+            "release_group_primary_type":"Album"}]}"""
         assertEquals(listOf("Flat"), NewMusic.parseFreshReleases(flat, heard("Slint")).map { it.album })
     }
 
@@ -190,6 +202,158 @@ class NewMusicTest {
     fun `nothing readable at all is an empty list, never a throw`() {
         assertTrue(NewMusic.parseFreshReleases("{}", heard("Slint")).isEmpty())
         assertTrue(NewMusic.parseFreshReleases("""{"payload":{}}""", heard("Slint")).isEmpty())
+    }
+
+    // ------------------------------------------------------------ albums only
+
+    /*
+     * REPORTED: "The discover page still offers singles. I only want albums.
+     * This is a must."
+     *
+     * MEASURED rather than reasoned about, because the endpoint is reachable
+     * from here now: one week of the real window is 1445 releases — 701
+     * Single, 483 Album, 220 EP, 28 with no type at all, 8 Broadcast, 5
+     * Other. Nothing was filtering any of it, so this is what a household
+     * actually got.
+     */
+    private val mixedWindow = """
+        {"payload":{"releases":[
+          {"artist_credit_name":"Slint","release_name":"A Single",
+           "release_group_primary_type":"Single"},
+          {"artist_credit_name":"Slint","release_name":"An EP",
+           "release_group_primary_type":"EP"},
+          {"artist_credit_name":"Slint","release_name":"A Broadcast",
+           "release_group_primary_type":"Broadcast"},
+          {"artist_credit_name":"Slint","release_name":"Untyped"},
+          {"artist_credit_name":"Slint","release_name":"An Album",
+           "release_group_primary_type":"Album"}
+        ]}}
+    """.trimIndent()
+
+    @Test
+    fun `a single by an act you play is never on the screen`() {
+        val picks = NewMusic.parseFreshReleases(mixedWindow, heard("Slint"))
+        assertEquals(listOf("An Album"), picks.map { it.album })
+    }
+
+    @Test
+    fun `an EP is not an album, and neither is a row that names no type`() {
+        /*
+         * A WHITELIST, not a list of things to skip: 28 rows of one real
+         * window carried no type at all, and "we cannot tell" is not "album".
+         *
+         * ONE ACT PER SHAPE, WHICH IS THE HALF THAT MAKES THIS A TEST. Run
+         * against [mixedWindow] it passes with the filter TAKEN OUT, because
+         * one-record-per-act would drop the EP and the rest behind the single
+         * anyway — a rule that is not this one holding the assertion up.
+         * Shown, not assumed: the first cut of this did exactly that.
+         */
+        val perAct = """
+            {"payload":{"releases":[
+              {"artist_credit_name":"Act A","release_name":"An EP",
+               "release_group_primary_type":"EP"},
+              {"artist_credit_name":"Act B","release_name":"A Broadcast",
+               "release_group_primary_type":"Broadcast"},
+              {"artist_credit_name":"Act C","release_name":"Untyped"},
+              {"artist_credit_name":"Act D","release_name":"Something Else",
+               "release_group_primary_type":"Other"}
+            ]}}
+        """.trimIndent()
+        assertTrue(
+            "every refused shape has to stay refused, including the one nobody " +
+                "has seen yet",
+            NewMusic.parseFreshReleases(
+                perAct, heard("Act A", "Act B", "Act C", "Act D")
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun `a soundtrack or a live record is still an album and is kept`() {
+        /*
+         * THE ONE JUDGEMENT CALL, STATED AS A TEST. MusicBrainz files a
+         * soundtrack, a compilation and a live record as primary type Album
+         * with the rest in `release_group_secondary_type` — 58 of the 483
+         * albums in the window measured above — and those are records. Narrow
+         * it here if the owner wants them out; do not narrow it by accident.
+         */
+        val body = """
+            {"payload":{"releases":[
+              {"artist_credit_name":"Slint","release_name":"Live Somewhere",
+               "release_group_primary_type":"Album",
+               "release_group_secondary_type":"Live"}
+            ]}}
+        """.trimIndent()
+        assertEquals(
+            listOf("Live Somewhere"),
+            NewMusic.parseFreshReleases(body, heard("Slint")).map { it.album }
+        )
+    }
+
+    @Test
+    fun `a single must not spend the act's one slot and cost the album`() {
+        /*
+         * THE ORDER OF THE TWO CHECKS IS THE WHOLE TEST. One record per act is
+         * a rule this screen already had; if the type were checked after it,
+         * an act who released a single on Tuesday and an album on Thursday
+         * would have their slot claimed by the single, which is then thrown
+         * away — a filter that hides the record it was added to find.
+         */
+        val picks = NewMusic.parseFreshReleases(mixedWindow, heard("Slint"))
+        assertEquals(
+            "the single is listed first in that window and the album still gets through",
+            listOf("An Album"), picks.map { it.album }
+        )
+    }
+
+    @Test
+    fun `what was left out is counted, in the wire's own words`() {
+        // "Three new records by acts you play and all three were singles" and
+        // "nobody you play released anything" are the same thin screen from
+        // outside. The report has to be able to tell them apart.
+        val refused = LinkedHashMap<String, Int>()
+        NewMusic.parseFreshReleases(mixedWindow, heard("Slint"), refused)
+        assertEquals(1, refused["Single"])
+        assertEquals(1, refused["EP"])
+        assertEquals(1, refused["Broadcast"])
+        assertEquals(
+            "a row with no type must name itself rather than vanish",
+            1, refused.values.sum() - 3
+        )
+    }
+
+    @Test
+    fun `the refusals reach the diagnostics`() {
+        val history = PlayHistory.inMemory()
+        history.remember("Slint", "Spiderland")
+        val engine = engine(history, mapOf("listenbrainz" to mixedWindow))
+        engine.picks()
+        assertTrue(
+            "an album-only screen that came out thin must say why",
+            engine.attempts().any { it.contains("albums only") && it.contains("Single") }
+        )
+    }
+
+    @Test
+    fun `a single in Deezer's release list is not offered either`() {
+        // Same rule, the other source's spelling of it. `Similar` already
+        // applies this to /artist/{id}/albums after "some are just tracks"
+        // was reported; a release list had the identical fault and no guard.
+        val mixed = """
+            {"data":[
+              {"title":"A Single","record_type":"single","artist":{"name":"Act"}},
+              {"title":"An EP","record_type":"ep","artist":{"name":"Act"}},
+              {"title":"Untyped","artist":{"name":"Act"}},
+              {"title":"An Album","record_type":"album","artist":{"name":"Act"}}
+            ]}
+        """.trimIndent()
+        val refused = LinkedHashMap<String, Int>()
+        assertEquals(
+            listOf("An Album"),
+            NewMusic.parseDeezerReleases(mixed, refused).map { it.album }
+        )
+        assertEquals(1, refused["single"])
+        assertEquals(1, refused["ep"])
     }
 
     // ------------------------------------------------------------- the sleeve
@@ -234,11 +398,12 @@ class NewMusicTest {
 
     private val editorial = """
         {"data":[
-          {"title":"Out Now","release_date":"2026-09-12",
+          {"title":"Out Now","release_date":"2026-09-12","record_type":"album",
            "artist":{"name":"Somebody Else"},
            "cover_xl":"https://e-cdns-images.dzcdn.net/images/cover/xl.jpg"},
-          {"title":"No Artist Object"},
+          {"title":"No Artist Object","record_type":"album"},
           {"title":"Small Cover Only","artist":{"name":"Another Act"},
+           "record_type":"album",
            "cover":"https://e-cdns-images.dzcdn.net/images/cover/small.jpg"}
         ]}
     """.trimIndent()
@@ -414,8 +579,10 @@ class NewMusicTest {
     private val albumSearch = """
         {"data":[
           {"title":"Spiderland Revisited","artist":{"name":"Somebody Else"},
+           "record_type":"album",
            "cover_xl":"https://cdn.deezer.com/wrong_xl.jpg"},
           {"title":"Spiderland","artist":{"name":"Slint"},
+           "record_type":"album",
            "cover_xl":"https://cdn.deezer.com/right_xl.jpg",
            "cover_big":"https://cdn.deezer.com/right_big.jpg"}
         ]}
@@ -440,6 +607,50 @@ class NewMusicTest {
             "", NewMusic.pickSleeve(albumSearch, "Static-X", "Spiderland")
         )
         assertEquals("", NewMusic.pickSleeve("""{"data":[]}""", "Slint", "Spiderland"))
+    }
+
+    @Test
+    fun `the album's own cover wins over the single named after it`() {
+        /*
+         * A lead single is very often named after the record and filed under
+         * the same act, so both rows pass the name check and Deezer ranks
+         * whichever it likes first. `record_type` is what tells them apart.
+         * Here the single is first, which is the case that matters.
+         */
+        val both = """
+            {"data":[
+              {"title":"Spiderland","artist":{"name":"Slint"},
+               "record_type":"single",
+               "cover_big":"https://cdn.deezer.com/single_big.jpg"},
+              {"title":"Spiderland","artist":{"name":"Slint"},
+               "record_type":"album",
+               "cover_big":"https://cdn.deezer.com/album_big.jpg"}
+            ]}
+        """.trimIndent()
+        assertEquals(
+            "https://cdn.deezer.com/album_big.jpg",
+            NewMusic.pickSleeve(both, "Slint", "Spiderland")
+        )
+    }
+
+    @Test
+    fun `a sleeve is still taken where no row says what it is`() {
+        /*
+         * A PREFERENCE, NOT THE WHITELIST ABOVE, and the difference is what
+         * this half is deciding: whether a record is an album is settled at
+         * the source, and by here something has already decided to draw the
+         * tile. All that is left is choosing a PICTURE for it, so a chain
+         * that stops at its first candidate is the Lyrion coverid fault again
+         * — a sleeve at any size beats a blank tile.
+         */
+        val untyped = """
+            {"data":[{"title":"Spiderland","artist":{"name":"Slint"},
+                      "cover_big":"https://cdn.deezer.com/untyped.jpg"}]}
+        """.trimIndent()
+        assertEquals(
+            "https://cdn.deezer.com/untyped.jpg",
+            NewMusic.pickSleeve(untyped, "Slint", "Spiderland")
+        )
     }
 
     @Test
