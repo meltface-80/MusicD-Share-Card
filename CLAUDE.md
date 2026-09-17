@@ -2127,6 +2127,58 @@ was simply not there, however carefully the DIDL was parsed.
   taking the screen), the socket is kept out of it, and `attempts()` lands in
   `/api/debug` under "Discover". Treat the first real run as the verification —
   the same posture as Lyrion and Roon.
+- **ALBUMS ONLY, AND HALF THE WINDOW WAS NOT ONE.** Reported as "the discover
+  page still offers singles. I only want albums. This is a must." Nothing was
+  filtering release type at ALL — not the ListenBrainz window, not Deezer's
+  list — so the screen was whatever those endpoints happened to list. The
+  numbers are off the wire rather than out of a document: one week of
+  fresh-releases is 1445 rows, **701 Single, 483 Album, 220 EP, 28 with no
+  type at all, 8 Broadcast, 5 Other.** `release_group_primary_type` and
+  Deezer's `record_type` are the fields that separate them, and each is a
+  WHITELIST — Album, and nothing else — so a type nobody here has seen, and a
+  row that states NO type, are both left out rather than put on the screen.
+  Same rule `Similar.readDeezerAlbums` has applied to `/artist/{id}/albums`
+  since "some are just tracks" was reported; a release list had the identical
+  fault and none of the guard.
+- **THE TYPE IS CHECKED BEFORE THE ONE-RECORD-PER-ACT RULE, AND THE ORDER IS
+  LOAD-BEARING.** An act who put out a single on Tuesday and an album on
+  Thursday is in that window twice. Refusing after `seen` had already claimed
+  the act spends their one slot on the single and then throws it away — a
+  filter that HIDES the record it was added to find. Shown failing by swapping
+  the two lines.
+- **A SECONDARY TYPE IS STILL AN ALBUM AND IS KEPT — the one judgement call
+  in it, stated rather than buried.** MusicBrainz files a soundtrack, a
+  compilation and a live record as primary type Album with the rest in
+  `release_group_secondary_type` (58 of the 483 above), and those are records.
+  It also means spoken word costs nothing to exclude: Audiobook, Interview and
+  Audio drama each carried a primary type of their own. Narrow it if that is
+  wanted; do not narrow it by accident.
+- **AND THE FIXTURES COULD NOT HAVE CAUGHT THIS, WHICH IS THE LESSON WORTH
+  MORE THAN THE FIX.** Every fresh-release fixture in `NewMusicTest` was
+  written WITHOUT `release_group_primary_type`, because the shapes came from
+  documentation rather than from a wire. A fixture missing the field a feature
+  turns on cannot fail, whatever it asserts — the same fault as a scan that
+  quietly matches nothing. The endpoints are REACHABLE from here now (both 200
+  on a plain curl, as is nme.com), so they were driven and the fixtures carry
+  observed fields. **RE-CHECK A HOST THIS FILE CALLS UNREACHABLE BEFORE
+  BUILDING ROUND IT.**
+- **`editorial/0/releases` ANSWERS `{"data":[],"total":0}`, AND THAT IS
+  REPORTED RATHER THAN FIXED.** Found by the same re-check: Deezer's list is
+  empty today, for every limit and for the only editorial id Deezer lists. So
+  the third rung of the ladder — the one that fills a FIRST RUN — currently
+  contributes nothing, and a household with no history sees what the press has
+  reviewed and otherwise an empty screen. Replacing it means choosing another
+  list, and `chart/0/albums` is NOT the same question: a chart is what is
+  popular, not what is new. That is the owner's call, so `/api/debug` says
+  "deezer -> 0 new this week" and nothing was guessed.
+- **A SLEEVE PREFERS THE ALBUM'S OWN COVER OVER THE SINGLE NAMED AFTER IT.** A
+  lead single usually shares the record's title and act, so both rows pass
+  `pickSleeve`'s name check and Deezer ranks whichever it likes first.
+  `record_type` is a PREFERENCE here rather than the whitelist it is above:
+  albums are tried first and then anything matching, because by this point
+  something else has already decided to draw the tile and all that is left is
+  choosing a picture — and a chain that stops at its first candidate is the
+  Lyrion coverid fault again.
 - **THE PAGE NEVER DECIDES WHY A RECORD IS ON THE SCREEN.** "Because you played
   Slint" against "New this week" is the difference between this screen meaning
   its name and being a new-releases list, and that rule lives in `:core` where

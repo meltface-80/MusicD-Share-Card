@@ -34,15 +34,37 @@ import org.json.JSONObject
  *     fills the screen on a FIRST RUN, when the history is empty and the
  *     honest answer to "based on your listening" is "I do not know you yet".
  *
- * NEITHER ENDPOINT HAS BEEN REACHED FROM WHERE THIS WAS WRITTEN. The proxy
- * here refuses both hosts — 403 on the CONNECT, checked rather than assumed —
- * so the shapes below are the documented ones and the parsing is deliberately
- * lenient: every field is looked for in more than one place, and anything
- * missing costs that row and not the screen. The socket is kept out of the
- * parsing so that a wire which differs is one function to correct rather than
- * a protocol to re-derive, and [attempts] says what happened. Treat the first
- * real run as the verification — the same posture as Lyrion and Roon, and for
- * the same reason.
+ * ALBUMS ONLY, AND BOTH SOURCES ARE ASKED TO PROVE IT. Reported as "the
+ * discover page still offers singles. I only want albums." Neither source was
+ * being filtered at all, and the wire says how bad that was: one week of the
+ * ListenBrainz window is 701 singles and 220 EPs against 483 albums. Each
+ * source is now a WHITELIST on the type it publishes —
+ * `release_group_primary_type` and Deezer's `record_type` — so a single, an
+ * EP and a row that states no type at all are all left out, and [attempts]
+ * counts what went. See [parseFreshReleases] for the measurement and for the
+ * one judgement call inside it.
+ *
+ * BOTH ENDPOINTS ARE REACHABLE FROM HERE NOW, WHICH THEY WERE NOT WHEN THIS
+ * WAS WRITTEN — the proxy used to answer 403 to the CONNECT for both hosts,
+ * and the fixtures in `NewMusicTest` were the documented shapes rather than
+ * observed ones. They have been re-checked against the real answers and the
+ * type fields above are OBSERVED. What is still documented rather than seen
+ * is the two review feeds, which the proxy still refuses. The parsing stays
+ * deliberately lenient — every field is looked for in more than one place,
+ * and anything missing costs that row and not the screen — and the socket is
+ * kept out of it so that a wire which differs is one function to correct
+ * rather than a protocol to re-derive.
+ *
+ * ONE THING THE RE-CHECK FOUND AND DID NOT FIX: `editorial/0/releases`
+ * answers `{"data":[],"total":0}` today, for every limit and for the only
+ * editorial id Deezer lists. So the third rung of the ladder — the one that
+ * fills a FIRST RUN — currently contributes nothing, and a household with no
+ * play history sees whatever the press has reviewed and otherwise an empty
+ * screen. That is a separate report, not this change: replacing it means
+ * choosing another list (`chart/0/albums` is the obvious one and is NOT the
+ * same question — a chart is what is popular, not what is new), and that is
+ * the owner's call. [attempts] says "deezer -> 0 new this week", which is
+ * the truth.
  */
 class NewMusic(
     private val http: OkHttpClient,
@@ -164,7 +186,7 @@ class NewMusic(
         val out = LinkedHashMap<String, Pick>()
 
         for (pick in fromListenBrainz(heard)) out.putIfAbsent(key(pick), pick)
-        note("listenbrainz -> ${out.size} by acts you have heard")
+        note("listenbrainz -> ${out.size} album(s) by acts you have heard")
 
         /*
          * THE ORDER IS THE FEATURE, AND IT RUNS FROM MOST PERSONAL TO LEAST.
@@ -205,9 +227,15 @@ class NewMusic(
             "&days=$WINDOW_DAYS&past=true&future=false"
         val body = get(url) ?: run { note("listenbrainz: no answer"); return emptyList() }
         val seeds = seedsFrom(heard)
-        return runCatching { parseFreshReleases(body, seeds) }
+        val refused = LinkedHashMap<String, Int>()
+        val picks = runCatching { parseFreshReleases(body, seeds, refused) }
             .onFailure { note("listenbrainz: unreadable answer (${it.javaClass.simpleName})") }
             .getOrDefault(emptyList())
+        // WHY THE SCREEN IS THIN IS A DIFFERENT SENTENCE FROM "NOTHING CAME
+        // BACK", and a released single is the likeliest reason for it: half
+        // this window is singles. Named per type, in the wire's own word.
+        if (refused.isNotEmpty()) note("listenbrainz: albums only, so " + tally(refused) + " left out")
+        return picks
     }
 
     /**
@@ -280,9 +308,12 @@ class NewMusic(
     private fun fromDeezer(): List<Pick> {
         val body = get("$DZ/editorial/0/releases?limit=$WANTED")
             ?: run { note("deezer: no answer"); return emptyList() }
-        return runCatching { parseDeezerReleases(body) }
+        val refused = LinkedHashMap<String, Int>()
+        val picks = runCatching { parseDeezerReleases(body, refused) }
             .onFailure { note("deezer: unreadable answer (${it.javaClass.simpleName})") }
             .getOrDefault(emptyList())
+        if (refused.isNotEmpty()) note("deezer: albums only, so " + tally(refused) + " left out")
+        return picks
     }
 
     /**
@@ -385,7 +416,32 @@ class NewMusic(
 
     companion object {
         private const val TAG = "NewMusic"
-        private const val MAX_NOTES = 8
+
+        /**
+         * Enough that the albums-only line is still readable beside the
+         * sleeve notes. It is a ring buffer, and the line explaining a thin
+         * screen is the one nothing else can say.
+         */
+        private const val MAX_NOTES = 12
+
+        /** MusicBrainz's primary type for a record. The whitelist is this word. */
+        private const val ALBUM = "Album"
+
+        /** Deezer's spelling of the same thing, in its own `record_type`. */
+        private const val DZ_ALBUM = "album"
+
+        /**
+         * What a row that states no type is counted as.
+         *
+         * "We cannot tell" is not "album", and 28 rows of one ListenBrainz
+         * window carried no type at all — so this is a real bucket rather
+         * than a theoretical one, and it names itself in the report.
+         */
+        private const val NO_TYPE = "no type given"
+
+        /** The refusals in the wire's own words: "701 Single, 220 EP". */
+        private fun tally(refused: Map<String, Int>): String =
+            refused.entries.joinToString(", ") { "${it.value} ${it.key}" }
 
         private const val LB = "https://api.listenbrainz.org"
         private const val DZ = "https://api.deezer.com"
@@ -462,12 +518,40 @@ class NewMusic(
          */
         internal fun pickSleeve(body: String, artist: String, album: String): String {
             val rows = JSONObject(body).optJSONArray("data") ?: JSONArray()
+            /*
+             * TWO PASSES, THE ALBUM'S OWN COVER FIRST.
+             *
+             * A lead single is very often named after the record and filed
+             * under the same act, so a search for "Slint Spiderland" can
+             * answer with the single above the album and both rows pass the
+             * name check. `record_type` is what tells them apart, so it is
+             * asked for first — and it is a PREFERENCE here rather than the
+             * whitelist it is above, because this half is only choosing a
+             * PICTURE for a record something else already decided to draw. A
+             * chain that stops at its first candidate is not a chain (the
+             * Lyrion coverid lesson), and a single's sleeve beats a blank
+             * tile.
+             */
+            return sleeveIn(rows, artist, album, albumsFirst = true)
+                .ifEmpty { sleeveIn(rows, artist, album, albumsFirst = false) }
+        }
+
+        private fun sleeveIn(
+            rows: JSONArray,
+            artist: String,
+            album: String,
+            albumsFirst: Boolean
+        ): String {
             for (i in 0 until rows.length()) {
                 val row = rows.optJSONObject(i) ?: continue
                 val title = row.strOrNull("title") ?: continue
                 val act = row.optJSONObject("artist")?.strOrNull("name") ?: continue
                 if (!Normalize.namesOverlap(album, title)) continue
                 if (!Normalize.namesOverlap(artist, act)) continue
+                val type = row.strOrNull("record_type")
+                if (albumsFirst && (type == null || !type.equals(DZ_ALBUM, ignoreCase = true))) {
+                    continue
+                }
                 /*
                  * `cover_big` FIRST, NOT `cover_xl`, AND THAT IS ABOUT THE
                  * CACHE. Deezer's big is 500px and its xl is 1000px; a tile
@@ -493,7 +577,40 @@ class NewMusic(
         internal fun isoToday(): String = java.time.LocalDate.now().toString()
 
         /**
-         * ListenBrainz's fresh-releases payload, filtered to acts in [heard].
+         * ListenBrainz's fresh-releases payload, filtered to acts in [heard]
+         * and to ALBUMS.
+         *
+         * **THE WINDOW IS HALF SINGLES, AND THAT IS MEASURED RATHER THAN
+         * FEARED.** Reported as "the discover page still offers singles. I
+         * only want albums." The endpoint is reachable from here now — it was
+         * not when this file was written — so the answer is off the wire
+         * instead of out of a document: seven days of it is 1445 releases,
+         * **701 Single, 483 Album, 220 EP, 28 with no type at all, 8
+         * Broadcast, 5 Other.** Nothing was filtering any of that, so a
+         * screen called Discover was better than half singles by
+         * construction.
+         *
+         * `release_group_primary_type` is the field that separates them and
+         * the filter is a WHITELIST — Album, and nothing else — so a row
+         * carrying a type nobody here has seen is left out rather than put on
+         * the screen. That includes a row carrying NO type: 28 of those turned
+         * up in one window, and "we cannot tell" is not "album". Same rule
+         * `Similar.readDeezerAlbums` and [parseDeezerReleases] apply to
+         * Deezer's `record_type`, for the same reported reason.
+         *
+         * A SECONDARY TYPE IS STILL AN ALBUM AND IS KEPT. MusicBrainz files a
+         * soundtrack, a live record and a compilation as primary type Album
+         * with the rest in `release_group_secondary_type` — 58 of the 483 —
+         * and those are records. That is the one line here somebody might
+         * want narrower; it is deliberate, not overlooked. It also means
+         * spoken word costs nothing to exclude: Audiobook, Interview and
+         * Audio drama all carried a primary type of their own in that window
+         * and are refused by the whitelist above.
+         *
+         * [refused] tallies what was dropped BY ACT YOU PLAY, keyed on the
+         * wire's own word, because "three new records by acts you play and all
+         * three were singles" and "nobody you play released anything" are the
+         * same thin screen from outside.
          *
          * THE FILTER IS THE FEATURE. The endpoint answers with every release in
          * the window — thousands — and what makes this "based on your
@@ -506,7 +623,11 @@ class NewMusic(
          * the root, and each name is looked for under more than one key. A row
          * missing what it needs is dropped; it never takes the screen with it.
          */
-        internal fun parseFreshReleases(body: String, seeds: List<Seed>): List<Pick> {
+        internal fun parseFreshReleases(
+            body: String,
+            seeds: List<Seed>,
+            refused: MutableMap<String, Int>? = null
+        ): List<Pick> {
             val root = JSONObject(body)
             val rows = root.optJSONObject("payload")?.optJSONArray("releases")
                 ?: root.optJSONArray("releases")
@@ -527,6 +648,20 @@ class NewMusic(
                 if (artist.isBlank() || album.isBlank()) continue
                 val match = wanted.firstOrNull { Normalize.namesOverlap(it.artist, artist) }
                     ?: continue
+                /*
+                 * THE TYPE IS CHECKED BEFORE THE ONE-PER-ACT RULE, AND THE
+                 * ORDER IS LOAD-BEARING. An act who put out a single on
+                 * Tuesday and an album on Thursday appears twice in this
+                 * window; refusing after `seen` had already claimed the act
+                 * would spend their one slot on the single and drop the
+                 * album — a filter that hides the record it was added to
+                 * find.
+                 */
+                val type = row.strOrNull("release_group_primary_type")
+                if (type == null || !type.equals(ALBUM, ignoreCase = true)) {
+                    refused?.merge(type ?: NO_TYPE, 1, Int::plus)
+                    continue
+                }
                 if (!seen.add(Normalize.text(artist))) continue
                 val pick = Pick(
                     artist = artist,
@@ -581,12 +716,26 @@ class NewMusic(
         private val SAFE = Regex("[A-Za-z0-9-]{1,64}")
 
         /**
-         * Deezer's editorial releases — new this week, the same for everybody.
+         * Deezer's editorial releases — new this week, the same for everybody,
+         * and ALBUMS ONLY.
+         *
+         * `record_type` is the field that separates a record from a single or
+         * an EP, and it is a WHITELIST — album, and that is all — so a value
+         * nobody here has seen is left out rather than put on the screen.
+         * `Similar.readDeezerAlbums` already applies exactly this rule to
+         * `/artist/{id}/albums` after the field was reported from the field as
+         * "some are just tracks"; a release list has the same fault and had
+         * none of the guard. Observed present on every Deezer album object
+         * this app reads — `/search/album` and `/chart/0/albums` both carry
+         * it.
          *
          * `cover_xl` down to `cover` because the bigger ones are not always
          * there, and a sleeve at any size beats a blank tile.
          */
-        internal fun parseDeezerReleases(body: String): List<Pick> {
+        internal fun parseDeezerReleases(
+            body: String,
+            refused: MutableMap<String, Int>? = null
+        ): List<Pick> {
             val rows = JSONObject(body).optJSONArray("data") ?: JSONArray()
             val out = ArrayList<Pick>()
             for (i in 0 until rows.length()) {
@@ -594,6 +743,11 @@ class NewMusic(
                 val album = row.strOrNull("title") ?: continue
                 val artist = row.optJSONObject("artist")?.strOrNull("name") ?: continue
                 if (artist.isBlank() || album.isBlank()) continue
+                val type = row.strOrNull("record_type")
+                if (type == null || !type.equals(DZ_ALBUM, ignoreCase = true)) {
+                    refused?.merge(type ?: NO_TYPE, 1, Int::plus)
+                    continue
+                }
                 out += Pick(
                     artist = artist,
                     album = album,
