@@ -418,6 +418,81 @@ was simply not there, however carefully the DIDL was parsed.
   "the" is NOT, or "The Who" lands back inside "The Guess Who". A spelling the
   article does not carry costs the blurb, which is the trade this app keeps
   making: a missing blurb is honest, a confident wrong one is not.
+- **A HASH BEFORE A DIGIT IS THE WORD "NUMBER", BECAUSE MEDIAWIKI CANNOT PUT
+  ONE IN A TITLE.** `#` is the fragment separator, so a record named with one
+  is filed under the word: Big Star's "#1 Record" is at
+  `/wiki/Number_1_Record`. `Normalize.text` dropped the hash as ordinary
+  punctuation, leaving "1 record" to be matched against "number 1 record" —
+  which `namesOverlap` then refused, correctly, because it anchors at the
+  front. Reported from the field as a card with no blurb and no Wikipedia
+  chip. **WHAT NAMED IT WAS THE ARTIST CHIP SITTING BESIDE IT WORKING**: one
+  lookup, two halves, and only the half keyed on the TITLE failed — the free
+  control experiment again, this time inside a single function. It is the
+  `LIGATURES` lesson one character over, and the fix is in the same place: a
+  character NFKD will not expand, silently dropped, is how a record ends up
+  with nothing found and no explanation. **ONLY BEFORE A DIGIT**, because `#`
+  is also how a key signature is written and "Prelude in C# Minor" must not
+  fold to "prelude in c number minor". The knock-on is that a Pitchfork slug
+  for such a record is now `…-number-1-record` rather than `…-1-record`;
+  pitchfork.com is not reachable from here so which of the two they use is
+  UNVERIFIED, and both were guesses.
+- **THE YEAR ON THE CARD IS THE RECORD'S, NOT THE EARLIEST PRESSING IN AN
+  ARBITRARY WINDOW OF FIVE.** Reported with a photograph: "#1 Record", a 1972
+  album, drawn as **RELEASED 2003**. `musicBrainzRelease` asked for RELEASES —
+  every CD, LP and remaster MusicBrainz holds — with `limit=5`, and took the
+  earliest of whatever came back. Five is nothing for a record reissued over
+  fifty years, and the search is ordered by TEXT RELEVANCE rather than by date:
+  every pressing of one album scores the same, so which five arrive is
+  arbitrary and the original is routinely not among them. A RELEASE GROUP is
+  the record itself and `first-release-date` is MusicBrainz's own answer to
+  exactly this question — no window and no arithmetic over pressings. The
+  release search is KEPT BEHIND IT, because a release-group search result's
+  shape is documented rather than observed (musicbrainz.org answers 403 to the
+  CONNECT from here), so if that field is not carried the card is exactly as
+  well off as it was and `/api/debug` says which of the two answered. The
+  first row is still not taken on trust: the group's title must overlap, or a
+  search for "#1 Record" dates the record from the "#1 Record / Radio City"
+  twofer.
+- **AND A WRONG YEAR WAS ON EVERY DISK FOR A WEEK, WHICH WOULD HAVE READ AS
+  THE FIX NOT WORKING.** `extras` is cached for seven days and persisted, so
+  fixing the lookup alone leaves the old answer on screen for every record
+  already looked up. The stored entry carries `v` now and one without it is
+  read as NO ENTRY — a miss, looked up again, overwritten in place. A version
+  marker rather than a renamed namespace, because the shelf is one JSON file
+  per namespace and a rename would leave the old file in the data directory
+  for ever, unread. Bump it only when a stored answer would be WRONG rather
+  than merely thin: `artistMbid` was simply absent from older entries and
+  decodes to null, which costs one search and needs none of this.
+- **"GENERALLY REVIEW RETRIEVAL IS POOR" WAS A COMPLAINT NOTHING IN THE REPORT
+  COULD NARROW.** The year and the blurb both come from `Metadata`, and it had
+  never said a word — so "Wikipedia has never heard of it", "it was asked the
+  wrong question" and "it answered and this guard refused the article" arrived
+  as one silence, which is the `Pitchfork.Outcome` lesson in the one lookup it
+  had not reached. `Metadata.attempts()` names the search, the candidates it
+  came back with and the reason each was turned down, and the ROWS rather than
+  a count — "not in Wikipedia" and "it is right there and the title match
+  refused it" are the same sentence otherwise. Three sources now share that
+  section, so every line is prefixed with its own (`musicbrainz:`,
+  `wikipedia:`, `pitchfork:`) and the page's heading is "Album lookups" rather
+  than one source's name — the same rule the Roon and Lyrion queue attempts
+  already follow.
+- **AND THE TWO HOSTS ARE INJECTED NOW, WHICH IS WHAT MADE THE YEAR FIX
+  PROVABLE.** `Metadata` takes `musicBrainzBase` and `wikipediaBase`, defaulted
+  to the real ones and passed by nothing but a test. Both answer 403 to the
+  CONNECT from this working environment, so the REQUEST THIS APP BUILDS is the
+  part most likely to be wrong and was the part nothing could look at;
+  `MusicBrainzYearTest` drives the whole lookup through a real `MockWebServer`
+  and was shown answering 2003 before the fix and 1972 after. Same seam
+  `LmsSource` takes for discovery, for the same reason.
+- **ALLMUSIC STILL RESOLVES NOTHING, AND THAT IS THE DOCUMENTED DESIGN RATHER
+  THAN A BUG.** Reported alongside the above as "no allmusic review", with a
+  manual search finding the record immediately. The chip is a SEARCH link —
+  their album ids are opaque (`…-mw0000459534`) and cannot be built from a
+  name — so there has never been a review or a score behind it to be missing.
+  Making it resolve means reading the id off their search page the way
+  `QobuzAlbum` reads Qobuz's, which `Reviews` has called "a real option later"
+  since it was written. allmusic.com is not reachable from here either, so it
+  would be entirely unverified work. Put to the owner rather than guessed at.
 - **ROOMS ARE OPT-IN NOW, AND THAT IS A DEFAULT THAT BREAKS A WORKING APP
   ONCE.** `Settings` stores the exception to each default and the two sets run
   OPPOSITE ways: SERVICES default on, so the set holds the ones switched OFF

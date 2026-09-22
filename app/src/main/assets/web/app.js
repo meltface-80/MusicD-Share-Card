@@ -1396,7 +1396,7 @@
     section("The app", d.app);
     // What Pitchfork was asked, and what it said. A missing score looks
     // identical to a missing review from the card.
-    section("Album reviews", d.reviews);
+    section("Album lookups", d.reviews);
     // And what the similar-artist lookup was asked, and which source answered.
     // An empty row has three causes that look identical from the page, and
     // only one of them is not a bug — see Similar.attempts().

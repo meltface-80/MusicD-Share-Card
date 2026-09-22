@@ -27,7 +27,18 @@ class Metadata(
     private val http: OkHttpClient,
     private val userAgent: String,
     /** Where an answer is written down so the next play does not pay for it. */
-    private val store: CacheStore = CacheStore.NONE
+    private val store: CacheStore = CacheStore.NONE,
+    /**
+     * THE TWO HOSTS, INJECTED, AND ONLY A TEST EVER PASSES THEM.
+     *
+     * Both answer 403 to the CONNECT from the working environment this app is
+     * written in, so the REQUEST THIS APP BUILDS is the part most likely to be
+     * wrong and the part nothing could look at. Same seam [com.musicd.sharecard
+     * .lms.LmsSource] takes for discovery, for the same reason: a test should
+     * not need a socket to somebody else's server to check the question.
+     */
+    private val musicBrainzBase: String = "https://musicbrainz.org",
+    private val wikipediaBase: String = "https://en.wikipedia.org"
 ) {
 
     private companion object {
@@ -40,6 +51,17 @@ class Metadata(
          * courtesy.
          */
         const val MB_INTERVAL_MS = 1100L
+
+        /** Enough to cover a card and the one before it, and no more. */
+        const val MAX_NOTES = 24
+
+        /**
+         * WHAT IS ON DISK, AND WHETHER IT IS STILL WORTH ANYTHING. Bumped when
+         * a stored answer would be WRONG rather than merely thin — see
+         * [decodeExtras]. A field that is simply absent does not need this;
+         * `artistMbid` decodes to null and costs one search to fill.
+         */
+        const val EXTRAS_SHAPE = 2
         const val WIKI_INTERVAL_MS = 200L
     }
 
@@ -129,16 +151,107 @@ class Metadata(
     fun musicBrainzYear(title: String, artist: String): Int? =
         musicBrainzRelease(title, artist).year
 
+    /**
+     * THE RECORD FIRST, ITS PRESSINGS ONLY IF THAT FAILS.
+     *
+     * A RELEASE search answers with pressings — every CD, LP and remaster — and
+     * this took the earliest of the first five that came back. Five is nothing
+     * for a record reissued over fifty years, and the search is ordered by text
+     * relevance rather than by date: every pressing of one album scores the
+     * same, so which five arrive is arbitrary and the original is routinely not
+     * among them. Reported with a photograph of Big Star's "#1 Record", a 1972
+     * record, drawn as **RELEASED 2003**.
+     *
+     * A RELEASE GROUP is the record itself, and `first-release-date` is
+     * MusicBrainz's own answer to this exact question. No window and no
+     * arithmetic over pressings.
+     *
+     * THE OLD QUESTION IS KEPT BEHIND IT, because the shape of a release-group
+     * SEARCH result is documented rather than observed — musicbrainz.org
+     * answers 403 to the CONNECT from where this was written, so nothing here
+     * could confirm that `first-release-date` is carried on a search hit as
+     * well as on a lookup. If it is not, this costs one extra request and the
+     * card is exactly as well off as it was before; [attempts] says which of
+     * the two answered, so one reading of /api/debug settles it.
+     */
     fun musicBrainzRelease(title: String, artist: String): Release {
         if (title.isBlank()) return Release(null, null)
+        val group = releaseGroupSearch(title, artist)
+        if (group.year != null && group.artistMbid != null) return group
+        val pressings = pressingSearch(title, artist)
+        return Release(group.year ?: pressings.year, group.artistMbid ?: pressings.artistMbid)
+    }
+
+    private fun releaseGroupSearch(title: String, artist: String): Release {
+        val query = buildString {
+            append("releasegroup:\"").append(mbQuote(title)).append('"')
+            if (artist.isNotBlank()) append(" AND artist:\"").append(mbQuote(artist)).append('"')
+        }
+        val url = "$musicBrainzBase/ws/2/release-group/?query=" +
+            urlEncode(query) + "&fmt=json&limit=5"
+        val json = mbGate.run { getJson(url) } ?: run {
+            note("musicbrainz: no answer for release group \"$title\"")
+            return Release(null, null)
+        }
+        val found = readReleaseGroups(json, title, artist)
+        note(
+            if (found.year != null) "musicbrainz: \"$title\" first released ${found.year} (release group)"
+            else "musicbrainz: no release group dated \"$title\" by ${artist.ifBlank { "anyone" }}"
+        )
+        return found
+    }
+
+    private fun pressingSearch(title: String, artist: String): Release {
         val query = buildString {
             append("release:\"").append(mbQuote(title)).append('"')
             if (artist.isNotBlank()) append(" AND artist:\"").append(mbQuote(artist)).append('"')
         }
-        val url = "https://musicbrainz.org/ws/2/release/?query=" +
+        val url = "$musicBrainzBase/ws/2/release/?query=" +
             urlEncode(query) + "&fmt=json&limit=5"
-        val json = mbGate.run { getJson(url) } ?: return Release(null, null)
-        return readReleases(json, artist)
+        val json = mbGate.run { getJson(url) } ?: run {
+            note("musicbrainz: no answer for pressings of \"$title\"")
+            return Release(null, null)
+        }
+        val found = readReleases(json, artist)
+        note(
+            if (found.year != null)
+                "musicbrainz: fell back to pressings for \"$title\" -> ${found.year}"
+            else "musicbrainz: nothing found for \"$title\""
+        )
+        return found
+    }
+
+    /**
+     * The release groups a search came back with, and which of them is the
+     * record that is playing.
+     *
+     * Split out for [readReleases]' reason: the shape of this response is the
+     * part that can quietly change, not the fetch.
+     *
+     * THE FIRST ROW IS NOT TAKEN ON TRUST — the same rule [QobuzAlbum.pick] and
+     * the Deezer artist search are written from. MusicBrainz orders by text
+     * relevance, and a phrase search for "#1 Record" also matches the "#1
+     * Record / Radio City" twofer, which is a different record with a different
+     * date. The title has to overlap before its date is believed.
+     *
+     * WHAT IT CANNOT DO is tell two records apart when one's name begins the
+     * other's and MusicBrainz scored the wrong one first; the highest-scoring
+     * overlapping group wins, which is the same limit [Normalize.namesOverlap]
+     * states for itself.
+     */
+    internal fun readReleaseGroups(json: JSONObject, title: String, artist: String): Release {
+        val groups = json.optJSONArray("release-groups") ?: return Release(null, null)
+        var year: Int? = null
+        var mbid: String? = null
+        for (i in 0 until groups.length()) {
+            val g = groups.optJSONObject(i) ?: continue
+            // Below ~70 the match is a different record that shares a word.
+            if (g.optInt("score", 0) < 70) continue
+            if (!Normalize.namesOverlap(g.str("title"), title)) continue
+            if (year == null) year = yearOf(g.str("first-release-date"))
+            if (mbid == null) mbid = artistMbidOf(g, artist)
+        }
+        return Release(year, mbid)
     }
 
     /**
@@ -193,7 +306,7 @@ class Metadata(
     // ------------------------------------------------------------ Wikipedia
 
     private fun wikiSearch(query: String, limit: Int = 5): List<String> {
-        val url = "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=" +
+        val url = "$wikipediaBase/w/api.php?action=query&list=search&srsearch=" +
             urlEncode(query) + "&srlimit=$limit&format=json"
         val json = wikiGate.run { getJson(url) } ?: return emptyList()
         val hits = json.optJSONObject("query")?.optJSONArray("search") ?: return emptyList()
@@ -205,7 +318,7 @@ class Metadata(
     private data class Summary(val extract: String, val image: String?)
 
     private fun wikiSummary(pageTitle: String): Summary? {
-        val url = "https://en.wikipedia.org/api/rest_v1/page/summary/" +
+        val url = "$wikipediaBase/api/rest_v1/page/summary/" +
             urlEncode(pageTitle.replace(' ', '_'))
         val json = wikiGate.run { getJson(url) } ?: return null
         if (json.str("type") == "disambiguation") return null
@@ -216,18 +329,49 @@ class Metadata(
         return Summary(extract, image)
     }
 
+    /**
+     * EVERY STEP SAYS WHY IT STOPPED, AND UNTIL NOW NONE OF THEM DID.
+     *
+     * Reported as "generally review retrieval is poor", with Big Star's "#1
+     * Record" as the example: no blurb, no Wikipedia chip, and nothing
+     * anywhere to say whether Wikipedia had never heard of the record, had
+     * been asked the wrong question, or had answered with an article this
+     * guard then refused. Those are three different fixes and they are the
+     * same silence from outside — which is the `Pitchfork.Outcome` lesson,
+     * repeated in the one lookup it had not reached.
+     *
+     * So the search, the candidates it came back with and the reason each was
+     * turned down all land in [attempts], and /api/debug draws them.
+     */
     fun wikipediaAlbum(title: String, artist: String): Bio? {
         if (title.isBlank()) return null
-        val candidates = wikiSearch("$title $artist album")
+        val query = "$title $artist album"
+        val candidates = wikiSearch(query)
+        if (candidates.isEmpty()) {
+            note("wikipedia: \"$query\" -> nothing came back")
+            return null
+        }
         for (page in candidates) {
             // Cheap half of [albumArticleFits], applied first only so a page
             // that cannot be the record costs no summary request.
             if (!Normalize.namesOverlap(page, title)) continue
-            val summary = wikiSummary(page) ?: continue
-            if (!albumArticleFits(page, summary.extract, title, artist)) continue
-            return Bio(summary.extract, "Wikipedia", "https://en.wikipedia.org/wiki/" +
+            val summary = wikiSummary(page) ?: run {
+                note("wikipedia: \"$page\" has no readable summary")
+                null
+            } ?: continue
+            if (!albumArticleFits(page, summary.extract, title, artist)) {
+                note("wikipedia: \"$page\" never names ${artist.ifBlank { "the artist" }}")
+                continue
+            }
+            note("wikipedia: \"$title\" -> $page")
+            return Bio(summary.extract, "Wikipedia", "$wikipediaBase/wiki/" +
                 urlEncode(page.replace(' ', '_')), summary.image)
         }
+        // NAMING THE ROWS, NOT JUST THE COUNT. "not in Wikipedia" and "it is
+        // right there and the title match refused it" are the same sentence
+        // from outside, and they are the two halves the #1 Record report could
+        // not be told apart by.
+        note("wikipedia: no article matched \"$title\" in ${candidates.joinToString(", ")}")
         return null
     }
 
@@ -250,7 +394,7 @@ class Metadata(
                 // show the wrong one.
                 if (!Normalize.namesOverlap(page, artist)) continue
                 val summary = wikiSummary(page) ?: continue
-                return Bio(summary.extract, "Wikipedia", "https://en.wikipedia.org/wiki/" +
+                return Bio(summary.extract, "Wikipedia", "$wikipediaBase/wiki/" +
                     urlEncode(page.replace(' ', '_')), summary.image)
             }
         }
@@ -282,6 +426,28 @@ class Metadata(
     private fun urlEncode(s: String): String =
         java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
+    // --------------------------------------------------------- what happened
+
+    /**
+     * The last few lookups, for /api/debug. A missing blurb and a wrong year
+     * are both silent on the card, and both were reported as exactly that.
+     *
+     * The lines name their source — "musicbrainz:" or "wikipedia:" — because
+     * they share a section with Pitchfork's, and "nothing found" is the same
+     * sentence from three services with the fix in three different files. Same
+     * rule the Roon and Lyrion queue attempts already follow.
+     */
+    fun attempts(): List<String> = synchronized(notes) { notes.toList() }
+
+    private fun note(line: String) {
+        synchronized(notes) {
+            notes += line
+            while (notes.size > MAX_NOTES) notes.removeAt(0)
+        }
+    }
+
+    private val notes = ArrayList<String>()
+
     // --------------------------------------------------------------- on disk
 
     /**
@@ -293,6 +459,7 @@ class Metadata(
      * nobody reads.
      */
     private fun encodeExtras(extras: AlbumExtras): String = JSONObject()
+        .put("v", EXTRAS_SHAPE)
         .put("year", extras.year ?: JSONObject.NULL)
         .put("bio", extras.album?.description ?: JSONObject.NULL)
         .put("src", extras.album?.source ?: JSONObject.NULL)
@@ -302,6 +469,15 @@ class Metadata(
 
     private fun decodeExtras(text: String): AlbumExtras? {
         val json = runCatching { JSONObject(text) }.getOrNull() ?: return null
+        // A YEAR WORKED OUT THE OLD WAY IS NOT WORTH KEEPING, and every entry
+        // on every disk was. Shape 1 dated a record by the earliest of the
+        // first five PRESSINGS a search happened to return, which is how a
+        // 1972 album came out as 2003 — so an entry that does not say which
+        // shape it is, is read as no entry at all and looked up again. It is
+        // then overwritten in place, which is why this is a version marker
+        // rather than a new namespace: a renamed shelf would leave the old
+        // file sitting in the data directory for ever, unread.
+        if (json.optInt("v", 1) < EXTRAS_SHAPE) return null
         val description = json.strOrNull("bio")
         return AlbumExtras(
             year = json.optInt("year", 0).takeIf { it > 0 },

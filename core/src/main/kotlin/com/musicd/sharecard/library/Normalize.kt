@@ -30,13 +30,37 @@ object Normalize {
         'đ' to "d", 'ð' to "d", 'þ' to "th", 'ł' to "l", 'ħ' to "h", 'ı' to "i"
     )
 
+    /**
+     * A HASH BEFORE A DIGIT IS THE WORD "NUMBER", AND WIKIPEDIA LEAVES NO
+     * CHOICE ABOUT IT.
+     *
+     * MediaWiki cannot put a `#` in a page title — it is the fragment
+     * separator — so a record named with one is filed under the word instead:
+     * Big Star's "#1 Record" lives at /wiki/Number_1_Record. Folding dropped
+     * the hash as ordinary punctuation, which left "1 record" to be matched
+     * against "number 1 record", and [namesOverlap] then refused it exactly as
+     * it should. Reported from the field as a card with no blurb and no
+     * Wikipedia chip, while the ARTIST chip beside it worked — the two halves
+     * of one lookup disagreeing, which is what named the title as the failure.
+     *
+     * This is the [LIGATURES] lesson one character over: a character NFKD will
+     * not expand, silently dropped, is how a record ends up with nothing found
+     * and no explanation.
+     *
+     * ONLY BEFORE A DIGIT, because `#` is also how a key signature is written.
+     * "Prelude in C# Minor" must not fold to "prelude in c number minor", and
+     * a digit is the only shape Wikipedia's own rule ever produces.
+     */
+    private val HASH_NUMBER = Regex("#(\\d)")
+
     /** Lowercase, strip accents, collapse everything else to single spaces. */
     fun text(s: String?): String {
         if (s.isNullOrEmpty()) return ""
         val expanded = buildString {
             for (c in s.lowercase()) append(LIGATURES[c] ?: c)
         }
-        val folded = Normalizer.normalize(expanded, Normalizer.Form.NFKD)
+        val spelled = HASH_NUMBER.replace(expanded) { "number " + it.groupValues[1] }
+        val folded = Normalizer.normalize(spelled, Normalizer.Form.NFKD)
         return COMBINING.replace(folded, "")
             .replace(NON_ALNUM, " ")
             .trim()

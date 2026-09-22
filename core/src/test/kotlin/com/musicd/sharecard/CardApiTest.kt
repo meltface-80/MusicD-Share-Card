@@ -444,10 +444,16 @@ class CardApiTest {
      * source the blurb actually came from was the only thing on the page you
      * could not follow. Metadata has carried that URL since the port.
      *
-     * PRIMED THROUGH THE CACHE rather than the network: en.wikipedia.org is
-     * hard-coded in the lookup and there is nothing here to point at a mock.
-     * The shelf is the supported way in, `fast=1` reads it without opening a
-     * socket, and it exercises the encode/decode round trip on the way past.
+     * PRIMED THROUGH THE CACHE rather than the network, because `fast=1` reads
+     * the shelf without opening a socket and exercises the encode/decode round
+     * trip on the way past. (The lookup's hosts CAN be pointed at a mock now —
+     * see [MusicBrainzYearTest] — but that is a different question from this
+     * one.)
+     *
+     * THE ENTRY CARRIES `v`, AND THAT IS LOAD-BEARING: a stored answer with no
+     * shape marker was written by the version that dated a record from its
+     * pressings, and is deliberately read as no entry at all. The test below
+     * is what holds that.
      */
     @Test
     fun `extras carries the article the blurb was taken from`() {
@@ -455,6 +461,7 @@ class CardApiTest {
         val article = "https://en.wikipedia.org/wiki/Laughing_Stock"
         val remembered = mapOf(
             key to System.currentTimeMillis().toString() + "|" + JSONObject()
+                .put("v", 2)
                 .put("year", 1991)
                 .put("bio", "The fifth and final studio album by Talk Talk.")
                 .put("src", "Wikipedia")
@@ -484,6 +491,55 @@ class CardApiTest {
         // And the blurb it belongs to, so a URL can never arrive on its own
         // and label a chip for words that are not on the card.
         assertTrue(body.getString("bio").isNotEmpty())
+    }
+
+    /**
+     * A YEAR WORKED OUT THE OLD WAY IS NOT WORTH KEEPING, AND EVERY DISK HAS
+     * ONE.
+     *
+     * The card's year used to be the earliest of the first five PRESSINGS a
+     * MusicBrainz search happened to return, which drew Big Star's 1972 "#1
+     * Record" as RELEASED 2003 — reported with a photograph. Those answers are
+     * cached for a week, so fixing the lookup alone would leave the wrong year
+     * on screen for every record already looked up, which reads exactly like
+     * the fix not working.
+     *
+     * An entry with no shape marker is therefore read as NO ENTRY — a miss,
+     * looked up again, and overwritten in place. Shown failing by dropping the
+     * version check, at which point the stale 2003 comes straight back.
+     */
+    @Test
+    fun `an entry written by the version that dated pressings is not trusted`() {
+        val key = Normalize.text("#1 Record") + "||" + Normalize.text("Big Star")
+        val stale = mapOf(
+            key to System.currentTimeMillis().toString() + "|" + JSONObject()
+                .put("year", 2003)
+                .put("bio", "Not the blurb this record deserves.")
+                .put("src", "Wikipedia")
+                .toString()
+        )
+        val shelf = object : CacheStore {
+            override fun load(namespace: String) =
+                if (namespace == "extras") stale else emptyMap()
+            override fun put(namespace: String, key: String, value: String) {}
+            override fun remove(namespace: String, key: String) {}
+        }
+
+        val body = JSONObject(
+            String(
+                api(shelf).handle(
+                    get(
+                        "/api/extras",
+                        mapOf("album" to "#1 Record", "artist" to "Big Star", "fast" to "1")
+                    )
+                ).body,
+                Charsets.UTF_8
+            )
+        )
+        // `fast=1` opens no socket, so a refused shelf entry can only answer
+        // with nothing — which is the point: nothing beats 2003.
+        assertTrue("got ${body.opt("release")}", body.isNull("release"))
+        assertTrue("got ${body.opt("bio")}", body.isNull("bio"))
     }
 
     // --------------------------------------------------------------- similar
