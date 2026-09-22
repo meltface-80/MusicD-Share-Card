@@ -325,6 +325,74 @@ class Updater(
         state.set(State(Phase.ERROR, message, release))
     }
 
+    // --------------------------------------------------------- what happened
+
+    /**
+     * WHY THE UPDATE BUTTON DID NOTHING, IN THE PLACE PEOPLE ARE TOLD TO LOOK.
+     *
+     * Reported as exactly that from a container, and there was nowhere to
+     * read the answer. A failure sets [Phase.ERROR] with its reason, which the
+     * bar does draw — but only while the update is still offered, and the
+     * container EXITS mid-update by design, so the state is in memory and the
+     * page reloads over it. What was left was `docker logs`, which is the same
+     * complaint the version line at the foot of the settings menu was added to
+     * fix: a fact that exists and cannot be reached.
+     *
+     * THE DIRECTORY IS THE LINE WORTH HAVING. The container is not root, and a
+     * bind mount made by hand belongs to somebody else — so every write this
+     * app does is refused while the card, the page and discovery all work
+     * perfectly. Pressing Update then fails with "Permission denied" from the
+     * one route that has to write, and nothing on the screen connects the two.
+     * The README's chown is printed here beside the reason.
+     *
+     * IT IS A READ, and that is not a detail. `/api/debug` is a GET and no
+     * route in this app writes to disk; probing with a temporary file would
+     * break that rule for a diagnostic. [File.canWrite] is a permission check
+     * and nothing else, which is why the wording is "looks writable" rather
+     * than a promise.
+     */
+    fun diagnostics(): List<String> = diagnostics { it.canWrite() }
+
+    /**
+     * [writable] is injected for one reason: these tests run as ROOT here and
+     * as somebody else in CI, and root's [File.canWrite] is true whatever the
+     * mode says — so the branch that matters most could never be exercised by
+     * making a directory read-only. Same seam the sources take for a socket.
+     */
+    internal fun diagnostics(writable: (File) -> Boolean): List<String> {
+        val out = ArrayList<String>()
+        val s = state.get()
+        out += "running $currentVersion (${variant.name.lowercase()} build)"
+
+        val latest = s.latest
+        out += when {
+            latest == null -> "nothing checked for yet this run"
+            isNewer(latest) -> "${latest.version} is offered"
+            else -> "${latest.version} is the newest published, so there is nothing to install"
+        }
+
+        // The phase and its reason, which is the whole answer when there is one.
+        out += when (s.phase) {
+            Phase.ERROR -> "LAST ATTEMPT FAILED: ${s.error ?: "no reason recorded"}"
+            Phase.IDLE -> "idle"
+            else -> "in progress: ${s.phase.wire}"
+        }
+
+        // Where the download has to land. Named rather than described, because
+        // this line gets typed out of a screen in another room.
+        val dir = downloadDir
+        val existing = generateSequence(dir) { it.parentFile }.firstOrNull { it.exists() }
+        out += when {
+            existing == null -> "${dir.path} does not exist and neither does anything above it"
+            writable(existing) -> "${dir.path} looks writable (checked ${existing.path})"
+            else -> "${existing.path} IS NOT WRITABLE by " +
+                (System.getProperty("user.name") ?: "this process") +
+                " — an update cannot be downloaded. In Docker: chown -R 10001 " +
+                "<the directory you mounted at /data>"
+        }
+        return out
+    }
+
     internal fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->

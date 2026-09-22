@@ -83,7 +83,15 @@ class Diagnostics(
      * media sessions actually hold on one real phone, which is the thing that
      * has to be known before any of it could become a card.
      */
-    private val deviceNotes: () -> List<String> = { emptyList() }
+    private val deviceNotes: () -> List<String> = { emptyList() },
+    /**
+     * WHY THE UPDATE BUTTON DID NOTHING. Reported from a container with
+     * nowhere to read the answer: a failure is held in memory and drawn on the
+     * bar, and the container exits mid-update by design, so the page reloads
+     * over the one place that said why. Empty where this host cannot install
+     * at all — see [com.musicd.sharecard.meta.Updater.diagnostics].
+     */
+    private val updateNotes: () -> List<String> = { emptyList() }
 ) {
 
     fun run(): JSONObject {
@@ -108,6 +116,8 @@ class Diagnostics(
 
         val device = runCatching { deviceNotes() }.getOrDefault(emptyList())
         if (device.isNotEmpty()) report.put("device", Json.strings(device))
+        val update = runCatching { updateNotes() }.getOrDefault(emptyList())
+        if (update.isNotEmpty()) report.put("update", Json.strings(update))
 
         // 1. What this device thinks it is attached to. An empty list here is
         //    the whole answer: no network, no speakers.

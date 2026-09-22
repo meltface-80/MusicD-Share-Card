@@ -240,7 +240,8 @@ class CardApi(
                         lmsQueue?.attempts().orEmpty().map { "Lyrion: $it" }
                 },
                 { newMusic?.attempts().orEmpty() + editorial?.attempts().orEmpty() },
-                { deviceAudio?.diagnostics().orEmpty() }
+                { deviceAudio?.diagnostics().orEmpty() },
+                { updater?.diagnostics().orEmpty() }
             ).run()
         )
         else -> static(request.path, request)

@@ -2156,6 +2156,47 @@ was simply not there, however carefully the DIDL was parsed.
   because a GET that installs software is one a link prefetch can fire by
   itself. `/api/update/status` is a read and stays open. `WRITE_ROUTES` names
   every path a POST may reach; nothing infers it.
+- **"THE UPDATE BUTTON DOESN'T WORK" HAD NOWHERE TO BE ANSWERED, AND THAT WAS
+  THE WHOLE OF WHAT COULD BE FIXED FROM HERE.** Reported from a container. The
+  reasons DO exist — a failure sets `Phase.ERROR` with its message and the bar
+  draws it — but only while the update is still offered, and the container
+  EXITS mid-update by design, so the page reloads over the one place that said
+  why. `/api/debug` had no update section at all. What was left was `docker
+  logs`, which is the identical complaint the version line at the foot of the
+  settings menu and the reachable diagnostics button were each added to fix: a
+  fact that exists and cannot be reached. `Updater.diagnostics()` now names the
+  running version, whether anything newer is published, the last failure's
+  reason, and the state of the directory the download has to land in.
+- **AND THE DIRECTORY IS THE LINE WORTH HAVING, BECAUSE IT IS THE ONE FAILURE
+  THAT LOOKS LIKE NOTHING.** The container is not root, so a bind mount created
+  by hand belongs to somebody else — and every write in this app is deliberately
+  survivable, so the card draws, the page serves and discovery works perfectly
+  while the one route that MUST write fails with "Permission denied". Nothing on
+  the screen connected the two. Reproduced against the real server as uid 10001
+  with a root-owned data directory: the update fails, and the report now reads
+  `… IS NOT WRITABLE by sharecard — an update cannot be downloaded. In Docker:
+  chown -R 10001 <the directory you mounted at /data>`. That is the README's own
+  chown, printed beside the reason rather than in a startup log line nobody
+  scrolls back to.
+- **IT IS A READ, AND THAT IS NOT A DETAIL.** `/api/debug` is a GET and no route
+  in this app writes to disk. Probing writability with a temporary file would
+  break that rule for a diagnostic, so it is `File.canWrite` — a permission
+  check and nothing else, which is why the wording is "looks writable" rather
+  than a promise. **AND THE PROBE IS INJECTED**, because the tests run as ROOT
+  in this environment and as somebody else in CI, and root's `canWrite` is true
+  whatever the mode says: a test that made a directory read-only would pass for
+  the wrong reason on one machine and fail on the other. Same seam `LmsSource`
+  takes for a socket.
+- **WHAT WAS RULED OUT, SO NOBODY RE-DERIVES IT.** 1.0.27 was suspected because
+  it was the release in hand, and it is not the cause: the diff from 1.0.26
+  touches the Dockerfile, the compose file, the workflow, the version and docs,
+  and **not one line of `core/`, `server/` or `app/src`** — so the server
+  program is identical but for its version string and the update logic cannot
+  have regressed in it. The whole cycle was then driven end to end against the
+  REAL published artifact under tini — manifest parsed, zip downloaded, sha256
+  matched, unpacked to `versions/1.0.27`, `pending` written, process exited,
+  launcher restarted into it, `trying` cleared and `active` written. Where the
+  update DOES fail is the data directory, above.
 
 ## Discover, and the fourth thing that writes to disk
 
