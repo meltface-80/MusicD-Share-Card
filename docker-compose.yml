@@ -19,6 +19,24 @@ services:
     container_name: musicd-share-card
     restart: unless-stopped
 
+    # AN INIT AT PID 1, AND IT IS THE HEALTHCHECK THAT MAKES IT NECESSARY.
+    #
+    # The check in the Dockerfile is exec'd into the container every thirty
+    # seconds and reparented to PID 1 when it finishes, so whatever is PID 1
+    # has to reap it. Without that it stays as a zombie — one every thirty
+    # seconds, for the life of the container, until it can no longer fork
+    # anything at all. Observed on a real host as nineteen defunct `bash`
+    # entries after ten minutes.
+    #
+    # THE IMAGE ALREADY HANDLES THIS: its ENTRYPOINT runs tini in front of the
+    # launcher, so a plain `docker run` is covered too. This line is the same
+    # guarantee written in the file people actually read and edit, and it is
+    # the one that still holds if somebody overrides `entrypoint:` here — at
+    # which point the image's own tini is gone and Docker's init is all there
+    # is. tini is told to register as a subreaper so that it does not warn
+    # about being PID 2 when both are in play; see the Dockerfile.
+    init: true
+
     # HOST NETWORKING IS NOT OPTIONAL IF YOU WANT DISCOVERY.
     #
     # Every way this app finds anything is multicast or broadcast: SSDP for

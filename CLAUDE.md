@@ -119,6 +119,33 @@ break it.
   A check runs every thirty seconds for the life of the container. The rule that
   route must touch no network was written for a different reason and paid for
   itself here.
+- **AND THAT CHECK WAS LEAKING A ZOMBIE EVERY THIRTY SECONDS, BECAUSE PID 1 WAS
+  THE JVM.** `launch.sh` execs the start script and that execs java, so nothing
+  stood in front of the JVM. A `HEALTHCHECK` is `runc exec`ed into the container
+  and the helper that starts it exits at once, so every finished check is
+  REPARENTED TO PID 1 — and a JVM reaps only the children it forked itself. One
+  defunct `bash` per interval, for the life of the container. FOUND IN AN HTOP
+  OFF A REAL HOST and nowhere else: nineteen of them under the java process
+  after about ten minutes, PIDs climbing, while every test here passed and the
+  container reported healthy. Nothing visibly breaks until the pid limit is
+  reached and it cannot fork at all, and `restart: unless-stopped` resets the
+  count on every restart — a leak whose only symptom is a process table nobody
+  looks at. `tini` is PID 1 now, in the image so that `docker run` is covered
+  too, and `init: true` in `docker-compose.yml` beside it.
+  **THE ENV VAR AND NOT THE `-s` FLAG, WHICH COULD NOT HAVE BEEN GUESSED.** With
+  both in play tini is PID 2, and it WARNS when it is not PID 1 — into the log
+  this app tells people to read for their PIN. Both `-s` and `TINI_SUBREAPER`
+  silence it by registering tini as a subreaper, but `-s` is parsed inside
+  tini's `#ifndef TINI_MINIMAL` block, so a build made that way passes `-s`
+  STRAIGHT THROUGH to the launcher and on to the server, while TINI_SUBREAPER
+  is read by `parse_env`, which is compiled either way. Ubuntu's tini 0.19.0
+  accepts `-s` — measured here, not assumed — so that is a hazard the package
+  avoids today rather than one it has, and the env var is preferred only
+  because it cannot be wrong if that changes. `tools/check-docker-init.sh` asserts the shape of all of
+  it — an init in front of the launcher, installed, the launcher still at the
+  end, Compose asking too — and was shown failing against the files as they
+  were, plus once per assertion. WHAT IT CANNOT DO IS WATCH A CONTAINER REAP;
+  that is the first real `docker run`, as the Dockerfile has always been.
 
 ## The honesty rule about Android code
 

@@ -88,6 +88,16 @@ jobs:
       - name: Check the image copies a path the build produces
         run: sh tools/check-docker-paths.sh
 
+      # PID 1 MUST REAP. launch.sh execs the start script, which execs java, so
+      # without an init in front of it the JVM is PID 1 — and the healthcheck,
+      # exec'd in every thirty seconds, is reparented there when it finishes. A
+      # JVM reaps only what it forked, so each check stayed behind as a zombie.
+      # Found in an htop off a real host after this had been shipping for
+      # months; there is no Docker daemon here, so the shape of the thing is
+      # what gets checked, and the first real run is the verification.
+      - name: Check the container has an init at PID 1
+        run: sh tools/check-docker-init.sh
+
       # One publisher, and it is the default branch. Two of them means a
       # conflict in dist/latest.json, README.md and docs/index.html on every
       # pull request, which is how this repo spent several releases.
