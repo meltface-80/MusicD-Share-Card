@@ -348,9 +348,14 @@ container has no other window to look through.
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MusicD Share Card is copyright (c) 2026 Lewis Menzies (Music Duck / MusicD) and
+is released under the MIT License — the full text is in [LICENSE](LICENSE). In
+short: do what you like with it, as long as the copyright notice and the licence
+travel with it. It comes with no warranty.
 
 The card is [MusicD Remote Lite's](https://github.com/meltface-80/Android-Random-Remote),
 ported so both apps draw the same picture, and the Roon client comes from there
-too. Album text is from Wikipedia under CC BY-SA, which is why the credit stays
-on the card.
+too — same copyright holder, same licence. Album text is from Wikipedia under
+CC BY-SA, which is why the credit stays on the card. Manrope is under the SIL
+Open Font License 1.1, and that licence ships with it in
+[`app/src/main/assets/web/fonts/OFL.txt`](app/src/main/assets/web/fonts/OFL.txt).
