@@ -1,6 +1,7 @@
 package com.musicd.sharecard
 
 import com.musicd.sharecard.library.Normalize
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -74,6 +75,38 @@ class NamesOverlapTest {
         // Word by word, not character by character.
         assertFalse(Normalize.namesOverlap("The Beat", "The Beatles"))
         assertFalse(Normalize.namesOverlap("Low", "Lowlife"))
+    }
+
+    /**
+     * MEDIAWIKI CANNOT PUT A `#` IN A PAGE TITLE — it is the fragment
+     * separator — so every record named with one is filed under the word.
+     * Big Star's "#1 Record" is at /wiki/Number_1_Record, and the folding
+     * dropped the hash as punctuation: "1 record" against "number 1 record",
+     * which the front anchor then correctly refused. Reported from the field
+     * as no blurb and no Wikipedia chip on that card, with the artist chip
+     * sitting beside it working perfectly — which is the two halves of this
+     * lookup disagreeing, and the proof it was the TITLE that failed.
+     */
+    @Test
+    fun `a hash before a digit is the word number, because Wikipedia has no choice`() {
+        assertTrue(Normalize.namesOverlap("Number 1 Record", "#1 Record"))
+        assertTrue(Normalize.namesOverlap("#1 Record", "Number 1 Record"))
+        assertTrue(Normalize.namesOverlap("Number 1 Crush", "#1 Crush"))
+        // Still a record, not a different one: the guard is unmoved.
+        assertFalse(Normalize.namesOverlap("Number 1 Record", "Number 2 Record"))
+    }
+
+    /**
+     * AND A SHARP IS NOT A NUMBER. "#" is how a key signature is written, and
+     * folding that one to "number" would put "prelude number minor" in a
+     * search box. Only a hash IMMEDIATELY BEFORE A DIGIT is the word, which is
+     * the only shape Wikipedia's rule produces.
+     */
+    @Test
+    fun `a sharp is left alone`() {
+        assertEquals("number 1 record", Normalize.text("#1 Record"))
+        assertEquals("prelude in c minor", Normalize.text("Prelude in C# Minor"))
+        assertFalse(Normalize.text("C# Minor").contains("number"))
     }
 
     @Test

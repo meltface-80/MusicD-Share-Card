@@ -1396,7 +1396,12 @@
     section("The app", d.app);
     // What Pitchfork was asked, and what it said. A missing score looks
     // identical to a missing review from the card.
-    section("Album reviews", d.reviews);
+    // Why the Update button did nothing — the version running, whether
+    // anything newer is published, and above all whether the directory the
+    // download has to land in can be written. In Docker that last one is the
+    // usual answer and it is invisible everywhere else.
+    section("Updates", d.update);
+    section("Album lookups", d.reviews);
     // And what the similar-artist lookup was asked, and which source answered.
     // An empty row has three causes that look identical from the page, and
     // only one of them is not a bug — see Similar.attempts().

@@ -214,7 +214,18 @@ class CardApi(
         "/api/art" -> artwork(request)
         "/api/debug" -> Json.obj(
             Diagnostics(
-                sources, hostNotes, pitchfork::attempts,
+                sources, hostNotes,
+                /*
+                 * THREE LOOKUPS, ONE SECTION, AND EACH LINE SAYS WHICH — the
+                 * rule the Roon and Lyrion queue attempts already follow one
+                 * section down. "Nothing found" is the same sentence from
+                 * MusicBrainz, Wikipedia and Pitchfork, and the fix is in a
+                 * different file for each. Reported as "generally review
+                 * retrieval is poor", which is a complaint nothing in this
+                 * report could have narrowed: the year and the blurb come from
+                 * the metadata lookup and it had never said a word.
+                 */
+                { metadata.attempts() + pitchfork.attempts().map { "pitchfork: $it" } },
                 { similar?.attempts().orEmpty() },
                 art::attempts,
                 /*
@@ -229,7 +240,8 @@ class CardApi(
                         lmsQueue?.attempts().orEmpty().map { "Lyrion: $it" }
                 },
                 { newMusic?.attempts().orEmpty() + editorial?.attempts().orEmpty() },
-                { deviceAudio?.diagnostics().orEmpty() }
+                { deviceAudio?.diagnostics().orEmpty() },
+                { updater?.diagnostics().orEmpty() }
             ).run()
         )
         else -> static(request.path, request)
