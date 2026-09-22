@@ -35,6 +35,48 @@ FROM eclipse-temurin:17-jre
 # quietly forgetting everything on each restart.
 RUN useradd --system --uid 10001 --create-home --home-dir /home/sharecard sharecard
 
+# PID 1 MUST REAP, AND A JVM WILL NOT.
+#
+# launch.sh execs the start script and that execs java, so with nothing in
+# front of it THE JVM IS PID 1. The HEALTHCHECK below is `runc exec`ed into the
+# container every thirty seconds, and the helper that starts it exits at once —
+# so every check is REPARENTED TO PID 1 when it finishes. The JVM only reaps
+# the children it forked itself, so each finished check then sits in the
+# process table as a zombie, for ever.
+#
+# SEEN ON A REAL HOST, which is the only reason this was found at all: nineteen
+# defunct `bash` entries under the java process after about ten minutes, one
+# per interval, PIDs climbing. Nothing is broken by it until the pid limit is
+# reached and the container can no longer fork anything — and `restart:
+# unless-stopped` hides even that by resetting the count on every restart.
+# A leak whose only symptom is a process table nobody looks at.
+#
+# tini is PID 1 instead: it reaps orphans and forwards signals to the launcher
+# below it, and exits with the launcher's own status so the rollback in
+# launch.sh and the restart policy both behave exactly as before.
+#
+# IT IS IN THE IMAGE AND NOT ONLY IN COMPOSE, because the README's `docker run`
+# names no flag and somebody pulling this image has read neither file.
+# docker-compose.yml asks for `init: true` as well; see the note there.
+#
+# THE ENV VAR AND NOT THE `-s` FLAG. Both ask tini to register as a child
+# subreaper, which is what stops it WARNING that it is not PID 1 — and it is
+# not, the moment docker-compose.yml's `init: true` puts Docker's own init
+# above it. That warning is three lines into the log this README tells people
+# to read for their PIN, on every start, about nothing being wrong.
+#
+# The two are not equally safe to reach for. `-s` is parsed inside tini's
+# `#ifndef TINI_MINIMAL` block, so a build made with TINI_MINIMAL passes `-s`
+# STRAIGHT THROUGH to the launcher and on to the server; TINI_SUBREAPER is read
+# by `parse_env`, which is compiled either way. Ubuntu's own tini 0.19.0 does
+# accept `-s` — measured, not assumed — so this is a hazard the package avoids
+# today rather than one it has. The env var costs nothing and cannot be wrong
+# if that ever changes, which is the only reason to prefer it.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tini \
+ && rm -rf /var/lib/apt/lists/*
+ENV TINI_SUBREAPER=1
+
 # THE DIRECTORY IS NAMED AFTER THE DISTRIBUTION, NOT THE MODULE, and that
 # caught me out: setting `distributionBaseName` so the published archive is
 # called musicd-share-card-server-<version>.zip ALSO moved installDist from
@@ -69,4 +111,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/${SHARECARD_PORT:-8747}; \
         printf "GET /api/health HTTP/1.0\r\n\r\n" >&3; grep -q "\"ok\":true" <&3'
 
-ENTRYPOINT ["/opt/sharecard/launch.sh"]
+# tini, never the launcher directly — see the reaping note above. The `--`
+# ends tini's own arguments, so nothing in the launcher's line can ever be
+# eaten as one of tini's.
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/sharecard/launch.sh"]
