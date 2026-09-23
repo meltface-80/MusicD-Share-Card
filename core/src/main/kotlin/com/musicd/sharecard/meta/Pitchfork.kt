@@ -66,7 +66,11 @@ class Pitchfork(
      * The score for one album, cached under the name the caller asked with —
      * see [lookUp] for how it is actually found.
      */
-    fun reviewFor(title: String, artist: String): Review? {
+    fun reviewFor(title: String, credit: String): Review? {
+        // The FIRST credited act: "Bruce Springsteen / Scott Tibbs" built
+        // /bruce-springsteen-scott-tibbs-western-stars/ and found nothing.
+        // Same rule as [Metadata.extras]; see `CreditedActTest`.
+        val artist = Normalize.primaryArtist(credit)
         if (title.isBlank() || artist.isBlank()) return null
         if (slugify(artist).isEmpty() || slugify(title).isEmpty()) return null
         return cache.get(key(title, artist)) {
@@ -476,8 +480,8 @@ class Pitchfork(
      * never asked about both answer null, because both mean the same thing to
      * the caller: draw no score.
      */
-    fun cachedReviewFor(title: String, artist: String): Review? =
-        cache.peek(key(title, artist))?.firstOrNull()
+    fun cachedReviewFor(title: String, credit: String): Review? =
+        cache.peek(key(title, Normalize.primaryArtist(credit)))?.firstOrNull()
 
     private fun key(title: String, artist: String): String =
         Normalize.text(title) + "||" + Normalize.text(artist)

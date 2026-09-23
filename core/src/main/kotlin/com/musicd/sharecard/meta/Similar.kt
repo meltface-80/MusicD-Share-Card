@@ -84,7 +84,10 @@ class Similar(
      * than guessed at — an id resolved by searching a name is how a row of
      * suggestions ends up being about a different act with the same name.
      */
-    fun forArtist(artist: String, mbid: String?): List<Act> {
+    fun forArtist(credit: String, mbid: String?): List<Act> {
+        // Acts like the FIRST credited act, never like "A / B" as one name —
+        // the rule [Metadata.extras] and [Pitchfork.reviewFor] follow too.
+        val artist = Normalize.primaryArtist(credit)
         if (artist.isBlank()) return emptyList()
         return cache.get(key(artist)) {
             val fromListenBrainz = if (mbid.isNullOrBlank()) {
@@ -100,8 +103,10 @@ class Similar(
     }
 
     /** What [forArtist] would answer without going near the network. */
-    fun cachedForArtist(artist: String): List<Act>? =
-        if (artist.isBlank()) emptyList() else cache.peek(key(artist))
+    fun cachedForArtist(credit: String): List<Act>? {
+        val artist = Normalize.primaryArtist(credit)
+        return if (artist.isBlank()) emptyList() else cache.peek(key(artist))
+    }
 
     // ------------------------------------------------------------ ListenBrainz
 
