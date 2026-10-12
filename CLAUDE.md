@@ -463,6 +463,26 @@ was simply not there, however carefully the DIDL was parsed.
   for ever, unread. Bump it only when a stored answer would be WRONG rather
   than merely thin: `artistMbid` was simply absent from older entries and
   decodes to null, which costs one search and needs none of this.
+- **THE LOOKUPS ASK ABOUT THE FIRST CREDITED ACT, AND FOR A LONG TIME ONLY
+  THE LINKS DID.** Reported with a photograph as reviews having "become
+  unreliable": a Roon card of "Western Stars" credited "Bruce Springsteen /
+  Scott Tibbs" (Tibbs is the arranger) drew no year, no blurb, no Wikipedia
+  chip and no Pitchfork score, only the two AllMusic links that need no lookup.
+  `Normalize.primaryArtist` went into the LINKS after the Stan Getz credit, and
+  the lookups were left alone on the grounds that `namesOverlap` accepts a name
+  qualified on the right. That reasoning stopped holding the day
+  `albumArticleFits` began reading the article through `mentions`, which needs
+  the WHOLE credit as a run of words in the prose, and it was never true for
+  Pitchfork's slug ("bruce-springsteen-scott-tibbs-western-stars") or for
+  MusicBrainz's artist phrase. Roon credits arrangers, composers and guests
+  routinely, so it looked random: a solo credit worked, a two-name one did
+  not. `Metadata.extras`, `Pitchfork.reviewFor` and `Similar.forArtist` fold
+  the credit at their own entry, so every caller gets the rule and the fast
+  (cached) read keys the same way as the slow one. The cache KEY moved with
+  it, which is what makes the empty answers already on disk for those credits
+  unreachable rather than served for another week. `CreditedActTest` was shown
+  failing against each half with the other in place. THE SIMILAR-ARTIST HALF
+  HAS NO TEST of its own; it is the same one-line fold.
 - **"GENERALLY REVIEW RETRIEVAL IS POOR" WAS A COMPLAINT NOTHING IN THE REPORT
   COULD NARROW.** The year and the blurb both come from `Metadata`, and it had
   never said a word — so "Wikipedia has never heard of it", "it was asked the

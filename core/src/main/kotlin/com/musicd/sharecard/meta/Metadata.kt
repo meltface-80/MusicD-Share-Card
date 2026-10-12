@@ -104,7 +104,16 @@ class Metadata(
         val artistMbid: String? = null
     )
 
-    fun extras(title: String, artist: String): AlbumExtras {
+    /**
+     * [credit] is what the speaker said; the lookups ask about its FIRST ACT.
+     * A Roon card credited "Bruce Springsteen / Scott Tibbs" (an arranger)
+     * asked MusicBrainz for an act by that name, needed that whole run of
+     * words in the Wikipedia article, and so drew no year and no blurb — the
+     * rule the links row got after the Stan Getz credit, never applied here.
+     * See [Normalize.primaryArtist] and `CreditedActTest`.
+     */
+    fun extras(title: String, credit: String): AlbumExtras {
+        val artist = Normalize.primaryArtist(credit)
         val key = cacheKey(title, artist) ?: return AlbumExtras(null, null, null)
         return cache.get(key) {
             val release = runCatching { musicBrainzRelease(title, artist) }
@@ -131,8 +140,8 @@ class Metadata(
      * worth seconds — so the card draws on the cached answer and redraws if
      * the slow one turns up while it is still on screen.
      */
-    fun cachedExtras(title: String, artist: String): AlbumExtras? {
-        val key = cacheKey(title, artist) ?: return AlbumExtras(null, null, null)
+    fun cachedExtras(title: String, credit: String): AlbumExtras? {
+        val key = cacheKey(title, Normalize.primaryArtist(credit)) ?: return AlbumExtras(null, null, null)
         return cache.peek(key)
     }
 
